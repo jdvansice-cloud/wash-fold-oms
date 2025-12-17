@@ -2,54 +2,132 @@ import React, { useState, useMemo } from 'react';
 import { 
   TrendingUp, TrendingDown, DollarSign, Package, 
   Users, Scale, Calendar, Filter, Download,
-  ShoppingCart, Clock, Percent, CreditCard
+  ShoppingCart, Clock, Percent, CreditCard,
+  ChevronDown, X, ArrowLeftRight
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 function AnalyticsPage() {
   const { state } = useApp();
   const [dateRange, setDateRange] = useState('week'); // today, week, month, custom
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
+  
+  // Comparison settings
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [compareType, setCompareType] = useState('previous'); // previous, lastyear, custom
+  const [compareCustomStart, setCompareCustomStart] = useState('');
+  const [compareCustomEnd, setCompareCustomEnd] = useState('');
+  const [showCompareOptions, setShowCompareOptions] = useState(false);
+  
   const [viewMode, setViewMode] = useState('summary'); // summary, detail
   
-  // Calculate KPIs from orders
-  const kpis = useMemo(() => {
+  // Calculate date ranges
+  const dateRanges = useMemo(() => {
     const now = new Date();
-    const filterDate = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let startDate, endDate;
     
     switch (dateRange) {
       case 'today':
-        filterDate.setHours(0, 0, 0, 0);
+        startDate = today;
+        endDate = now;
         break;
       case 'week':
-        filterDate.setDate(now.getDate() - 7);
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 6);
+        endDate = now;
         break;
       case 'month':
-        filterDate.setMonth(now.getMonth() - 1);
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 29);
+        endDate = now;
+        break;
+      case 'custom':
+        startDate = customStartDate ? new Date(customStartDate) : new Date(today.setDate(today.getDate() - 7));
+        endDate = customEndDate ? new Date(customEndDate + 'T23:59:59') : now;
         break;
       default:
-        filterDate.setDate(now.getDate() - 7);
+        startDate = new Date(today);
+        startDate.setDate(today.getDate() - 6);
+        endDate = now;
     }
     
-    const filteredOrders = state.orders.filter(order => 
-      new Date(order.created_at) >= filterDate
-    );
+    // Calculate comparison dates
+    let compareStartDate, compareEndDate;
+    const daysDiff = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
     
-    const completedOrders = filteredOrders.filter(o => 
-      o.status === 'completed' || o.status === 'ready'
-    );
+    if (compareType === 'previous') {
+      // Previous period: same number of days, immediately before
+      compareEndDate = new Date(startDate);
+      compareEndDate.setDate(compareEndDate.getDate() - 1);
+      compareStartDate = new Date(compareEndDate);
+      compareStartDate.setDate(compareStartDate.getDate() - daysDiff + 1);
+    } else if (compareType === 'lastyear') {
+      // Last year: same dates, 1 year ago
+      compareStartDate = new Date(startDate);
+      compareStartDate.setFullYear(compareStartDate.getFullYear() - 1);
+      compareEndDate = new Date(endDate);
+      compareEndDate.setFullYear(compareEndDate.getFullYear() - 1);
+    } else if (compareType === 'custom') {
+      compareStartDate = compareCustomStart ? new Date(compareCustomStart) : null;
+      compareEndDate = compareCustomEnd ? new Date(compareCustomEnd + 'T23:59:59') : null;
+    }
     
+    return {
+      startDate,
+      endDate,
+      compareStartDate,
+      compareEndDate,
+      daysDiff,
+    };
+  }, [dateRange, customStartDate, customEndDate, compareType, compareCustomStart, compareCustomEnd]);
+  
+  // Calculate KPIs from orders
+  const kpis = useMemo(() => {
+    const { startDate, endDate, compareStartDate, compareEndDate } = dateRanges;
+    
+    // Filter orders for current period
+    const filteredOrders = state.orders.filter(order => {
+      const orderDate = new Date(order.created_at);
+      return orderDate >= startDate && orderDate <= endDate;
+    });
+    
+    // Filter orders for comparison period
+    const compareOrders = compareEnabled && compareStartDate && compareEndDate
+      ? state.orders.filter(order => {
+          const orderDate = new Date(order.created_at);
+          return orderDate >= compareStartDate && orderDate <= compareEndDate;
+        })
+      : [];
+    
+    // Current period stats
     const totalSales = filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const totalWeight = filteredOrders.reduce((sum, o) => sum + (o.total_weight || 0), 0);
     const totalOrders = filteredOrders.length;
     const avgTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
     const expressOrders = filteredOrders.filter(o => o.is_express).length;
     const expressRate = totalOrders > 0 ? (expressOrders / totalOrders) * 100 : 0;
+    const uniqueCustomers = new Set(filteredOrders.map(o => o.customer_id).filter(Boolean)).size;
+    const avgWeightPerOrder = totalOrders > 0 ? totalWeight / totalOrders : 0;
     
-    // Simulated comparison with previous period
-    const salesGrowth = 12.5;
-    const ordersGrowth = 8.3;
-    const weightGrowth = 15.2;
-    const avgTicketGrowth = -2.1;
+    // Comparison period stats
+    const compareTotalSales = compareOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const compareTotalWeight = compareOrders.reduce((sum, o) => sum + (o.total_weight || 0), 0);
+    const compareTotalOrders = compareOrders.length;
+    const compareAvgTicket = compareTotalOrders > 0 ? compareTotalSales / compareTotalOrders : 0;
+    
+    // Calculate growth percentages
+    const calcGrowth = (current, previous) => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return ((current - previous) / previous) * 100;
+    };
+    
+    const salesGrowth = compareEnabled ? calcGrowth(totalSales, compareTotalSales) : null;
+    const ordersGrowth = compareEnabled ? calcGrowth(totalOrders, compareTotalOrders) : null;
+    const weightGrowth = compareEnabled ? calcGrowth(totalWeight, compareTotalWeight) : null;
+    const avgTicketGrowth = compareEnabled ? calcGrowth(avgTicket, compareAvgTicket) : null;
     
     return {
       totalSales,
@@ -58,13 +136,20 @@ function AnalyticsPage() {
       avgTicket,
       expressOrders,
       expressRate,
+      uniqueCustomers,
+      avgWeightPerOrder,
       salesGrowth,
       ordersGrowth,
       weightGrowth,
       avgTicketGrowth,
       filteredOrders,
+      // Comparison data
+      compareTotalSales,
+      compareTotalOrders,
+      compareTotalWeight,
+      compareAvgTicket,
     };
-  }, [state.orders, dateRange]);
+  }, [state.orders, dateRanges, compareEnabled]);
   
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
   
@@ -77,6 +162,34 @@ function AnalyticsPage() {
       minute: '2-digit',
     }).format(date);
   };
+  
+  const formatDateShort = (date) => {
+    if (!date) return '';
+    return new Intl.DateTimeFormat('es-PA', {
+      day: '2-digit',
+      month: 'short',
+    }).format(date);
+  };
+  
+  const handleDateRangeChange = (range) => {
+    setDateRange(range);
+    if (range !== 'custom') {
+      setShowCustomDatePicker(false);
+    } else {
+      setShowCustomDatePicker(true);
+    }
+  };
+  
+  const getDateRangeLabel = () => {
+    const { startDate, endDate } = dateRanges;
+    return `${formatDateShort(startDate)} - ${formatDateShort(endDate)}`;
+  };
+  
+  const getCompareRangeLabel = () => {
+    const { compareStartDate, compareEndDate } = dateRanges;
+    if (!compareStartDate || !compareEndDate) return '';
+    return `${formatDateShort(compareStartDate)} - ${formatDateShort(compareEndDate)}`;
+  };
 
   return (
     <div className="p-6 animate-fade-in">
@@ -87,33 +200,155 @@ function AnalyticsPage() {
           <p className="text-sm text-slate-500">Dashboard de rendimiento del negocio</p>
         </div>
         
-        <div className="flex items-center gap-3">
+        {/* Export Button */}
+        <button className="btn-secondary">
+          <Download className="w-4 h-4" />
+          Exportar
+        </button>
+      </div>
+      
+      {/* Filters Row */}
+      <div className="card p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-4">
           {/* Date Range Filter */}
-          <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1">
-            {[
-              { value: 'today', label: 'Hoy' },
-              { value: 'week', label: '7 días' },
-              { value: 'month', label: '30 días' },
-            ].map((option) => (
-              <button
-                key={option.value}
-                onClick={() => setDateRange(option.value)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  dateRange === option.value
-                    ? 'bg-white text-primary-600 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-800'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <span className="text-sm font-medium text-slate-600">Período:</span>
+            <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+              {[
+                { value: 'today', label: 'Hoy' },
+                { value: 'week', label: '7 días' },
+                { value: 'month', label: '30 días' },
+                { value: 'custom', label: 'Personalizado' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => handleDateRangeChange(option.value)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    dateRange === option.value
+                      ? 'bg-white text-primary-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-800'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
           
-          {/* Export Button */}
-          <button className="btn-secondary">
-            <Download className="w-4 h-4" />
-            Exportar
-          </button>
+          {/* Custom Date Picker */}
+          {showCustomDatePicker && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="input w-36 text-sm"
+              />
+              <span className="text-slate-400">a</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="input w-36 text-sm"
+              />
+            </div>
+          )}
+          
+          {/* Divider */}
+          <div className="h-8 w-px bg-slate-200" />
+          
+          {/* Compare Toggle */}
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={compareEnabled}
+                onChange={(e) => setCompareEnabled(e.target.checked)}
+                className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+              />
+              <ArrowLeftRight className="w-4 h-4 text-slate-400" />
+              <span className="text-sm font-medium text-slate-600">Comparar</span>
+            </label>
+            
+            {compareEnabled && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowCompareOptions(!showCompareOptions)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-medium text-slate-700 transition-colors"
+                >
+                  {compareType === 'previous' && 'Período anterior'}
+                  {compareType === 'lastyear' && 'Año anterior'}
+                  {compareType === 'custom' && 'Personalizado'}
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                
+                {showCompareOptions && (
+                  <div className="absolute top-full left-0 mt-1 bg-white rounded-xl shadow-elevated border border-slate-200 py-1 z-10 min-w-[180px]">
+                    <button
+                      onClick={() => { setCompareType('previous'); setShowCompareOptions(false); }}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-slate-50 ${compareType === 'previous' ? 'text-primary-600 font-medium' : 'text-slate-700'}`}
+                    >
+                      Período anterior
+                      <p className="text-xs text-slate-400">Misma cantidad de días</p>
+                    </button>
+                    <button
+                      onClick={() => { setCompareType('lastyear'); setShowCompareOptions(false); }}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-slate-50 ${compareType === 'lastyear' ? 'text-primary-600 font-medium' : 'text-slate-700'}`}
+                    >
+                      Año anterior
+                      <p className="text-xs text-slate-400">Mismas fechas, hace 1 año</p>
+                    </button>
+                    <button
+                      onClick={() => { setCompareType('custom'); setShowCompareOptions(false); }}
+                      className={`w-full px-4 py-2 text-left text-sm hover:bg-slate-50 ${compareType === 'custom' ? 'text-primary-600 font-medium' : 'text-slate-700'}`}
+                    >
+                      Personalizado
+                      <p className="text-xs text-slate-400">Elegir rango manualmente</p>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Custom Compare Date Picker */}
+            {compareEnabled && compareType === 'custom' && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={compareCustomStart}
+                  onChange={(e) => setCompareCustomStart(e.target.value)}
+                  className="input w-36 text-sm"
+                />
+                <span className="text-slate-400">a</span>
+                <input
+                  type="date"
+                  value={compareCustomEnd}
+                  onChange={(e) => setCompareCustomEnd(e.target.value)}
+                  className="input w-36 text-sm"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        
+        {/* Date Range Labels */}
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-primary-500" />
+            <span className="text-sm text-slate-600">
+              <span className="font-medium">Período actual:</span> {getDateRangeLabel()}
+            </span>
+          </div>
+          
+          {compareEnabled && (
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-slate-400" />
+              <span className="text-sm text-slate-600">
+                <span className="font-medium">Comparación:</span> {getCompareRangeLabel()}
+              </span>
+            </div>
+          )}
         </div>
       </div>
       
@@ -122,6 +357,7 @@ function AnalyticsPage() {
         <KPICard
           title="Ventas Totales"
           value={formatCurrency(kpis.totalSales)}
+          compareValue={compareEnabled ? formatCurrency(kpis.compareTotalSales) : null}
           change={kpis.salesGrowth}
           icon={DollarSign}
           color="primary"
@@ -129,6 +365,7 @@ function AnalyticsPage() {
         <KPICard
           title="Total Órdenes"
           value={kpis.totalOrders}
+          compareValue={compareEnabled ? kpis.compareTotalOrders : null}
           change={kpis.ordersGrowth}
           icon={ShoppingCart}
           color="success"
@@ -136,6 +373,7 @@ function AnalyticsPage() {
         <KPICard
           title="Peso Total"
           value={`${kpis.totalWeight.toFixed(2)} kg`}
+          compareValue={compareEnabled ? `${kpis.compareTotalWeight.toFixed(2)} kg` : null}
           change={kpis.weightGrowth}
           icon={Scale}
           color="warning"
@@ -143,6 +381,7 @@ function AnalyticsPage() {
         <KPICard
           title="Ticket Promedio"
           value={formatCurrency(kpis.avgTicket)}
+          compareValue={compareEnabled ? formatCurrency(kpis.compareAvgTicket) : null}
           change={kpis.avgTicketGrowth}
           icon={CreditCard}
           color="purple"
@@ -168,9 +407,7 @@ function AnalyticsPage() {
             <Users className="w-4 h-4 text-primary-500" />
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-800">
-              {new Set(kpis.filteredOrders.map(o => o.customer_id).filter(Boolean)).size}
-            </span>
+            <span className="text-2xl font-bold text-slate-800">{kpis.uniqueCustomers}</span>
             <span className="text-sm text-slate-500">únicos</span>
           </div>
         </div>
@@ -182,7 +419,7 @@ function AnalyticsPage() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-800">
-              {kpis.totalOrders > 0 ? (kpis.totalWeight / kpis.totalOrders).toFixed(2) : '0.00'}
+              {kpis.avgWeightPerOrder.toFixed(2)}
             </span>
             <span className="text-sm text-slate-500">kg</span>
           </div>
@@ -274,13 +511,22 @@ function AnalyticsPage() {
             <p className="text-sm">No hay órdenes en este período</p>
           </div>
         )}
+        
+        {kpis.filteredOrders.length > 10 && (
+          <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
+            <span className="text-sm text-slate-500">
+              Mostrando 10 de {kpis.filteredOrders.length} órdenes
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 // KPI Card Component
-function KPICard({ title, value, change, icon: Icon, color }) {
+function KPICard({ title, value, compareValue, change, icon: Icon, color }) {
+  const hasChange = change !== null && change !== undefined;
   const isPositive = change >= 0;
   
   const colorClasses = {
@@ -296,23 +542,30 @@ function KPICard({ title, value, change, icon: Icon, color }) {
         <div>
           <p className="text-sm text-slate-500 mb-1">{title}</p>
           <p className="text-2xl font-bold text-slate-800">{value}</p>
+          {compareValue && (
+            <p className="text-sm text-slate-400 mt-1">
+              vs {compareValue}
+            </p>
+          )}
         </div>
         <div className={`p-2.5 rounded-xl ${colorClasses[color]}`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>
       
-      <div className="flex items-center gap-1 mt-3">
-        {isPositive ? (
-          <TrendingUp className="w-4 h-4 text-success-500" />
-        ) : (
-          <TrendingDown className="w-4 h-4 text-error-500" />
-        )}
-        <span className={`text-sm font-medium ${isPositive ? 'text-success-600' : 'text-error-600'}`}>
-          {isPositive ? '+' : ''}{change.toFixed(1)}%
-        </span>
-        <span className="text-xs text-slate-400 ml-1">vs período anterior</span>
-      </div>
+      {hasChange && (
+        <div className="flex items-center gap-1 mt-3">
+          {isPositive ? (
+            <TrendingUp className="w-4 h-4 text-success-500" />
+          ) : (
+            <TrendingDown className="w-4 h-4 text-error-500" />
+          )}
+          <span className={`text-sm font-medium ${isPositive ? 'text-success-600' : 'text-error-600'}`}>
+            {isPositive ? '+' : ''}{change.toFixed(1)}%
+          </span>
+          <span className="text-xs text-slate-400 ml-1">vs período anterior</span>
+        </div>
+      )}
     </div>
   );
 }
