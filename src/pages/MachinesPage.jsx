@@ -4,7 +4,7 @@ import {
   Timer, MapPin, AlertCircle, ChevronRight 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { statusConfig } from '../data/sampleData';
+import { statusConfig } from '../data/helpers';
 
 const workflowColumns = [
   { id: 'pending', title: 'Por Hacer', status: 'pending' },

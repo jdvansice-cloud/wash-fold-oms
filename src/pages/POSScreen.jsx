@@ -1,6 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { getProductsBySection, getChildProducts } from '../data/sampleData';
 import WeightEntryModal from '../components/modals/WeightEntryModal';
 import ChildProductsModal from '../components/modals/ChildProductsModal';
 import CustomerSearchModal from '../components/modals/CustomerSearchModal';
@@ -12,13 +11,27 @@ function POSScreen() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [pendingProduct, setPendingProduct] = useState(null);
   
+  // Set default active section when sections load
+  useEffect(() => {
+    const activeSections = state.sections.filter(s => s.is_active);
+    if (activeSections.length > 0 && !state.activeSection) {
+      actions.setActiveSection(activeSections[0].id);
+    }
+  }, [state.sections, state.activeSection, actions]);
+  
   // Check if customer is selected (either walk-in confirmed or actual customer)
   const hasCustomerSelected = state.ticket.customer !== null || state.ticket.customerConfirmed;
   
-  // Get products for active section
+  // Get products for active section from state (not sampleData)
   const sectionProducts = useMemo(() => {
-    return getProductsBySection(state.activeSection).filter(p => !p.parent_id);
-  }, [state.activeSection]);
+    return state.products
+      .filter(p => p.section_id === state.activeSection && !p.parent_id && p.is_active !== false);
+  }, [state.products, state.activeSection]);
+  
+  // Get child products for a parent
+  const getChildProducts = (parentId) => {
+    return state.products.filter(p => p.parent_id === parentId && p.is_active !== false);
+  };
   
   const handleProductClick = (product) => {
     // Check if customer is selected first
@@ -134,19 +147,25 @@ function POSScreen() {
   return (
     <div className="p-6 animate-fade-in">
       {/* Category Tabs */}
-      <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
-        {state.sections.filter(s => s.is_active).map((section) => (
-          <button
-            key={section.id}
-            onClick={() => actions.setActiveSection(section.id)}
-            className={`category-tab whitespace-nowrap ${
-              state.activeSection === section.id ? 'active' : ''
-            }`}
-          >
-            {section.name}
-          </button>
-        ))}
-      </div>
+      {state.sections.filter(s => s.is_active).length > 0 ? (
+        <div className="mb-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-thin">
+          {state.sections.filter(s => s.is_active).map((section) => (
+            <button
+              key={section.id}
+              onClick={() => actions.setActiveSection(section.id)}
+              className={`category-tab whitespace-nowrap ${
+                state.activeSection === section.id ? 'active' : ''
+              }`}
+            >
+              {section.name}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-700 text-sm">
+          No hay secciones configuradas. Ve a Configuración → Productos → Secciones para crear secciones.
+        </div>
+      )}
       
       {/* Product Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -162,8 +181,8 @@ function POSScreen() {
         ))}
       </div>
       
-      {/* Empty State */}
-      {sectionProducts.length === 0 && (
+      {/* Empty State - No products in section */}
+      {state.activeSection && sectionProducts.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
           <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
             <span className="text-4xl">📦</span>

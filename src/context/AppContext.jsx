@@ -1,36 +1,25 @@
 import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import {
-  sampleUser,
-  sampleStore,
-  sampleCompany,
-  sampleSections,
-  sampleProducts,
-  sampleCustomers,
-  sampleOrders,
-  samplePaymentMethods,
-  serviceSettings,
-  calculatePromisedDate,
-} from '../data/sampleData';
+import { defaultServiceSettings, calculatePromisedDate, generateId } from '../data/helpers';
 
-// Initial state
+// Initial state - ALL DATA IS EMPTY, will be loaded from Supabase
 const initialState = {
-  // User & Store
-  user: sampleUser,
-  store: sampleStore,
-  company: sampleCompany,
+  // User & Store (loaded from Supabase auth)
+  user: null,
+  store: null,
+  company: null,
   
-  // Data
-  sections: sampleSections,
-  products: sampleProducts,
-  customers: sampleCustomers,
-  orders: sampleOrders,
-  paymentMethods: samplePaymentMethods,
+  // Data - ALL EMPTY, loaded from Supabase
+  sections: [],
+  products: [],
+  customers: [],
+  orders: [],
+  paymentMethods: [],
   
   // Current ticket
   ticket: {
     customer: null,
     isWalkIn: false,
-    customerConfirmed: false, // True when walk-in is explicitly selected or customer chosen
+    customerConfirmed: false,
     isExpress: false,
     items: [],
     notes: '',
@@ -40,12 +29,24 @@ const initialState = {
   },
   
   // UI State
-  activeSection: 'sec-001',
-  currentView: 'pos', // pos, orders, analytics, en-proceso
+  activeSection: null,
+  currentView: 'pos',
   sidebarOpen: false,
   
-  // Settings
-  settings: serviceSettings,
+  // Settings (defaults, overridden by company settings from Supabase)
+  settings: defaultServiceSettings,
+  
+  // Loading states
+  loading: {
+    initial: true,
+    products: false,
+    customers: false,
+    orders: false,
+    sections: false,
+  },
+  
+  // Error state
+  error: null,
 };
 
 // Action types
@@ -69,19 +70,29 @@ const actionTypes = {
   SET_CURRENT_VIEW: 'SET_CURRENT_VIEW',
   TOGGLE_SIDEBAR: 'TOGGLE_SIDEBAR',
   
-  // Data actions
+  // Data loading actions (for Supabase)
+  SET_LOADING: 'SET_LOADING',
+  SET_ERROR: 'SET_ERROR',
+  SET_USER: 'SET_USER',
+  SET_STORE: 'SET_STORE',
+  SET_COMPANY: 'SET_COMPANY',
+  SET_SETTINGS: 'SET_SETTINGS',
+  SET_SECTIONS: 'SET_SECTIONS',
+  SET_PRODUCTS: 'SET_PRODUCTS',
+  SET_CUSTOMERS: 'SET_CUSTOMERS',
+  SET_ORDERS: 'SET_ORDERS',
+  SET_PAYMENT_METHODS: 'SET_PAYMENT_METHODS',
+  
+  // CRUD actions
   ADD_CUSTOMER: 'ADD_CUSTOMER',
   UPDATE_CUSTOMER: 'UPDATE_CUSTOMER',
+  DELETE_CUSTOMER: 'DELETE_CUSTOMER',
   ADD_ORDER: 'ADD_ORDER',
   UPDATE_ORDER: 'UPDATE_ORDER',
   UPDATE_ORDER_STATUS: 'UPDATE_ORDER_STATUS',
-  
-  // Product actions
   ADD_PRODUCT: 'ADD_PRODUCT',
   UPDATE_PRODUCT: 'UPDATE_PRODUCT',
   DELETE_PRODUCT: 'DELETE_PRODUCT',
-  
-  // Section actions
   ADD_SECTION: 'ADD_SECTION',
   UPDATE_SECTION: 'UPDATE_SECTION',
   DELETE_SECTION: 'DELETE_SECTION',
@@ -230,8 +241,52 @@ function appReducer(state, action) {
       
     case actionTypes.TOGGLE_SIDEBAR:
       return { ...state, sidebarOpen: action.payload ?? !state.sidebarOpen };
+    
+    // Data loading actions (from Supabase)
+    case actionTypes.SET_LOADING:
+      return { 
+        ...state, 
+        loading: { ...state.loading, ...action.payload } 
+      };
       
-    // Data actions
+    case actionTypes.SET_ERROR:
+      return { ...state, error: action.payload };
+      
+    case actionTypes.SET_USER:
+      return { ...state, user: action.payload };
+      
+    case actionTypes.SET_STORE:
+      return { ...state, store: action.payload };
+      
+    case actionTypes.SET_COMPANY:
+      return { ...state, company: action.payload };
+      
+    case actionTypes.SET_SETTINGS:
+      return { ...state, settings: { ...state.settings, ...action.payload } };
+      
+    case actionTypes.SET_SECTIONS: {
+      const sections = action.payload;
+      return { 
+        ...state, 
+        sections,
+        // Set active section to first one if not already set
+        activeSection: state.activeSection || (sections[0]?.id || null),
+      };
+    }
+      
+    case actionTypes.SET_PRODUCTS:
+      return { ...state, products: action.payload };
+      
+    case actionTypes.SET_CUSTOMERS:
+      return { ...state, customers: action.payload };
+      
+    case actionTypes.SET_ORDERS:
+      return { ...state, orders: action.payload };
+      
+    case actionTypes.SET_PAYMENT_METHODS:
+      return { ...state, paymentMethods: action.payload };
+      
+    // CRUD actions - Customers
     case actionTypes.ADD_CUSTOMER:
       return {
         ...state,
@@ -244,8 +299,14 @@ function appReducer(state, action) {
       );
       return { ...state, customers: newCustomers };
     }
+    
+    case actionTypes.DELETE_CUSTOMER:
+      return {
+        ...state,
+        customers: state.customers.filter(c => c.id !== action.payload),
+      };
       
-    case actionTypes.ADD_ORDER:
+    // Order actions
       return {
         ...state,
         orders: [action.payload, ...state.orders],
@@ -390,19 +451,35 @@ export function AppProvider({ children }) {
     setCurrentView: (view) => dispatch({ type: actionTypes.SET_CURRENT_VIEW, payload: view }),
     toggleSidebar: (open) => dispatch({ type: actionTypes.TOGGLE_SIDEBAR, payload: open }),
     
-    // Data
+    // Data loading (for Supabase integration)
+    setLoading: (loadingState) => dispatch({ type: actionTypes.SET_LOADING, payload: loadingState }),
+    setError: (error) => dispatch({ type: actionTypes.SET_ERROR, payload: error }),
+    setUser: (user) => dispatch({ type: actionTypes.SET_USER, payload: user }),
+    setStore: (store) => dispatch({ type: actionTypes.SET_STORE, payload: store }),
+    setCompany: (company) => dispatch({ type: actionTypes.SET_COMPANY, payload: company }),
+    setSettings: (settings) => dispatch({ type: actionTypes.SET_SETTINGS, payload: settings }),
+    setSections: (sections) => dispatch({ type: actionTypes.SET_SECTIONS, payload: sections }),
+    setProducts: (products) => dispatch({ type: actionTypes.SET_PRODUCTS, payload: products }),
+    setCustomers: (customers) => dispatch({ type: actionTypes.SET_CUSTOMERS, payload: customers }),
+    setOrders: (orders) => dispatch({ type: actionTypes.SET_ORDERS, payload: orders }),
+    setPaymentMethods: (methods) => dispatch({ type: actionTypes.SET_PAYMENT_METHODS, payload: methods }),
+    
+    // Customers CRUD
     addCustomer: (customer) => dispatch({ type: actionTypes.ADD_CUSTOMER, payload: customer }),
     updateCustomer: (customer) => dispatch({ type: actionTypes.UPDATE_CUSTOMER, payload: customer }),
+    deleteCustomer: (customerId) => dispatch({ type: actionTypes.DELETE_CUSTOMER, payload: customerId }),
+    
+    // Orders CRUD
     addOrder: (order) => dispatch({ type: actionTypes.ADD_ORDER, payload: order }),
     updateOrder: (order) => dispatch({ type: actionTypes.UPDATE_ORDER, payload: order }),
     updateOrderStatus: (orderId, status) => dispatch({ type: actionTypes.UPDATE_ORDER_STATUS, payload: { orderId, status } }),
     
-    // Products
+    // Products CRUD
     addProduct: (product) => dispatch({ type: actionTypes.ADD_PRODUCT, payload: product }),
     updateProduct: (product) => dispatch({ type: actionTypes.UPDATE_PRODUCT, payload: product }),
     deleteProduct: (productId) => dispatch({ type: actionTypes.DELETE_PRODUCT, payload: productId }),
     
-    // Sections
+    // Sections CRUD
     addSection: (section) => dispatch({ type: actionTypes.ADD_SECTION, payload: section }),
     updateSection: (section) => dispatch({ type: actionTypes.UPDATE_SECTION, payload: section }),
     deleteSection: (sectionId) => dispatch({ type: actionTypes.DELETE_SECTION, payload: sectionId }),
@@ -410,11 +487,15 @@ export function AppProvider({ children }) {
     // Process order
     processOrder: (paymentInfo) => {
       const calculations = ticketCalculations();
-      const orderNumber = Math.max(...state.orders.map(o => o.order_number), 3480) + 1;
+      // Generate order number - handle empty orders array
+      const existingNumbers = state.orders.map(o => o.order_number).filter(n => n);
+      const orderNumber = existingNumbers.length > 0 
+        ? Math.max(...existingNumbers) + 1 
+        : 1;
       
       const newOrder = {
-        id: `ord-${Date.now()}`,
-        store_id: state.store.id,
+        id: generateId('ord'),
+        store_id: state.store?.id || null,
         customer_id: state.ticket.customer?.id || null,
         order_number: orderNumber,
         customer_name: state.ticket.customer

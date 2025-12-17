@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Eye, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { statusConfig } from '../data/sampleData';
+import { statusConfig } from '../data/helpers';
 
 function OrdersPage() {
   const { state, actions } = useApp();
