@@ -6,6 +6,7 @@ import POSScreen from './pages/POSScreen';
 import OrdersPage from './pages/OrdersPage';
 import MachinesPage from './pages/MachinesPage';
 import CustomersPage from './pages/CustomersPage';
+import AnalyticsPage from './pages/AnalyticsPage';
 
 function App() {
   const { state } = useApp();
@@ -17,6 +18,7 @@ function App() {
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/machines" element={<MachinesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
