@@ -157,6 +157,7 @@ function POSScreen() {
             onClick={() => handleProductClick(product)}
             isExpress={state.ticket.isExpress}
             delay={index * 30}
+            itbmsRate={state.settings?.itbms_rate || 7}
           />
         ))}
       </div>
@@ -179,6 +180,7 @@ function POSScreen() {
           isExpress={state.ticket.isExpress}
           onClose={() => setWeightModalProduct(null)}
           onSubmit={(entries) => handleWeightEntry(weightModalProduct, entries)}
+          itbmsRate={state.settings?.itbms_rate || 7}
         />
       )}
       
@@ -188,6 +190,7 @@ function POSScreen() {
           childProducts={getChildProducts(childModalProduct.id)}
           onClose={() => setChildModalProduct(null)}
           onSelect={handleChildProductSelect}
+          itbmsRate={state.settings?.itbms_rate || 7}
         />
       )}
       
@@ -207,8 +210,10 @@ function POSScreen() {
 }
 
 // Product Tile Component
-function ProductTile({ product, onClick, isExpress, delay }) {
-  const price = isExpress ? (product.express_price || product.price) : product.price;
+function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
+  const basePrice = isExpress ? (product.express_price || product.price) : product.price;
+  // Calculate price with ITBMS included for display
+  const priceWithTax = basePrice * (1 + itbmsRate / 100);
   const isWeightBased = product.pricing_type === 'weight';
   const hasChildren = product.has_children;
   
@@ -228,17 +233,17 @@ function ProductTile({ product, onClick, isExpress, delay }) {
         {product.name}
       </p>
       
-      {/* Price Badge */}
+      {/* Price Badge - showing price WITH ITBMS */}
       {isWeightBased ? (
         <div className="flex flex-col items-center">
           <span className="text-xs text-slate-500">por kg</span>
           <span className="text-sm font-semibold text-primary-600">
-            B/{price.toFixed(2)}
+            B/{priceWithTax.toFixed(2)}
           </span>
         </div>
       ) : (
         <span className="text-sm font-semibold text-primary-600">
-          B/{price.toFixed(2)}
+          B/{priceWithTax.toFixed(2)}
         </span>
       )}
       

@@ -1,8 +1,11 @@
 import React from 'react';
 import { X } from 'lucide-react';
 
-function ChildProductsModal({ parentProduct, childProducts, onClose, onSelect }) {
+function ChildProductsModal({ parentProduct, childProducts, onClose, onSelect, itbmsRate = 7 }) {
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
+  
+  // Calculate price with ITBMS
+  const getPriceWithTax = (basePrice) => basePrice * (1 + itbmsRate / 100);
   
   return (
     <div className="modal-backdrop flex items-center justify-center p-4 animate-fade-in">
@@ -36,7 +39,7 @@ function ChildProductsModal({ parentProduct, childProducts, onClose, onSelect })
                 {child.name}
               </span>
               <span className="font-semibold text-primary-600">
-                {formatCurrency(child.price)}
+                {formatCurrency(getPriceWithTax(child.price))}
               </span>
             </button>
           ))}

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Scale, Plus, Trash2, Droplets, Package } from 'lucide-react';
 
-function WeightEntryModal({ product, isExpress, onClose, onSubmit }) {
+function WeightEntryModal({ product, isExpress, onClose, onSubmit, itbmsRate = 7 }) {
   const [entries, setEntries] = useState([]);
   const [currentEntry, setCurrentEntry] = useState({
     weight: '',
@@ -10,10 +10,12 @@ function WeightEntryModal({ product, isExpress, onClose, onSubmit }) {
     wetWeight: false,
   });
   
-  const price = isExpress ? (product.express_price || product.price) : product.price;
+  const basePrice = isExpress ? (product.express_price || product.price) : product.price;
+  // Calculate price with ITBMS for display
+  const priceWithTax = basePrice * (1 + itbmsRate / 100);
   
   const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
-  const totalPrice = totalWeight * price;
+  const totalPrice = totalWeight * priceWithTax;
   
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
   
@@ -229,15 +231,15 @@ function WeightEntryModal({ product, isExpress, onClose, onSubmit }) {
             </button>
           </div>
           
-          {/* Running Total */}
+          {/* Running Total - showing price WITH ITBMS */}
           <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
             <div className="text-sm text-slate-600">
               <span className="font-medium">{(totalWeight + (parseFloat(currentEntry.weight) || 0)).toFixed(2)} kg</span>
               <span className="text-slate-400"> total × </span>
-              <span>{formatCurrency(price)}/kg</span>
+              <span>{formatCurrency(priceWithTax)}/kg</span>
             </div>
             <div className="text-xl font-bold text-primary-600">
-              {formatCurrency((totalWeight + (parseFloat(currentEntry.weight) || 0)) * price)}
+              {formatCurrency((totalWeight + (parseFloat(currentEntry.weight) || 0)) * priceWithTax)}
             </div>
           </div>
         </div>

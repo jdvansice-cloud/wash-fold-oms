@@ -795,14 +795,25 @@ function ProductsSettings() {
 
 // Product Form Modal
 function ProductFormModal({ product, sections, products, onClose, onSave }) {
+  const { state } = useApp();
+  const ITBMS_RATE = state.settings?.itbms_rate || 7; // Default 7%
+  
   const isEditing = product !== null;
+  
+  // Calculate initial total prices from base prices if editing
+  const calculateTotalFromBase = (basePrice) => {
+    if (!basePrice) return '';
+    return (basePrice * (1 + ITBMS_RATE / 100)).toFixed(2);
+  };
+  
   const [formData, setFormData] = useState({
     name: product?.name || '',
     section_id: product?.section_id || sections[0]?.id || '',
     icon: product?.icon || '📦',
     pricing_type: product?.pricing_type || 'quantity',
-    price: product?.price || '',
-    express_price: product?.express_price || '',
+    // Store total prices (with ITBMS) for input
+    total_price: product?.price ? calculateTotalFromBase(product.price) : '',
+    total_express_price: product?.express_price ? calculateTotalFromBase(product.express_price) : '',
     cost: product?.cost || '',
     min_quantity: product?.min_quantity || 1,
     pieces_per_unit: product?.pieces_per_unit || 1,
@@ -812,17 +823,45 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
     extra_days: product?.extra_days || 0,
   });
   
+  // Calculate base price and ITBMS from total price
+  const calculatePriceBreakdown = (totalPrice) => {
+    if (!totalPrice || isNaN(parseFloat(totalPrice))) {
+      return { basePrice: 0, itbms: 0 };
+    }
+    const total = parseFloat(totalPrice);
+    const basePrice = total / (1 + ITBMS_RATE / 100);
+    const itbms = total - basePrice;
+    return { basePrice, itbms };
+  };
+  
+  const priceBreakdown = calculatePriceBreakdown(formData.total_price);
+  const expressPriceBreakdown = calculatePriceBreakdown(formData.total_express_price);
+  
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
   
   const handleSubmit = () => {
+    // Calculate base prices to store in DB
+    const { basePrice } = calculatePriceBreakdown(formData.total_price);
+    const { basePrice: expressBasePrice } = calculatePriceBreakdown(formData.total_express_price);
+    
     onSave({
       id: product?.id || `prod-${Date.now()}`,
-      ...formData,
-      price: parseFloat(formData.price) || 0,
-      express_price: parseFloat(formData.express_price) || 0,
+      name: formData.name,
+      section_id: formData.section_id,
+      icon: formData.icon,
+      pricing_type: formData.pricing_type,
+      // Store base price (without ITBMS) in DB
+      price: parseFloat(basePrice.toFixed(2)) || 0,
+      express_price: parseFloat(expressBasePrice.toFixed(2)) || 0,
       cost: parseFloat(formData.cost) || 0,
+      min_quantity: formData.min_quantity,
+      pieces_per_unit: formData.pieces_per_unit,
+      parent_id: formData.parent_id || null,
+      is_active: formData.is_active,
+      is_taxable: formData.is_taxable,
+      extra_days: formData.extra_days,
     });
   };
   
@@ -890,6 +929,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                   {iconOptions.slice(0, 8).map((emoji) => (
                     <button
                       key={emoji}
+                      type="button"
                       onClick={() => handleChange('icon', emoji)}
                       className={`p-1 text-lg rounded hover:bg-slate-100 ${formData.icon === emoji ? 'bg-primary-100' : ''}`}
                     >
@@ -905,6 +945,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
               <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Precio</label>
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={() => handleChange('pricing_type', 'quantity')}
                   className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
                     formData.pricing_type === 'quantity'
@@ -916,6 +957,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                   Cantidad
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleChange('pricing_type', 'weight')}
                   className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
                     formData.pricing_type === 'weight'
@@ -947,39 +989,83 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
               <p className="text-xs text-slate-400 mt-1">Si es sub-producto, selecciona el padre</p>
             </div>
             
-            {/* Price */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Precio {formData.pricing_type === 'weight' ? '(por kg)' : ''} <span className="text-error-500">*</span>
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">B/</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.price}
-                  onChange={(e) => handleChange('price', e.target.value)}
-                  className="input pl-9"
-                  placeholder="0.00"
-                />
+            {/* Price Section - with ITBMS calculation */}
+            <div className="col-span-2 p-4 bg-slate-50 rounded-xl space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Percent className="w-4 h-4 text-primary-500" />
+                <span className="text-sm font-medium text-slate-700">
+                  Precios (ITBMS {ITBMS_RATE}% incluido)
+                </span>
               </div>
-            </div>
-            
-            {/* Express Price */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Precio Express
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">B/</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.express_price}
-                  onChange={(e) => handleChange('express_price', e.target.value)}
-                  className="input pl-9"
-                  placeholder="0.00"
-                />
+              
+              <div className="grid grid-cols-2 gap-4">
+                {/* Total Price (with ITBMS) */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Precio de Venta {formData.pricing_type === 'weight' ? '(por kg)' : ''} <span className="text-error-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">B/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.total_price}
+                      onChange={(e) => handleChange('total_price', e.target.value)}
+                      className="input pl-9"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  {formData.total_price && (
+                    <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Precio base:</span>
+                        <span className="font-medium text-slate-700">B/{priceBreakdown.basePrice.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs mt-1">
+                        <span className="text-slate-500">ITBMS ({ITBMS_RATE}%):</span>
+                        <span className="font-medium text-slate-700">B/{priceBreakdown.itbms.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs mt-1 pt-1 border-t border-slate-100">
+                        <span className="text-slate-600 font-medium">Total:</span>
+                        <span className="font-bold text-primary-600">B/{parseFloat(formData.total_price).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Express Total Price (with ITBMS) */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Precio Express {formData.pricing_type === 'weight' ? '(por kg)' : ''}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">B/</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={formData.total_express_price}
+                      onChange={(e) => handleChange('total_express_price', e.target.value)}
+                      className="input pl-9"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  {formData.total_express_price && (
+                    <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Precio base:</span>
+                        <span className="font-medium text-slate-700">B/{expressPriceBreakdown.basePrice.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs mt-1">
+                        <span className="text-slate-500">ITBMS ({ITBMS_RATE}%):</span>
+                        <span className="font-medium text-slate-700">B/{expressPriceBreakdown.itbms.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-xs mt-1 pt-1 border-t border-slate-100">
+                        <span className="text-slate-600 font-medium">Total:</span>
+                        <span className="font-bold text-warning-600">B/{parseFloat(formData.total_express_price).toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -999,6 +1085,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                   placeholder="0.00"
                 />
               </div>
+              <p className="text-xs text-slate-400 mt-1">Para cálculo de margen (no incluye ITBMS)</p>
             </div>
             
             {/* Min Quantity */}
@@ -1073,10 +1160,10 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
         
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-100">
-          <button onClick={onClose} className="btn-secondary">
+          <button type="button" onClick={onClose} className="btn-secondary">
             Cancelar
           </button>
-          <button onClick={handleSubmit} className="btn-primary">
+          <button type="button" onClick={handleSubmit} className="btn-primary">
             <Save className="w-4 h-4" />
             {isEditing ? 'Guardar Cambios' : 'Crear Producto'}
           </button>
