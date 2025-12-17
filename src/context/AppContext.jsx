@@ -75,6 +75,16 @@ const actionTypes = {
   ADD_ORDER: 'ADD_ORDER',
   UPDATE_ORDER: 'UPDATE_ORDER',
   UPDATE_ORDER_STATUS: 'UPDATE_ORDER_STATUS',
+  
+  // Product actions
+  ADD_PRODUCT: 'ADD_PRODUCT',
+  UPDATE_PRODUCT: 'UPDATE_PRODUCT',
+  DELETE_PRODUCT: 'DELETE_PRODUCT',
+  
+  // Section actions
+  ADD_SECTION: 'ADD_SECTION',
+  UPDATE_SECTION: 'UPDATE_SECTION',
+  DELETE_SECTION: 'DELETE_SECTION',
 };
 
 // Reducer
@@ -256,6 +266,46 @@ function appReducer(state, action) {
       );
       return { ...state, orders: newOrders };
     }
+    
+    // Product actions
+    case actionTypes.ADD_PRODUCT:
+      return {
+        ...state,
+        products: [...state.products, action.payload],
+      };
+      
+    case actionTypes.UPDATE_PRODUCT: {
+      const newProducts = state.products.map(p =>
+        p.id === action.payload.id ? { ...p, ...action.payload } : p
+      );
+      return { ...state, products: newProducts };
+    }
+    
+    case actionTypes.DELETE_PRODUCT:
+      return {
+        ...state,
+        products: state.products.filter(p => p.id !== action.payload),
+      };
+      
+    // Section actions
+    case actionTypes.ADD_SECTION:
+      return {
+        ...state,
+        sections: [...state.sections, action.payload],
+      };
+      
+    case actionTypes.UPDATE_SECTION: {
+      const newSections = state.sections.map(s =>
+        s.id === action.payload.id ? { ...s, ...action.payload } : s
+      );
+      return { ...state, sections: newSections };
+    }
+    
+    case actionTypes.DELETE_SECTION:
+      return {
+        ...state,
+        sections: state.sections.filter(s => s.id !== action.payload),
+      };
       
     default:
       return state;
@@ -346,6 +396,16 @@ export function AppProvider({ children }) {
     addOrder: (order) => dispatch({ type: actionTypes.ADD_ORDER, payload: order }),
     updateOrder: (order) => dispatch({ type: actionTypes.UPDATE_ORDER, payload: order }),
     updateOrderStatus: (orderId, status) => dispatch({ type: actionTypes.UPDATE_ORDER_STATUS, payload: { orderId, status } }),
+    
+    // Products
+    addProduct: (product) => dispatch({ type: actionTypes.ADD_PRODUCT, payload: product }),
+    updateProduct: (product) => dispatch({ type: actionTypes.UPDATE_PRODUCT, payload: product }),
+    deleteProduct: (productId) => dispatch({ type: actionTypes.DELETE_PRODUCT, payload: productId }),
+    
+    // Sections
+    addSection: (section) => dispatch({ type: actionTypes.ADD_SECTION, payload: section }),
+    updateSection: (section) => dispatch({ type: actionTypes.UPDATE_SECTION, payload: section }),
+    deleteSection: (sectionId) => dispatch({ type: actionTypes.DELETE_SECTION, payload: sectionId }),
     
     // Process order
     processOrder: (paymentInfo) => {

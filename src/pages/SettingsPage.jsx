@@ -494,28 +494,51 @@ function NotificationsSettings() {
 
 // Products Settings - Full Implementation
 function ProductsSettings() {
-  const { state } = useApp();
+  const { state, actions } = useApp();
   const [activeTab, setActiveTab] = useState('products'); // products, sections, preferences
   const [selectedSection, setSelectedSection] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showSectionModal, setShowSectionModal] = useState(false);
   
-  // Sample sections from state
-  const sections = state.sections || [
-    { id: 'sec-001', name: 'Lava y Dobla', color: '#0ea5e9', is_active: true },
-    { id: 'sec-002', name: 'Lavamático', color: '#8b5cf6', is_active: true },
-    { id: 'sec-003', name: 'Productos', color: '#10b981', is_active: true },
-    { id: 'sec-004', name: 'Corporativo', color: '#f59e0b', is_active: true },
-  ];
+  const ITBMS_RATE = state.settings?.itbms_rate || 7;
   
-  // Sample products from state
+  // Helper to calculate price with ITBMS
+  const getPriceWithTax = (basePrice) => {
+    if (!basePrice) return null;
+    return basePrice * (1 + ITBMS_RATE / 100);
+  };
+  
+  // Sections from state
+  const sections = state.sections || [];
+  
+  // Products from state
   const products = state.products || [];
   
   // Filter products by section
   const filteredProducts = selectedSection === 'all' 
     ? products 
     : products.filter(p => p.section_id === selectedSection);
+  
+  // Handle save product
+  const handleSaveProduct = (productData) => {
+    if (editingProduct) {
+      // Update existing product
+      actions.updateProduct(productData);
+    } else {
+      // Add new product
+      actions.addProduct(productData);
+    }
+    setShowAddModal(false);
+    setEditingProduct(null);
+  };
+  
+  // Handle delete product
+  const handleDeleteProduct = (productId) => {
+    if (window.confirm('¿Estás seguro de eliminar este producto?')) {
+      actions.deleteProduct(productId);
+    }
+  };
   
   return (
     <div className="space-y-6">
@@ -578,8 +601,14 @@ function ProductsSettings() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase w-8"></th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Producto</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Sección</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Precio</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">Express</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
+                    <span>Precio</span>
+                    <span className="block text-[10px] font-normal normal-case text-slate-400">con ITBMS</span>
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
+                    <span>Express</span>
+                    <span className="block text-[10px] font-normal normal-case text-slate-400">con ITBMS</span>
+                  </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Tipo</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Activo</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Acciones</th>
@@ -621,10 +650,10 @@ function ProductsSettings() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-800">
-                        {product.price ? `B/${product.price.toFixed(2)}` : '-'}
+                        {product.price ? `B/${getPriceWithTax(product.price).toFixed(2)}` : '-'}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-600">
-                        {product.express_price ? `B/${product.express_price.toFixed(2)}` : '-'}
+                        {product.express_price ? `B/${getPriceWithTax(product.express_price).toFixed(2)}` : '-'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {product.pricing_type === 'weight' ? (
@@ -658,7 +687,10 @@ function ProductsSettings() {
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600">
+                          <button 
+                            onClick={() => handleDeleteProduct(product.id)}
+                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -782,11 +814,7 @@ function ProductsSettings() {
           sections={sections}
           products={products}
           onClose={() => { setShowAddModal(false); setEditingProduct(null); }}
-          onSave={(product) => {
-            console.log('Saving product:', product);
-            setShowAddModal(false);
-            setEditingProduct(null);
-          }}
+          onSave={handleSaveProduct}
         />
       )}
     </div>
