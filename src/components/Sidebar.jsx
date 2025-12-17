@@ -25,7 +25,6 @@ function Sidebar({ isOpen, onClose }) {
     {
       title: 'Configuración',
       items: [
-        { path: '/products', label: 'Productos', icon: Package },
         { path: '/settings', label: 'Configuración', icon: Settings },
       ],
     },
