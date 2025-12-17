@@ -56,15 +56,30 @@ function CustomersPage() {
         />
       </div>
       
-      {/* Customers Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredCustomers.map((customer) => (
-          <CustomerCard
-            key={customer.id}
-            customer={customer}
-            onClick={() => setSelectedCustomer(customer)}
-          />
-        ))}
+      {/* Customers List */}
+      <div className="card overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Cliente</th>
+              <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Teléfono</th>
+              <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden md:table-cell">Email</th>
+              <th className="text-left py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider hidden lg:table-cell">Dirección</th>
+              <th className="text-right py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Puntos</th>
+              <th className="text-right py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Balance</th>
+              <th className="text-center py-3 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filteredCustomers.map((customer) => (
+              <CustomerRow
+                key={customer.id}
+                customer={customer}
+                onClick={() => setSelectedCustomer(customer)}
+              />
+            ))}
+          </tbody>
+        </table>
       </div>
       
       {/* Empty State */}
@@ -101,60 +116,78 @@ function CustomersPage() {
   );
 }
 
-function CustomerCard({ customer, onClick }) {
+function CustomerRow({ customer, onClick }) {
   const hasBalance = customer.account_balance > 0;
+  const address = customer.address_street 
+    ? `${customer.address_street}${customer.address_corregimiento ? ', ' + customer.address_corregimiento : ''}`
+    : '—';
   
   return (
-    <div
+    <tr 
+      className="hover:bg-slate-50 cursor-pointer transition-colors group"
       onClick={onClick}
-      className="card p-4 cursor-pointer hover:shadow-soft transition-shadow group"
     >
-      <div className="flex items-start gap-3">
-        <div className="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-full flex items-center justify-center font-semibold text-lg flex-shrink-0">
-          {customer.first_name[0]}{customer.last_name[0]}
-        </div>
-        
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-slate-800 truncate group-hover:text-primary-600 transition-colors">
+      <td className="py-3 px-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-gradient-to-br from-primary-400 to-primary-600 text-white rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0">
+            {customer.first_name[0]}{customer.last_name[0]}
+          </div>
+          <div>
+            <p className="font-medium text-slate-800 group-hover:text-primary-600 transition-colors">
               {customer.first_name} {customer.last_name}
-            </h3>
+            </p>
             {customer.company_name && (
-              <Building className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <p className="text-xs text-slate-500 flex items-center gap-1">
+                <Building className="w-3 h-3" />
+                {customer.company_name}
+              </p>
             )}
           </div>
-          
-          <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
-            <Phone className="w-3.5 h-3.5" />
-            <span>{customer.phone_country_code} {customer.phone}</span>
-          </div>
-          
-          {customer.email && (
-            <div className="flex items-center gap-2 mt-1 text-sm text-slate-500 truncate">
-              <Mail className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="truncate">{customer.email}</span>
-            </div>
-          )}
         </div>
-      </div>
-      
-      <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-        <div className="flex items-center gap-1 text-xs text-slate-500">
+      </td>
+      <td className="py-3 px-4">
+        <span className="text-sm text-slate-600">{customer.phone_country_code} {customer.phone}</span>
+      </td>
+      <td className="py-3 px-4 hidden md:table-cell">
+        <span className="text-sm text-slate-500">{customer.email || '—'}</span>
+      </td>
+      <td className="py-3 px-4 hidden lg:table-cell">
+        <span className="text-sm text-slate-500 truncate max-w-[200px] block">{address}</span>
+      </td>
+      <td className="py-3 px-4 text-right">
+        <div className="flex items-center justify-end gap-1 text-sm text-slate-500">
           <Star className="w-3.5 h-3.5 text-warning-500" />
-          <span>{customer.loyalty_points || 0} pts</span>
+          <span>{customer.loyalty_points || 0}</span>
         </div>
-        
+      </td>
+      <td className="py-3 px-4 text-right">
         {hasBalance ? (
           <span className="badge bg-error-100 text-error-700">
-            Debe: B/{customer.account_balance.toFixed(2)}
+            B/{customer.account_balance.toFixed(2)}
           </span>
-        ) : customer.can_be_invoiced ? (
-          <span className="badge bg-primary-100 text-primary-700">
-            Facturación
-          </span>
-        ) : null}
-      </div>
-    </div>
+        ) : (
+          <span className="text-sm text-slate-400">B/0.00</span>
+        )}
+      </td>
+      <td className="py-3 px-4 text-center">
+        <div className="flex items-center justify-center gap-1">
+          <button 
+            onClick={(e) => { e.stopPropagation(); onClick(); }}
+            className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+            title="Ver detalles"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); }}
+            className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+            title="Editar"
+          >
+            <Edit className="w-4 h-4" />
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
