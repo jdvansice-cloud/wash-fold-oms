@@ -29,7 +29,8 @@ const initialState = {
   // Current ticket
   ticket: {
     customer: null,
-    isWalkIn: true,
+    isWalkIn: false,
+    customerConfirmed: false, // True when walk-in is explicitly selected or customer chosen
     isExpress: false,
     items: [],
     notes: '',
@@ -52,6 +53,7 @@ const actionTypes = {
   // Ticket actions
   SET_CUSTOMER: 'SET_CUSTOMER',
   SET_WALK_IN: 'SET_WALK_IN',
+  CONFIRM_WALK_IN: 'CONFIRM_WALK_IN',
   SET_EXPRESS: 'SET_EXPRESS',
   ADD_ITEM: 'ADD_ITEM',
   UPDATE_ITEM: 'UPDATE_ITEM',
@@ -86,6 +88,18 @@ function appReducer(state, action) {
           ...state.ticket,
           customer: action.payload,
           isWalkIn: action.payload === null,
+          customerConfirmed: true, // Customer is now confirmed
+        },
+      };
+      
+    case actionTypes.CONFIRM_WALK_IN:
+      return {
+        ...state,
+        ticket: {
+          ...state.ticket,
+          customer: null,
+          isWalkIn: true,
+          customerConfirmed: true, // Walk-in is now confirmed
         },
       };
       
@@ -162,7 +176,8 @@ function appReducer(state, action) {
         ...state,
         ticket: {
           customer: null,
-          isWalkIn: true,
+          isWalkIn: false,
+          customerConfirmed: false,
           isExpress: false,
           items: [],
           notes: '',
@@ -309,6 +324,7 @@ export function AppProvider({ children }) {
     // Ticket
     setCustomer: (customer) => dispatch({ type: actionTypes.SET_CUSTOMER, payload: customer }),
     setWalkIn: (isWalkIn) => dispatch({ type: actionTypes.SET_WALK_IN, payload: isWalkIn }),
+    confirmWalkIn: () => dispatch({ type: actionTypes.CONFIRM_WALK_IN }),
     setExpress: (isExpress) => dispatch({ type: actionTypes.SET_EXPRESS, payload: isExpress }),
     addItem: (item) => dispatch({ type: actionTypes.ADD_ITEM, payload: item }),
     updateItem: (index, updates) => dispatch({ type: actionTypes.UPDATE_ITEM, payload: { index, updates } }),

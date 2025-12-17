@@ -51,9 +51,13 @@ function TicketPanel() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCustomerModalOpen(true)}
-            className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors text-left"
+            className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
+              ticket.customerConfirmed 
+                ? 'bg-slate-50 hover:bg-slate-100' 
+                : 'bg-amber-50 border-2 border-amber-200 hover:bg-amber-100'
+            }`}
           >
-            <User className="w-5 h-5 text-slate-400" />
+            <User className={`w-5 h-5 ${ticket.customerConfirmed ? 'text-slate-400' : 'text-amber-500'}`} />
             <div className="flex-1 min-w-0">
               {ticket.customer ? (
                 <>
@@ -64,10 +68,15 @@ function TicketPanel() {
                     {ticket.customer.phone_country_code} {ticket.customer.phone}
                   </p>
                 </>
+              ) : ticket.customerConfirmed ? (
+                <>
+                  <p className="font-medium text-slate-700">Walk-in</p>
+                  <p className="text-xs text-slate-500">Cliente sin registrar</p>
+                </>
               ) : (
                 <>
-                  <p className="text-slate-500">Cliente</p>
-                  <p className="text-xs text-slate-400">Walk-in</p>
+                  <p className="text-amber-700 font-medium">Seleccionar Cliente</p>
+                  <p className="text-xs text-amber-600">Haz clic para elegir</p>
                 </>
               )}
             </div>
@@ -113,7 +122,7 @@ function TicketPanel() {
         </div>
         
         {/* Pending Orders Alert */}
-        {ticket.customer && (
+        {ticket.customer && ticket.customerConfirmed && (
           <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>2 órdenes pendientes</span>
@@ -356,6 +365,10 @@ function TicketPanel() {
           onClose={() => setCustomerModalOpen(false)}
           onSelect={(customer) => {
             actions.setCustomer(customer);
+            setCustomerModalOpen(false);
+          }}
+          onWalkIn={() => {
+            actions.confirmWalkIn();
             setCustomerModalOpen(false);
           }}
         />

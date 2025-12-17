@@ -3,11 +3,17 @@ import { useApp } from '../context/AppContext';
 import { getProductsBySection, getChildProducts } from '../data/sampleData';
 import WeightEntryModal from '../components/modals/WeightEntryModal';
 import ChildProductsModal from '../components/modals/ChildProductsModal';
+import CustomerSearchModal from '../components/modals/CustomerSearchModal';
 
 function POSScreen() {
   const { state, actions } = useApp();
   const [weightModalProduct, setWeightModalProduct] = useState(null);
   const [childModalProduct, setChildModalProduct] = useState(null);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState(null);
+  
+  // Check if customer is selected (either walk-in confirmed or actual customer)
+  const hasCustomerSelected = state.ticket.customer !== null || state.ticket.customerConfirmed;
   
   // Get products for active section
   const sectionProducts = useMemo(() => {
@@ -15,6 +21,13 @@ function POSScreen() {
   }, [state.activeSection]);
   
   const handleProductClick = (product) => {
+    // Check if customer is selected first
+    if (!hasCustomerSelected) {
+      setPendingProduct(product);
+      setShowCustomerModal(true);
+      return;
+    }
+    
     // If product has children, show child selection modal
     if (product.has_children) {
       setChildModalProduct(product);
@@ -28,6 +41,10 @@ function POSScreen() {
     }
     
     // For quantity-based products, add directly to ticket
+    addProductToTicket(product);
+  };
+  
+  const addProductToTicket = (product) => {
     const price = state.ticket.isExpress ? (product.express_price || product.price) : product.price;
     actions.addItem({
       product,
@@ -36,6 +53,44 @@ function POSScreen() {
       lineTotal: price,
       pieces: product.pieces_per_unit || 1,
     });
+  };
+  
+  const handleCustomerSelect = (customer) => {
+    actions.setCustomer(customer);
+    setShowCustomerModal(false);
+    
+    // If there was a pending product, process it now
+    if (pendingProduct) {
+      setTimeout(() => {
+        if (pendingProduct.has_children) {
+          setChildModalProduct(pendingProduct);
+        } else if (pendingProduct.pricing_type === 'weight') {
+          setWeightModalProduct(pendingProduct);
+        } else {
+          addProductToTicket(pendingProduct);
+        }
+        setPendingProduct(null);
+      }, 100);
+    }
+  };
+  
+  const handleWalkInSelect = () => {
+    actions.confirmWalkIn();
+    setShowCustomerModal(false);
+    
+    // If there was a pending product, process it now
+    if (pendingProduct) {
+      setTimeout(() => {
+        if (pendingProduct.has_children) {
+          setChildModalProduct(pendingProduct);
+        } else if (pendingProduct.pricing_type === 'weight') {
+          setWeightModalProduct(pendingProduct);
+        } else {
+          addProductToTicket(pendingProduct);
+        }
+        setPendingProduct(null);
+      }, 100);
+    }
   };
   
   const handleWeightEntry = (product, entries) => {
@@ -60,7 +115,19 @@ function POSScreen() {
   };
   
   const handleChildProductSelect = (childProduct) => {
-    handleProductClick(childProduct);
+    // Check if customer is selected first
+    if (!hasCustomerSelected) {
+      setPendingProduct(childProduct);
+      setShowCustomerModal(true);
+      setChildModalProduct(null);
+      return;
+    }
+    
+    if (childProduct.pricing_type === 'weight') {
+      setWeightModalProduct(childProduct);
+    } else {
+      addProductToTicket(childProduct);
+    }
     setChildModalProduct(null);
   };
   
@@ -121,6 +188,18 @@ function POSScreen() {
           childProducts={getChildProducts(childModalProduct.id)}
           onClose={() => setChildModalProduct(null)}
           onSelect={handleChildProductSelect}
+        />
+      )}
+      
+      {showCustomerModal && (
+        <CustomerSearchModal
+          onClose={() => {
+            setShowCustomerModal(false);
+            setPendingProduct(null);
+          }}
+          onSelect={handleCustomerSelect}
+          onWalkIn={handleWalkInSelect}
+          showWalkInPrompt={true}
         />
       )}
     </div>

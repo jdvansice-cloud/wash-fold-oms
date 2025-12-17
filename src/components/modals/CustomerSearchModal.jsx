@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { X, Search, Plus, User, Phone, Mail, Building } from 'lucide-react';
+import { X, Search, Plus, User, Phone, Mail, Building, UserCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 
-function CustomerSearchModal({ onClose, onSelect }) {
+function CustomerSearchModal({ onClose, onSelect, onWalkIn, showWalkInPrompt = false }) {
   const { state, actions } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -22,7 +22,11 @@ function CustomerSearchModal({ onClose, onSelect }) {
   }, [searchQuery, state.customers]);
   
   const handleSelectWalkIn = () => {
-    onSelect(null);
+    if (onWalkIn) {
+      onWalkIn();
+    } else {
+      onSelect(null);
+    }
   };
   
   return (
@@ -31,7 +35,7 @@ function CustomerSearchModal({ onClose, onSelect }) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <h2 className="text-lg font-semibold text-slate-800">
-            {showAddForm ? 'Nuevo Cliente' : 'Seleccionar Cliente'}
+            {showAddForm ? 'Nuevo Cliente' : showWalkInPrompt ? 'Selecciona un Cliente' : 'Seleccionar Cliente'}
           </h2>
           <button
             onClick={onClose}
@@ -40,6 +44,16 @@ function CustomerSearchModal({ onClose, onSelect }) {
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
+        
+        {/* Walk-in Prompt Message */}
+        {showWalkInPrompt && !showAddForm && (
+          <div className="px-4 pt-4 pb-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
+              <p className="font-medium">Selecciona un cliente para continuar</p>
+              <p className="text-amber-600 text-xs mt-1">Puedes elegir un cliente existente o continuar como Walk-in</p>
+            </div>
+          </div>
+        )}
         
         {showAddForm ? (
           <AddCustomerForm 
