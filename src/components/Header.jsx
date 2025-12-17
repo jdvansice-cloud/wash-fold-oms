@@ -27,7 +27,7 @@ function Header() {
     { path: '/', label: 'Nueva Orden', icon: null },
     { path: '/machines', label: 'En Proceso', icon: null },
     { path: '/orders', label: 'Listo', query: '?status=ready', icon: null },
-    { path: '/orders', label: 'Recogidas', query: '?status=completed', icon: null },
+    { path: '/orders', label: 'Completado', query: '?status=completed', icon: null },
   ];
   
   return (

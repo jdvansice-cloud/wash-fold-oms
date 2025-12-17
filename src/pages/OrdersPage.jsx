@@ -1,13 +1,38 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Eye, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { statusConfig } from '../data/sampleData';
 
 function OrdersPage() {
   const { state, actions } = useApp();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState(null);
+  
+  // Get status from URL or default to 'all'
+  const statusFilter = searchParams.get('status') || 'all';
+  
+  // Update filter and URL
+  const setStatusFilter = (newStatus) => {
+    if (newStatus === 'all') {
+      setSearchParams({});
+    } else {
+      setSearchParams({ status: newStatus });
+    }
+  };
+  
+  // Get page title based on filter
+  const getPageTitle = () => {
+    switch (statusFilter) {
+      case 'ready':
+        return 'Órdenes Listas';
+      case 'completed':
+        return 'Órdenes Completadas';
+      default:
+        return 'Órdenes';
+    }
+  };
   
   const filteredOrders = useMemo(() => {
     return state.orders.filter(order => {
@@ -52,7 +77,7 @@ function OrdersPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-800">Órdenes</h1>
+          <h1 className="text-2xl font-display font-bold text-slate-800">{getPageTitle()}</h1>
           <p className="text-sm text-slate-500">{filteredOrders.length} órdenes encontradas</p>
         </div>
       </div>
