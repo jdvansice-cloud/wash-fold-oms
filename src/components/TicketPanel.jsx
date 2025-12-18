@@ -101,11 +101,20 @@ function TicketPanel() {
   };
   
   const canProcess = ticket.items.length > 0;
+  const needsCustomer = ticket.items.length > 0 && !ticket.customerConfirmed;
   
   return (
     <div className="ticket-sidebar h-full flex flex-col bg-white">
       {/* Customer Selection */}
       <div className="p-4 border-b border-slate-100">
+        {/* Customer Required Notification */}
+        {needsCustomer && (
+          <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="font-medium text-amber-800 text-sm">Selecciona un cliente para continuar</p>
+            <p className="text-amber-600 text-xs mt-0.5">Puedes elegir un cliente existente o continuar como Walk-in</p>
+          </div>
+        )}
+        
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
@@ -113,12 +122,14 @@ function TicketPanel() {
               setCustomerModalOpen(true);
             }}
             className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
-              ticket.customerConfirmed 
-                ? 'bg-slate-50 hover:bg-slate-100' 
-                : 'bg-slate-50 hover:bg-slate-100'
+              needsCustomer
+                ? 'bg-amber-50 border-2 border-amber-300 hover:bg-amber-100'
+                : ticket.customerConfirmed 
+                  ? 'bg-slate-50 hover:bg-slate-100' 
+                  : 'bg-slate-50 hover:bg-slate-100'
             }`}
           >
-            <User className={`w-5 h-5 ${ticket.customerConfirmed ? 'text-primary-500' : 'text-slate-400'}`} />
+            <User className={`w-5 h-5 ${needsCustomer ? 'text-amber-500' : ticket.customerConfirmed ? 'text-primary-500' : 'text-slate-400'}`} />
             <div className="flex-1 min-w-0">
               {ticket.customer ? (
                 <>
@@ -136,8 +147,12 @@ function TicketPanel() {
                 </>
               ) : (
                 <>
-                  <p className="text-slate-600 font-medium">Cliente</p>
-                  <p className="text-xs text-slate-400">Opcional - seleccionar al procesar</p>
+                  <p className={`font-medium ${needsCustomer ? 'text-amber-700' : 'text-slate-600'}`}>
+                    {needsCustomer ? 'Seleccionar Cliente' : 'Cliente'}
+                  </p>
+                  <p className={`text-xs ${needsCustomer ? 'text-amber-600' : 'text-slate-400'}`}>
+                    {needsCustomer ? 'Requerido para procesar' : 'Opcional - seleccionar al procesar'}
+                  </p>
                 </>
               )}
             </div>
@@ -151,7 +166,11 @@ function TicketPanel() {
               setCustomerModalMode('select');
               setCustomerModalOpen(true);
             }}
-            className="p-3 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-colors"
+            className={`p-3 rounded-xl transition-colors ${
+              needsCustomer 
+                ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                : 'bg-primary-500 hover:bg-primary-600 text-white'
+            }`}
           >
             <Plus className="w-5 h-5" />
           </button>

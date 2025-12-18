@@ -3,8 +3,8 @@ import {
   Building, Store, Users, CreditCard, Bell, Mail,
   Gift, Tag, Package, Clock, Percent, Save,
   ChevronRight, Check, Settings as SettingsIcon,
-  Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
-  GripVertical, Eye, EyeOff
+  Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown, ChevronUp,
+  GripVertical, Eye, EyeOff, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -500,6 +500,7 @@ function ProductsSettings() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showSectionModal, setShowSectionModal] = useState(false);
+  const [draggedItem, setDraggedItem] = useState(null);
   
   const ITBMS_RATE = state.settings?.itbms_rate || 7;
   
@@ -520,10 +521,112 @@ function ProductsSettings() {
   // Products from state
   const products = state.products || [];
   
+  // Organize products: parents with their children grouped together
+  const organizeProducts = (productList) => {
+    // Get parent products (no parent_id) sorted by display_order
+    const parents = productList
+      .filter(p => !p.parent_id)
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    
+    // Build organized list with children following parents
+    const organized = [];
+    parents.forEach(parent => {
+      organized.push(parent);
+      // Find children of this parent and add them
+      const children = productList
+        .filter(p => p.parent_id === parent.id)
+        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      organized.push(...children);
+    });
+    
+    return organized;
+  };
+  
   // Filter products by section
   const filteredProducts = selectedSection === 'all' 
     ? products 
     : products.filter(p => p.section_id === selectedSection);
+  
+  // Organize filtered products
+  const organizedProducts = organizeProducts(filteredProducts);
+  
+  // Get movable items (parents and standalone products only)
+  const getMovableItems = () => {
+    return organizedProducts.filter(p => !p.parent_id);
+  };
+  
+  // Handle move product up/down
+  const handleMoveProduct = (product, direction) => {
+    if (product.parent_id) return; // Can't move children directly
+    
+    const sectionProducts = products.filter(p => p.section_id === product.section_id && !p.parent_id);
+    const sortedProducts = [...sectionProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const currentIndex = sortedProducts.findIndex(p => p.id === product.id);
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    
+    if (newIndex < 0 || newIndex >= sortedProducts.length) return;
+    
+    // Swap display_order values
+    const swapProduct = sortedProducts[newIndex];
+    const currentOrder = product.display_order || currentIndex;
+    const swapOrder = swapProduct.display_order || newIndex;
+    
+    // Update both products
+    actions.updateProduct({ ...product, display_order: swapOrder });
+    actions.updateProduct({ ...swapProduct, display_order: currentOrder });
+  };
+  
+  // Drag and drop handlers
+  const handleDragStart = (e, product) => {
+    if (product.parent_id) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedItem(product);
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.classList.add('opacity-50');
+  };
+  
+  const handleDragEnd = (e) => {
+    e.currentTarget.classList.remove('opacity-50');
+    setDraggedItem(null);
+  };
+  
+  const handleDragOver = (e, product) => {
+    e.preventDefault();
+    if (!draggedItem || product.parent_id || draggedItem.id === product.id) return;
+    if (draggedItem.section_id !== product.section_id) return;
+    e.dataTransfer.dropEffect = 'move';
+  };
+  
+  const handleDrop = (e, targetProduct) => {
+    e.preventDefault();
+    if (!draggedItem || targetProduct.parent_id) return;
+    if (draggedItem.section_id !== targetProduct.section_id) return;
+    if (draggedItem.id === targetProduct.id) return;
+    
+    // Get all parent products in this section
+    const sectionProducts = products
+      .filter(p => p.section_id === draggedItem.section_id && !p.parent_id)
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    
+    const draggedIndex = sectionProducts.findIndex(p => p.id === draggedItem.id);
+    const targetIndex = sectionProducts.findIndex(p => p.id === targetProduct.id);
+    
+    // Reorder the array
+    const reordered = [...sectionProducts];
+    reordered.splice(draggedIndex, 1);
+    reordered.splice(targetIndex, 0, draggedItem);
+    
+    // Update display_order for all products
+    reordered.forEach((product, index) => {
+      if (product.display_order !== index) {
+        actions.updateProduct({ ...product, display_order: index });
+      }
+    });
+    
+    setDraggedItem(null);
+  };
   
   // Handle save product
   const handleSaveProduct = (productData) => {
@@ -531,8 +634,10 @@ function ProductsSettings() {
       // Update existing product
       actions.updateProduct(productData);
     } else {
-      // Add new product
-      actions.addProduct(productData);
+      // Add new product with display_order at end
+      const sectionProducts = products.filter(p => p.section_id === productData.section_id && !p.parent_id);
+      const maxOrder = Math.max(...sectionProducts.map(p => p.display_order || 0), -1);
+      actions.addProduct({ ...productData, display_order: maxOrder + 1 });
     }
     setShowAddModal(false);
     setEditingProduct(null);
@@ -603,7 +708,7 @@ function ProductsSettings() {
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase w-8"></th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase w-24">Orden</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Producto</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Sección</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
@@ -621,27 +726,78 @@ function ProductsSettings() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredProducts.map((product) => {
+                {organizedProducts.map((product, index) => {
                   const section = sections.find(s => s.id === product.section_id);
                   const isChild = product.parent_id !== null;
                   const displayPrice = getDisplayPrice(product, 'price');
                   const displayExpressPrice = getDisplayPrice(product, 'express_price');
                   
+                  // Get position info for move buttons
+                  const sectionParents = products
+                    .filter(p => p.section_id === product.section_id && !p.parent_id)
+                    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+                  const parentIndex = sectionParents.findIndex(p => p.id === product.id);
+                  const isFirst = parentIndex === 0;
+                  const isLast = parentIndex === sectionParents.length - 1;
+                  
                   return (
-                    <tr key={product.id} className={`hover:bg-slate-50 ${isChild ? 'bg-slate-25' : ''}`}>
+                    <tr 
+                      key={product.id} 
+                      className={`hover:bg-slate-50 transition-colors ${isChild ? 'bg-slate-25' : ''} ${
+                        draggedItem?.id === product.id ? 'opacity-50' : ''
+                      } ${!isChild && selectedSection !== 'all' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                      draggable={!isChild && selectedSection !== 'all'}
+                      onDragStart={(e) => handleDragStart(e, product)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={(e) => handleDragOver(e, product)}
+                      onDrop={(e) => handleDrop(e, product)}
+                    >
                       <td className="px-4 py-3">
-                        <GripVertical className="w-4 h-4 text-slate-300 cursor-grab" />
+                        {!isChild && selectedSection !== 'all' ? (
+                          <div className="flex items-center gap-1">
+                            <GripVertical className="w-4 h-4 text-slate-300 cursor-grab" />
+                            <div className="flex flex-col">
+                              <button
+                                onClick={() => handleMoveProduct(product, 'up')}
+                                disabled={isFirst}
+                                className={`p-1 rounded transition-colors ${
+                                  isFirst 
+                                    ? 'text-slate-200 cursor-not-allowed' 
+                                    : 'text-slate-400 hover:text-primary-600 hover:bg-primary-50'
+                                }`}
+                                title="Mover arriba"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveProduct(product, 'down')}
+                                disabled={isLast}
+                                className={`p-1 rounded transition-colors ${
+                                  isLast 
+                                    ? 'text-slate-200 cursor-not-allowed' 
+                                    : 'text-slate-400 hover:text-primary-600 hover:bg-primary-50'
+                                }`}
+                                title="Mover abajo"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : isChild ? (
+                          <span className="text-slate-300 text-xs pl-6">↳</span>
+                        ) : (
+                          <span className="text-slate-300 text-xs">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <span className="text-2xl">{product.icon || '📦'}</span>
                           <div>
-                            <p className={`font-medium text-slate-800 ${isChild ? 'pl-4 text-sm' : ''}`}>
-                              {isChild && <span className="text-slate-400 mr-1">↳</span>}
+                            <p className={`font-medium text-slate-800 ${isChild ? 'text-sm' : ''}`}>
                               {product.name}
                             </p>
                             {product.has_children && (
-                              <p className="text-xs text-slate-400">Tiene sub-productos</p>
+                              <p className="text-xs text-primary-500">Tiene sub-productos</p>
                             )}
                           </div>
                         </div>
@@ -721,7 +877,20 @@ function ProductsSettings() {
               </tbody>
             </table>
             
-            {filteredProducts.length === 0 && (
+            {/* Help text for reordering */}
+            {selectedSection !== 'all' && organizedProducts.length > 0 && (
+              <div className="px-4 py-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-500">
+                <span className="font-medium">💡 Tip:</span> Usa las flechas o arrastra las filas para reordenar los productos. Los sub-productos se mueven con sus padres.
+              </div>
+            )}
+            
+            {selectedSection === 'all' && organizedProducts.length > 0 && (
+              <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700">
+                <span className="font-medium">ℹ️ Nota:</span> Selecciona una sección específica para poder reordenar los productos.
+              </div>
+            )}
+            
+            {organizedProducts.length === 0 && (
               <div className="text-center py-12 text-slate-400">
                 <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="font-medium">No hay productos</p>

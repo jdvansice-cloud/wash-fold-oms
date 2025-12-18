@@ -2,14 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import WeightEntryModal from '../components/modals/WeightEntryModal';
 import ChildProductsModal from '../components/modals/ChildProductsModal';
-import CustomerSearchModal from '../components/modals/CustomerSearchModal';
 
 function POSScreen() {
   const { state, actions } = useApp();
   const [weightModalProduct, setWeightModalProduct] = useState(null);
   const [childModalProduct, setChildModalProduct] = useState(null);
-  const [showCustomerModal, setShowCustomerModal] = useState(false);
-  const [pendingProduct, setPendingProduct] = useState(null);
   
   // Set default active section when sections load
   useEffect(() => {
@@ -19,28 +16,21 @@ function POSScreen() {
     }
   }, [state.sections, state.activeSection, actions]);
   
-  // Check if customer is selected (either walk-in confirmed or actual customer)
-  const hasCustomerSelected = state.ticket.customer !== null || state.ticket.customerConfirmed;
-  
-  // Get products for active section from state (not sampleData)
+  // Get products for active section from state (sorted by display_order)
   const sectionProducts = useMemo(() => {
     return state.products
-      .filter(p => p.section_id === state.activeSection && !p.parent_id && p.is_active !== false);
+      .filter(p => p.section_id === state.activeSection && !p.parent_id && p.is_active !== false)
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   }, [state.products, state.activeSection]);
   
-  // Get child products for a parent
+  // Get child products for a parent (sorted by display_order)
   const getChildProducts = (parentId) => {
-    return state.products.filter(p => p.parent_id === parentId && p.is_active !== false);
+    return state.products
+      .filter(p => p.parent_id === parentId && p.is_active !== false)
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   };
   
   const handleProductClick = (product) => {
-    // Check if customer is selected first
-    if (!hasCustomerSelected) {
-      setPendingProduct(product);
-      setShowCustomerModal(true);
-      return;
-    }
-    
     // If product has children, show child selection modal
     if (product.has_children) {
       setChildModalProduct(product);
@@ -68,44 +58,6 @@ function POSScreen() {
     });
   };
   
-  const handleCustomerSelect = (customer) => {
-    actions.setCustomer(customer);
-    setShowCustomerModal(false);
-    
-    // If there was a pending product, process it now
-    if (pendingProduct) {
-      setTimeout(() => {
-        if (pendingProduct.has_children) {
-          setChildModalProduct(pendingProduct);
-        } else if (pendingProduct.pricing_type === 'weight') {
-          setWeightModalProduct(pendingProduct);
-        } else {
-          addProductToTicket(pendingProduct);
-        }
-        setPendingProduct(null);
-      }, 100);
-    }
-  };
-  
-  const handleWalkInSelect = () => {
-    actions.confirmWalkIn();
-    setShowCustomerModal(false);
-    
-    // If there was a pending product, process it now
-    if (pendingProduct) {
-      setTimeout(() => {
-        if (pendingProduct.has_children) {
-          setChildModalProduct(pendingProduct);
-        } else if (pendingProduct.pricing_type === 'weight') {
-          setWeightModalProduct(pendingProduct);
-        } else {
-          addProductToTicket(pendingProduct);
-        }
-        setPendingProduct(null);
-      }, 100);
-    }
-  };
-  
   const handleWeightEntry = (product, entries) => {
     const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
     const totalBags = entries.length;
@@ -128,13 +80,6 @@ function POSScreen() {
   };
   
   const handleChildProductSelect = (childProduct) => {
-    // Check if customer is selected first
-    if (!hasCustomerSelected) {
-      setPendingProduct(childProduct);
-      setShowCustomerModal(true);
-      setChildModalProduct(null);
-      return;
-    }
     
     if (childProduct.pricing_type === 'weight') {
       setWeightModalProduct(childProduct);
@@ -210,18 +155,6 @@ function POSScreen() {
           onClose={() => setChildModalProduct(null)}
           onSelect={handleChildProductSelect}
           itbmsRate={state.settings?.itbms_rate || 7}
-        />
-      )}
-      
-      {showCustomerModal && (
-        <CustomerSearchModal
-          onClose={() => {
-            setShowCustomerModal(false);
-            setPendingProduct(null);
-          }}
-          onSelect={handleCustomerSelect}
-          onWalkIn={handleWalkInSelect}
-          showWalkInPrompt={true}
         />
       )}
     </div>
