@@ -877,26 +877,41 @@ export function AppProvider({ children }) {
       dispatch({ type: actionTypes.ADD_ORDER, payload: newOrder });
       dispatch({ type: actionTypes.CLEAR_TICKET });
       
+      // Debug: Log what we're trying to save
+      console.log('🔵 processOrder called:', {
+        storeId: state.store?.id,
+        hasStore: !!state.store,
+        orderTotal: newOrder.total,
+        paymentMethod: paymentInfo.method,
+      });
+      
       // Save to Supabase in background (don't block UI)
       if (state.store?.id) {
-        import('../lib/supabase').then(({ supabase }) => {
+        console.log('🔵 Attempting to save order to Supabase...');
+        
+        try {
+          const { supabase } = await import('../lib/supabase');
+          
           const orderForDb = {
             store_id: newOrder.store_id,
-            customer_id: newOrder.customer_id,
+            // Only use customer_id if it's a real UUID (not a temp- ID)
+            customer_id: (newOrder.customer_id && !String(newOrder.customer_id).startsWith('temp-')) 
+              ? newOrder.customer_id 
+              : null,
             order_number: newOrder.order_number,
             customer_name: newOrder.customer_name,
             is_walk_in: newOrder.is_walk_in,
             status: newOrder.status,
             is_express: newOrder.is_express,
             subtotal: newOrder.subtotal,
-            discount_amount: newOrder.discount_amount,
+            discount_amount: newOrder.discount_amount || 0,
             discount_type: newOrder.discount_type,
             discount_reason: newOrder.discount_reason,
-            delivery_charge: newOrder.delivery_charge,
+            delivery_charge: newOrder.delivery_charge || 0,
             tax_amount: newOrder.tax_amount,
             total: newOrder.total,
-            total_weight: newOrder.total_weight,
-            total_bags: newOrder.total_bags,
+            total_weight: newOrder.total_weight || 0,
+            total_bags: newOrder.total_bags || 0,
             notes: newOrder.notes,
             promised_date: newOrder.promised_date,
             payment_method: newOrder.payment_method,
@@ -904,24 +919,30 @@ export function AppProvider({ children }) {
             user_name: newOrder.user_name,
           };
           
-          supabase
+          console.log('🔵 Order data for Supabase:', orderForDb);
+          
+          const { data, error } = await supabase
             .from('orders')
             .insert(orderForDb)
             .select()
-            .single()
-            .then(({ data, error }) => {
-              if (error) {
-                console.error('❌ Error saving order to Supabase:', error);
-              } else {
-                console.log('✅ Order saved to Supabase:', data.id);
-                // Update local order with real Supabase ID
-                dispatch({ 
-                  type: actionTypes.UPDATE_ORDER, 
-                  payload: { ...newOrder, supabase_id: data.id, id: data.id, _oldId: newOrder.id } 
-                });
-              }
+            .single();
+          
+          if (error) {
+            console.error('❌ Error saving order to Supabase:', error);
+            console.error('❌ Error details:', JSON.stringify(error, null, 2));
+          } else {
+            console.log('✅ Order saved to Supabase:', data.id);
+            // Update local order with real Supabase ID
+            dispatch({ 
+              type: actionTypes.UPDATE_ORDER, 
+              payload: { ...newOrder, supabase_id: data.id, id: data.id, _oldId: newOrder.id } 
             });
-        });
+          }
+        } catch (err) {
+          console.error('❌ Exception saving order:', err);
+        }
+      } else {
+        console.warn('⚠️ No store ID available, skipping Supabase save');
       }
       
       return newOrder;
