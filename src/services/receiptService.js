@@ -4,7 +4,7 @@
  * Saves customer copy to Supabase Storage
  */
 
-import { supabase } from '../config/supabase';
+import { supabase } from '../lib/supabase';
 
 // QZ Tray configuration
 const PRINTER_NAME = 'EPSON TM-T20III Receipt'; // Adjust to match your printer name in Windows

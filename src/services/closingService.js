@@ -3,7 +3,7 @@
  * Handles end-of-day reconciliation reports
  */
 
-import { supabase } from '../config/supabase';
+import { supabase } from '../lib/supabase';
 
 const PAPER_WIDTH = 48;
 
