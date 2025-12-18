@@ -21,6 +21,7 @@ function DailyClosingPage() {
   const [isClosing, setIsClosing] = useState(false);
   const [showClosingConfirm, setShowClosingConfirm] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
+    orders: true,
     payments: true,
     discounts: true,
     refunds: true,
@@ -36,16 +37,28 @@ function DailyClosingPage() {
 
   // Get transactions for selected date
   const dailyData = useMemo(() => {
-    const startOfDay = new Date(selectedDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(selectedDate);
-    endOfDay.setHours(23, 59, 59, 999);
+    // Parse selected date and create start/end of day in local timezone
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+
+    console.log('📊 Daily Closing Debug:', {
+      selectedDate,
+      startOfDay: startOfDay.toISOString(),
+      endOfDay: endOfDay.toISOString(),
+      totalOrdersInState: state.orders?.length || 0,
+      sampleOrder: state.orders?.[0] || 'no orders',
+    });
 
     // Filter orders for the selected date
-    const dayOrders = state.orders.filter(order => {
+    const dayOrders = (state.orders || []).filter(order => {
+      if (!order.created_at) return false;
       const orderDate = new Date(order.created_at);
-      return orderDate >= startOfDay && orderDate <= endOfDay;
+      const isInRange = orderDate >= startOfDay && orderDate <= endOfDay;
+      return isInRange;
     });
+
+    console.log('📊 Filtered orders for date:', dayOrders.length);
 
     // Calculate sales by payment method
     const salesByPayment = {
@@ -69,12 +82,25 @@ function DailyClosingPage() {
     const transactionsByUser = {};
 
     dayOrders.forEach(order => {
-      // Sales by payment method
-      const method = order.payment_method || 'cash';
-      salesByPayment[method] = (salesByPayment[method] || 0) + (order.total || 0);
+      // Get payment method - handle both formats (payment_method field or payments array)
+      let method = order.payment_method;
+      if (!method && order.payments && order.payments.length > 0) {
+        method = order.payments[0].method;
+      }
+      method = method || 'cash';
+      
+      // Get order total
+      const orderTotal = parseFloat(order.total) || 0;
+      
+      // Only add to valid payment methods
+      if (salesByPayment.hasOwnProperty(method)) {
+        salesByPayment[method] += orderTotal;
+      } else {
+        salesByPayment.cash += orderTotal; // Default to cash if unknown method
+      }
 
       // Track by user
-      const userId = order.user_id || 'user-1';
+      const userId = order.user_id || 'default-user';
       const userName = order.user_name || users.find(u => u.id === userId)?.name || 'Usuario';
       
       if (!transactionsByUser[userId]) {
@@ -88,11 +114,12 @@ function DailyClosingPage() {
       }
       
       transactionsByUser[userId].orders += 1;
-      transactionsByUser[userId].sales += order.total || 0;
+      transactionsByUser[userId].sales += orderTotal;
 
       // Track discounts
-      if (order.discount_amount > 0) {
-        transactionsByUser[userId].discounts += order.discount_amount;
+      const discountAmount = parseFloat(order.discount_amount) || 0;
+      if (discountAmount > 0) {
+        transactionsByUser[userId].discounts += discountAmount;
         
         if (!discountsByUser[userId]) {
           discountsByUser[userId] = {
@@ -102,20 +129,21 @@ function DailyClosingPage() {
             details: [],
           };
         }
-        discountsByUser[userId].total += order.discount_amount;
+        discountsByUser[userId].total += discountAmount;
         discountsByUser[userId].count += 1;
         discountsByUser[userId].details.push({
           orderNumber: order.order_number,
-          amount: order.discount_amount,
+          amount: discountAmount,
           type: order.discount_type || 'manual',
           reason: order.discount_reason || 'Descuento manual',
         });
       }
 
       // Track refunds
-      if (order.refund_amount > 0 || order.status === 'refunded') {
-        const refundAmount = order.refund_amount || order.total || 0;
-        transactionsByUser[userId].refunds += refundAmount;
+      const refundAmount = parseFloat(order.refund_amount) || 0;
+      if (refundAmount > 0 || order.status === 'refunded') {
+        const actualRefund = refundAmount || orderTotal;
+        transactionsByUser[userId].refunds += actualRefund;
         
         if (!refundsByUser[userId]) {
           refundsByUser[userId] = {
@@ -125,11 +153,11 @@ function DailyClosingPage() {
             details: [],
           };
         }
-        refundsByUser[userId].total += refundAmount;
+        refundsByUser[userId].total += actualRefund;
         refundsByUser[userId].count += 1;
         refundsByUser[userId].details.push({
           orderNumber: order.order_number,
-          amount: refundAmount,
+          amount: actualRefund,
           reason: order.refund_reason || 'Sin especificar',
         });
       }
@@ -143,8 +171,8 @@ function DailyClosingPage() {
     
     // Expected cash = opening + cash sales - cash refunds
     const cashRefunds = dayOrders
-      .filter(o => o.payment_method === 'cash' && (o.refund_amount > 0 || o.status === 'refunded'))
-      .reduce((sum, o) => sum + (o.refund_amount || o.total || 0), 0);
+      .filter(o => o.payment_method === 'cash' && (parseFloat(o.refund_amount) > 0 || o.status === 'refunded'))
+      .reduce((sum, o) => sum + (parseFloat(o.refund_amount) || parseFloat(o.total) || 0), 0);
     const expectedCash = openingBalance + salesByPayment.cash - cashRefunds;
 
     return {
@@ -159,6 +187,12 @@ function DailyClosingPage() {
       discountsByUser,
       refundsByUser,
       transactionsByUser,
+      // Debug info
+      debug: {
+        totalOrdersInState: state.orders?.length || 0,
+        startOfDay: startOfDay.toISOString(),
+        endOfDay: endOfDay.toISOString(),
+      }
     };
   }, [state.orders, selectedDate, openingBalance, users]);
 
@@ -326,9 +360,112 @@ function DailyClosingPage() {
         />
       </div>
 
+      {/* No Orders Info */}
+      {dailyData.totalOrders === 0 && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium text-amber-800">No hay órdenes para esta fecha</p>
+            <p className="text-sm text-amber-600 mt-1">
+              {dailyData.debug?.totalOrdersInState > 0 
+                ? `Hay ${dailyData.debug.totalOrdersInState} órdenes en el sistema, pero ninguna coincide con la fecha seleccionada.`
+                : 'No hay órdenes registradas en el sistema. Las órdenes aparecerán aquí después de procesarlas en el POS.'
+              }
+            </p>
+            <p className="text-xs text-amber-500 mt-2">
+              Nota: Las órdenes creadas en esta sesión se mostrarán aquí. Las órdenes se guardarán permanentemente cuando se implemente la sincronización con la base de datos.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Payment Methods & Details */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Orders List */}
+          <div className="card">
+            <button
+              onClick={() => toggleSection('orders')}
+              className="w-full p-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-success-100 text-success-600 rounded-lg">
+                  <ClipboardCheck className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <h2 className="font-semibold text-slate-800">Órdenes del Día</h2>
+                  <p className="text-sm text-slate-500">{dailyData.totalOrders} órdenes • {formatCurrency(dailyData.totalSales)}</p>
+                </div>
+              </div>
+              {expandedSections.orders ? (
+                <ChevronUp className="w-5 h-5 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-slate-400" />
+              )}
+            </button>
+            
+            {expandedSections.orders && (
+              <div className="p-4 pt-0">
+                {dailyData.orders.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase">#</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Cliente</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Hora</th>
+                          <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase">Pago</th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {dailyData.orders.map((order) => {
+                          const paymentMethod = order.payment_method || (order.payments && order.payments[0]?.method) || 'cash';
+                          const paymentLabel = paymentMethodLabels[paymentMethod]?.label || paymentMethod;
+                          const orderTime = new Date(order.created_at).toLocaleTimeString('es-PA', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          });
+                          
+                          return (
+                            <tr key={order.id} className="hover:bg-slate-50">
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1">
+                                  <span className="font-medium text-slate-800">#{order.order_number}</span>
+                                  {order.is_express && (
+                                    <span className="text-xs bg-warning-100 text-warning-700 px-1.5 py-0.5 rounded">Exp</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-sm text-slate-600">{order.customer_name || 'Walk-in'}</td>
+                              <td className="px-3 py-2 text-sm text-slate-500">{orderTime}</td>
+                              <td className="px-3 py-2">
+                                <span className={`text-xs px-2 py-1 rounded-full ${paymentMethodLabels[paymentMethod]?.color || 'bg-slate-100 text-slate-600'}`}>
+                                  {paymentLabel}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="font-semibold text-slate-800">{formatCurrency(order.total || 0)}</span>
+                                {order.discount_amount > 0 && (
+                                  <span className="block text-xs text-warning-600">-{formatCurrency(order.discount_amount)}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-400">
+                    <ClipboardCheck className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No hay órdenes para esta fecha</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Sales by Payment Method */}
           <div className="card">
             <button

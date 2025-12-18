@@ -294,9 +294,15 @@ function appReducer(state, action) {
       };
       
     case actionTypes.UPDATE_CUSTOMER: {
-      const newCustomers = state.customers.map(c =>
-        c.id === action.payload.id ? { ...c, ...action.payload } : c
-      );
+      // Allow matching by id OR email (for when replacing temp ID with real ID)
+      const newCustomers = state.customers.map(c => {
+        if (c.id === action.payload.id || c.id === action.payload._oldId ||
+            (action.payload.email && c.email === action.payload.email)) {
+          const { _oldId, ...updateData } = action.payload;
+          return { ...c, ...updateData };
+        }
+        return c;
+      });
       return { ...state, customers: newCustomers };
     }
     
@@ -314,9 +320,15 @@ function appReducer(state, action) {
       };
       
     case actionTypes.UPDATE_ORDER: {
-      const newOrders = state.orders.map(o =>
-        o.id === action.payload.id ? { ...o, ...action.payload } : o
-      );
+      // Allow matching by id OR order_number (for when replacing temp ID with real ID)
+      const newOrders = state.orders.map(o => {
+        if (o.id === action.payload.id || o.id === action.payload._oldId || 
+            (action.payload.order_number && o.order_number === action.payload.order_number)) {
+          const { _oldId, ...updateData } = action.payload;
+          return { ...o, ...updateData };
+        }
+        return o;
+      });
       return { ...state, orders: newOrders };
     }
       
@@ -337,9 +349,15 @@ function appReducer(state, action) {
       };
       
     case actionTypes.UPDATE_PRODUCT: {
-      const newProducts = state.products.map(p =>
-        p.id === action.payload.id ? { ...p, ...action.payload } : p
-      );
+      // Allow matching by id OR name+section_id (for when replacing temp ID with real ID)
+      const newProducts = state.products.map(p => {
+        if (p.id === action.payload.id || p.id === action.payload._oldId ||
+            (action.payload.name && p.name === action.payload.name && p.section_id === action.payload.section_id)) {
+          const { _oldId, ...updateData } = action.payload;
+          return { ...p, ...updateData };
+        }
+        return p;
+      });
       return { ...state, products: newProducts };
     }
     
@@ -357,9 +375,15 @@ function appReducer(state, action) {
       };
       
     case actionTypes.UPDATE_SECTION: {
-      const newSections = state.sections.map(s =>
-        s.id === action.payload.id ? { ...s, ...action.payload } : s
-      );
+      // Allow matching by id OR name (for when replacing temp ID with real ID)
+      const newSections = state.sections.map(s => {
+        if (s.id === action.payload.id || s.id === action.payload._oldId ||
+            (action.payload.name && s.name === action.payload.name)) {
+          const { _oldId, ...updateData } = action.payload;
+          return { ...s, ...updateData };
+        }
+        return s;
+      });
       return { ...state, sections: newSections };
     }
     
@@ -465,28 +489,351 @@ export function AppProvider({ children }) {
     setOrders: (orders) => dispatch({ type: actionTypes.SET_ORDERS, payload: orders }),
     setPaymentMethods: (methods) => dispatch({ type: actionTypes.SET_PAYMENT_METHODS, payload: methods }),
     
-    // Customers CRUD
-    addCustomer: (customer) => dispatch({ type: actionTypes.ADD_CUSTOMER, payload: customer }),
-    updateCustomer: (customer) => dispatch({ type: actionTypes.UPDATE_CUSTOMER, payload: customer }),
-    deleteCustomer: (customerId) => dispatch({ type: actionTypes.DELETE_CUSTOMER, payload: customerId }),
+    // Customers CRUD - with Supabase persistence
+    addCustomer: async (customer) => {
+      // Add to local state immediately
+      const newCustomer = {
+        ...customer,
+        id: customer.id || `temp-${Date.now()}`,
+        store_id: state.store?.id || null,
+        created_at: new Date().toISOString(),
+      };
+      dispatch({ type: actionTypes.ADD_CUSTOMER, payload: newCustomer });
+      
+      // Save to Supabase
+      if (state.store?.id) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { data, error } = await supabase
+            .from('customers')
+            .insert({
+              store_id: state.store.id,
+              first_name: customer.first_name,
+              last_name: customer.last_name,
+              email: customer.email,
+              phone: customer.phone,
+              phone_country_code: customer.phone_country_code || '+507',
+              company_name: customer.company_name,
+              ruc: customer.ruc,
+              dv: customer.dv,
+              address_street: customer.address_street,
+              address_building: customer.address_building,
+              address_apartment: customer.address_apartment,
+              address_corregimiento: customer.address_corregimiento,
+              address_city: customer.address_city,
+              notes: customer.notes,
+              is_active: true,
+            })
+            .select()
+            .single();
+          
+          if (error) {
+            console.error('❌ Error saving customer to Supabase:', error);
+          } else {
+            console.log('✅ Customer saved to Supabase:', data.id);
+            // Update local state with real ID
+            dispatch({ type: actionTypes.UPDATE_CUSTOMER, payload: { ...newCustomer, id: data.id, _oldId: newCustomer.id } });
+          }
+        } catch (err) {
+          console.error('❌ Error saving customer:', err);
+        }
+      }
+    },
     
-    // Orders CRUD
+    updateCustomer: async (customer) => {
+      dispatch({ type: actionTypes.UPDATE_CUSTOMER, payload: customer });
+      
+      if (customer.id && !customer.id.startsWith('temp-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('customers')
+            .update({
+              first_name: customer.first_name,
+              last_name: customer.last_name,
+              email: customer.email,
+              phone: customer.phone,
+              phone_country_code: customer.phone_country_code,
+              company_name: customer.company_name,
+              ruc: customer.ruc,
+              dv: customer.dv,
+              address_street: customer.address_street,
+              address_building: customer.address_building,
+              address_apartment: customer.address_apartment,
+              address_corregimiento: customer.address_corregimiento,
+              address_city: customer.address_city,
+              notes: customer.notes,
+            })
+            .eq('id', customer.id);
+          
+          if (error) console.error('❌ Error updating customer:', error);
+          else console.log('✅ Customer updated in Supabase');
+        } catch (err) {
+          console.error('❌ Error updating customer:', err);
+        }
+      }
+    },
+    
+    deleteCustomer: async (customerId) => {
+      dispatch({ type: actionTypes.DELETE_CUSTOMER, payload: customerId });
+      
+      if (customerId && !customerId.startsWith('temp-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('customers')
+            .update({ is_active: false })
+            .eq('id', customerId);
+          
+          if (error) console.error('❌ Error deleting customer:', error);
+          else console.log('✅ Customer deactivated in Supabase');
+        } catch (err) {
+          console.error('❌ Error deleting customer:', err);
+        }
+      }
+    },
+    
+    // Orders CRUD - with Supabase persistence
     addOrder: (order) => dispatch({ type: actionTypes.ADD_ORDER, payload: order }),
-    updateOrder: (order) => dispatch({ type: actionTypes.UPDATE_ORDER, payload: order }),
-    updateOrderStatus: (orderId, status) => dispatch({ type: actionTypes.UPDATE_ORDER_STATUS, payload: { orderId, status } }),
     
-    // Products CRUD
-    addProduct: (product) => dispatch({ type: actionTypes.ADD_PRODUCT, payload: product }),
-    updateProduct: (product) => dispatch({ type: actionTypes.UPDATE_PRODUCT, payload: product }),
-    deleteProduct: (productId) => dispatch({ type: actionTypes.DELETE_PRODUCT, payload: productId }),
+    updateOrder: async (order) => {
+      dispatch({ type: actionTypes.UPDATE_ORDER, payload: order });
+      
+      if (order.id && !order.id.startsWith('temp-') && !order.id.startsWith('ord-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('orders')
+            .update({
+              status: order.status,
+              notes: order.notes,
+              discount_amount: order.discount_amount,
+              discount_type: order.discount_type,
+              discount_reason: order.discount_reason,
+              refund_amount: order.refund_amount,
+              refund_reason: order.refund_reason,
+            })
+            .eq('id', order.id);
+          
+          if (error) console.error('❌ Error updating order:', error);
+          else console.log('✅ Order updated in Supabase');
+        } catch (err) {
+          console.error('❌ Error updating order:', err);
+        }
+      }
+    },
     
-    // Sections CRUD
-    addSection: (section) => dispatch({ type: actionTypes.ADD_SECTION, payload: section }),
-    updateSection: (section) => dispatch({ type: actionTypes.UPDATE_SECTION, payload: section }),
-    deleteSection: (sectionId) => dispatch({ type: actionTypes.DELETE_SECTION, payload: sectionId }),
+    updateOrderStatus: async (orderId, status) => {
+      dispatch({ type: actionTypes.UPDATE_ORDER_STATUS, payload: { orderId, status } });
+      
+      // Find the order to check if it has a real Supabase ID
+      const order = state.orders.find(o => o.id === orderId);
+      const supabaseId = order?.supabase_id || orderId;
+      
+      if (supabaseId && !supabaseId.startsWith('temp-') && !supabaseId.startsWith('ord-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const updateData = { status };
+          
+          // Add completion timestamp if status is completed
+          if (status === 'completed') {
+            updateData.completed_at = new Date().toISOString();
+          }
+          
+          const { error } = await supabase
+            .from('orders')
+            .update(updateData)
+            .eq('id', supabaseId);
+          
+          if (error) console.error('❌ Error updating order status:', error);
+          else console.log('✅ Order status updated in Supabase:', status);
+        } catch (err) {
+          console.error('❌ Error updating order status:', err);
+        }
+      }
+    },
+    
+    // Products CRUD - with Supabase persistence
+    addProduct: async (product) => {
+      const newProduct = {
+        ...product,
+        id: product.id || `prod-${Date.now()}`,
+        is_active: true,
+      };
+      dispatch({ type: actionTypes.ADD_PRODUCT, payload: newProduct });
+      
+      if (product.section_id) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { data, error } = await supabase
+            .from('products')
+            .insert({
+              section_id: product.section_id,
+              name: product.name,
+              icon: product.icon,
+              pricing_type: product.pricing_type,
+              price: product.price,
+              express_price: product.express_price,
+              cost: product.cost,
+              min_quantity: product.min_quantity,
+              pieces_per_unit: product.pieces_per_unit,
+              parent_id: product.parent_id,
+              is_taxable: product.is_taxable,
+              extra_days: product.extra_days,
+              display_order: product.display_order || 0,
+              is_active: true,
+            })
+            .select()
+            .single();
+          
+          if (error) {
+            console.error('❌ Error saving product to Supabase:', error);
+          } else {
+            console.log('✅ Product saved to Supabase:', data.id);
+            // Update local state with real ID
+            dispatch({ type: actionTypes.UPDATE_PRODUCT, payload: { ...newProduct, id: data.id, _oldId: newProduct.id } });
+          }
+        } catch (err) {
+          console.error('❌ Error saving product:', err);
+        }
+      }
+    },
+    
+    updateProduct: async (product) => {
+      dispatch({ type: actionTypes.UPDATE_PRODUCT, payload: product });
+      
+      if (product.id && !product.id.startsWith('prod-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('products')
+            .update({
+              name: product.name,
+              icon: product.icon,
+              pricing_type: product.pricing_type,
+              price: product.price,
+              express_price: product.express_price,
+              cost: product.cost,
+              min_quantity: product.min_quantity,
+              pieces_per_unit: product.pieces_per_unit,
+              parent_id: product.parent_id,
+              is_taxable: product.is_taxable,
+              extra_days: product.extra_days,
+              display_order: product.display_order,
+              is_active: product.is_active,
+            })
+            .eq('id', product.id);
+          
+          if (error) console.error('❌ Error updating product:', error);
+          else console.log('✅ Product updated in Supabase');
+        } catch (err) {
+          console.error('❌ Error updating product:', err);
+        }
+      }
+    },
+    
+    deleteProduct: async (productId) => {
+      dispatch({ type: actionTypes.DELETE_PRODUCT, payload: productId });
+      
+      if (productId && !productId.startsWith('prod-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('products')
+            .update({ is_active: false })
+            .eq('id', productId);
+          
+          if (error) console.error('❌ Error deleting product:', error);
+          else console.log('✅ Product deactivated in Supabase');
+        } catch (err) {
+          console.error('❌ Error deleting product:', err);
+        }
+      }
+    },
+    
+    // Sections CRUD - with Supabase persistence
+    addSection: async (section) => {
+      const newSection = {
+        ...section,
+        id: section.id || `sec-${Date.now()}`,
+        is_active: true,
+      };
+      dispatch({ type: actionTypes.ADD_SECTION, payload: newSection });
+      
+      if (state.store?.id) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { data, error } = await supabase
+            .from('sections')
+            .insert({
+              store_id: state.store.id,
+              name: section.name,
+              icon: section.icon,
+              color: section.color,
+              display_order: section.display_order || 0,
+              is_active: true,
+            })
+            .select()
+            .single();
+          
+          if (error) {
+            console.error('❌ Error saving section to Supabase:', error);
+          } else {
+            console.log('✅ Section saved to Supabase:', data.id);
+            dispatch({ type: actionTypes.UPDATE_SECTION, payload: { ...newSection, id: data.id, _oldId: newSection.id } });
+          }
+        } catch (err) {
+          console.error('❌ Error saving section:', err);
+        }
+      }
+    },
+    
+    updateSection: async (section) => {
+      dispatch({ type: actionTypes.UPDATE_SECTION, payload: section });
+      
+      if (section.id && !section.id.startsWith('sec-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('sections')
+            .update({
+              name: section.name,
+              icon: section.icon,
+              color: section.color,
+              display_order: section.display_order,
+              is_active: section.is_active,
+            })
+            .eq('id', section.id);
+          
+          if (error) console.error('❌ Error updating section:', error);
+          else console.log('✅ Section updated in Supabase');
+        } catch (err) {
+          console.error('❌ Error updating section:', err);
+        }
+      }
+    },
+    
+    deleteSection: async (sectionId) => {
+      dispatch({ type: actionTypes.DELETE_SECTION, payload: sectionId });
+      
+      if (sectionId && !sectionId.startsWith('sec-')) {
+        try {
+          const { supabase } = await import('../lib/supabase');
+          const { error } = await supabase
+            .from('sections')
+            .update({ is_active: false })
+            .eq('id', sectionId);
+          
+          if (error) console.error('❌ Error deleting section:', error);
+          else console.log('✅ Section deactivated in Supabase');
+        } catch (err) {
+          console.error('❌ Error deleting section:', err);
+        }
+      }
+    },
     
     // Process order
-    processOrder: (paymentInfo) => {
+    processOrder: async (paymentInfo) => {
       const calculations = ticketCalculations();
       // Generate order number - handle empty orders array
       const existingNumbers = state.orders.map(o => o.order_number).filter(n => n);
@@ -507,6 +854,8 @@ export function AppProvider({ children }) {
         is_express: state.ticket.isExpress,
         subtotal: calculations.subtotal,
         discount_amount: calculations.discountAmount,
+        discount_type: state.ticket.manualDiscount?.type || null,
+        discount_reason: state.ticket.manualDiscount?.reason || null,
         delivery_charge: calculations.deliveryCharge,
         tax_amount: calculations.taxAmount,
         total: calculations.total,
@@ -516,11 +865,64 @@ export function AppProvider({ children }) {
         promised_date: calculations.promisedDate.toISOString(),
         created_at: new Date().toISOString(),
         items: state.ticket.items,
+        // Payment info
+        payment_method: paymentInfo.method,
         payments: [paymentInfo],
+        // User tracking
+        user_id: state.user?.id || 'unknown',
+        user_name: state.user?.full_name || 'Usuario',
       };
       
+      // Add to local state immediately
       dispatch({ type: actionTypes.ADD_ORDER, payload: newOrder });
       dispatch({ type: actionTypes.CLEAR_TICKET });
+      
+      // Save to Supabase in background (don't block UI)
+      if (state.store?.id) {
+        import('../lib/supabase').then(({ supabase }) => {
+          const orderForDb = {
+            store_id: newOrder.store_id,
+            customer_id: newOrder.customer_id,
+            order_number: newOrder.order_number,
+            customer_name: newOrder.customer_name,
+            is_walk_in: newOrder.is_walk_in,
+            status: newOrder.status,
+            is_express: newOrder.is_express,
+            subtotal: newOrder.subtotal,
+            discount_amount: newOrder.discount_amount,
+            discount_type: newOrder.discount_type,
+            discount_reason: newOrder.discount_reason,
+            delivery_charge: newOrder.delivery_charge,
+            tax_amount: newOrder.tax_amount,
+            total: newOrder.total,
+            total_weight: newOrder.total_weight,
+            total_bags: newOrder.total_bags,
+            notes: newOrder.notes,
+            promised_date: newOrder.promised_date,
+            payment_method: newOrder.payment_method,
+            user_id: newOrder.user_id,
+            user_name: newOrder.user_name,
+          };
+          
+          supabase
+            .from('orders')
+            .insert(orderForDb)
+            .select()
+            .single()
+            .then(({ data, error }) => {
+              if (error) {
+                console.error('❌ Error saving order to Supabase:', error);
+              } else {
+                console.log('✅ Order saved to Supabase:', data.id);
+                // Update local order with real Supabase ID
+                dispatch({ 
+                  type: actionTypes.UPDATE_ORDER, 
+                  payload: { ...newOrder, supabase_id: data.id, id: data.id, _oldId: newOrder.id } 
+                });
+              }
+            });
+        });
+      }
       
       return newOrder;
     },
