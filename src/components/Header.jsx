@@ -12,6 +12,13 @@ function Header() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef(null);
   
+  // Default user info when not logged in
+  const user = state.user || {
+    initials: 'U',
+    full_name: 'Usuario',
+    role: 'operator'
+  };
+  
   // Close user menu when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
@@ -88,7 +95,7 @@ function Header() {
               onClick={() => setUserMenuOpen(!userMenuOpen)}
               className="w-9 h-9 bg-primary-500 text-white rounded-full flex items-center justify-center font-semibold text-sm hover:bg-primary-600 transition-colors"
             >
-              {state.user.initials}
+              {user.initials}
             </button>
             
             {/* Dropdown */}
@@ -96,8 +103,8 @@ function Header() {
               <div className="absolute right-0 top-12 w-72 bg-white rounded-2xl shadow-elevated border border-slate-200 py-2 animate-scale-in">
                 {/* User Info */}
                 <div className="px-4 py-3 border-b border-slate-100">
-                  <p className="font-semibold text-slate-800">{state.user.full_name}</p>
-                  <p className="text-xs text-slate-500 capitalize">{state.user.role}</p>
+                  <p className="font-semibold text-slate-800">{user.full_name}</p>
+                  <p className="text-xs text-slate-500 capitalize">{user.role}</p>
                 </div>
                 
                 {/* Menu Items */}

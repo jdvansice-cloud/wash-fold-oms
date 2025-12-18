@@ -10,6 +10,13 @@ function Sidebar({ isOpen, onClose }) {
   const { state } = useApp();
   const location = useLocation();
   
+  // Default user info when not logged in
+  const user = state.user || {
+    initials: 'U',
+    full_name: 'Usuario',
+    role: 'operator'
+  };
+  
   const menuSections = [
     {
       title: 'Operaciones',
@@ -94,14 +101,14 @@ function Sidebar({ isOpen, onClose }) {
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-100 bg-white">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary-500 text-white rounded-full flex items-center justify-center font-semibold">
-              {state.user.initials}
+              {user.initials}
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-slate-800 text-sm truncate">
-                {state.user.full_name}
+                {user.full_name}
               </p>
               <p className="text-xs text-slate-500 capitalize">
-                {state.user.role}
+                {user.role}
               </p>
             </div>
           </div>
