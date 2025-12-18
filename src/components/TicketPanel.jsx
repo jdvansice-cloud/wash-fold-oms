@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, X, User, Zap, ChevronDown, ChevronUp, 
   Trash2, Tag, Truck, MessageSquare, AlertCircle,
-  CheckCircle, Printer, Share2
+  CheckCircle, Printer, Share2, Loader2, Check, AlertTriangle
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import CustomerSearchModal from './modals/CustomerSearchModal';
 import PaymentModal from './modals/PaymentModal';
+import { processOrderReceipts, browserPrintReceipt, generateReceiptContent } from '../services/receiptService';
 
 function TicketPanel() {
   const { state, actions, ticketCalculations } = useApp();
@@ -81,23 +82,43 @@ function TicketPanel() {
   const handlePaymentComplete = (paymentInfo) => {
     // Generate order number
     const orderNumber = `#${Math.floor(Math.random() * 9000) + 1000}`;
+    const createdAt = new Date().toISOString();
     
-    // Store confirmation data before clearing ticket
-    const confirmationData = {
+    // Store full order data for receipt printing
+    const orderData = {
       orderNumber,
-      customer: ticket.customer 
+      customer: ticket.customer,
+      customerName: ticket.customer 
         ? `${ticket.customer.first_name} ${ticket.customer.last_name}`
         : 'Walk-in',
+      items: ticket.items,
+      subtotal: calculations.subtotal,
+      taxAmount: calculations.taxAmount,
+      discountAmount: calculations.discountAmount || 0,
+      deliveryCharge: calculations.deliveryCharge || 0,
       total: calculations.total,
       paymentMethod: paymentInfo.method,
+      cashTendered: paymentInfo.cashTendered,
+      changeGiven: paymentInfo.changeGiven,
+      isExpress: ticket.isExpress,
+      promisedDate: calculations.promisedDate,
+      notes: ticket.notes,
+      createdAt,
+      companyInfo: state.settings?.company || {
+        name: 'AMERICAN LAUNDRY',
+        address: 'Panamá, Panamá',
+        phone: '',
+        ruc: '',
+        dv: ''
+      }
     };
     
     // Process the order
     actions.processOrder(paymentInfo);
     setPaymentModalOpen(false);
     
-    // Show confirmation popup
-    setOrderConfirmation(confirmationData);
+    // Show confirmation popup with full order data
+    setOrderConfirmation(orderData);
   };
   
   const canProcess = ticket.items.length > 0;
@@ -455,10 +476,7 @@ function TicketPanel() {
       {/* Order Confirmation Modal */}
       {orderConfirmation && (
         <OrderConfirmationModal
-          orderNumber={orderConfirmation.orderNumber}
-          customer={orderConfirmation.customer}
-          total={orderConfirmation.total}
-          paymentMethod={orderConfirmation.paymentMethod}
+          orderData={orderConfirmation}
           onClose={() => setOrderConfirmation(null)}
         />
       )}
@@ -467,7 +485,11 @@ function TicketPanel() {
 }
 
 // Order Confirmation Modal Component
-function OrderConfirmationModal({ orderNumber, customer, total, paymentMethod, onClose }) {
+function OrderConfirmationModal({ orderData, onClose }) {
+  const [printStatus, setPrintStatus] = useState('idle'); // idle, printing, success, error
+  const [printMessage, setPrintMessage] = useState('');
+  const [autoPrintAttempted, setAutoPrintAttempted] = useState(false);
+  
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
   
   const paymentMethodNames = {
@@ -479,6 +501,45 @@ function OrderConfirmationModal({ orderNumber, customer, total, paymentMethod, o
     invoice: 'Factura',
     pickup: 'Pagar en Recogida',
     gift_card: 'Tarjeta Regalo',
+  };
+  
+  // Auto-print on mount
+  useEffect(() => {
+    if (!autoPrintAttempted) {
+      setAutoPrintAttempted(true);
+      handlePrint();
+    }
+  }, []);
+  
+  const handlePrint = async () => {
+    setPrintStatus('printing');
+    setPrintMessage('Imprimiendo recibos...');
+    
+    try {
+      const result = await processOrderReceipts(orderData);
+      
+      if (result.printed && result.saved) {
+        setPrintStatus('success');
+        setPrintMessage('Recibos impresos y guardados');
+      } else if (result.printed) {
+        setPrintStatus('success');
+        setPrintMessage('Recibos impresos (no se pudo guardar en la nube)');
+      } else if (result.saved) {
+        setPrintStatus('error');
+        setPrintMessage('No se pudo imprimir. Recibo guardado en la nube.');
+      } else {
+        throw new Error(result.error || 'Error desconocido');
+      }
+    } catch (error) {
+      console.error('Print error:', error);
+      setPrintStatus('error');
+      setPrintMessage(error.message || 'Error al imprimir');
+    }
+  };
+  
+  const handleBrowserPrint = () => {
+    const receipt = generateReceiptContent(orderData, 'customer');
+    browserPrintReceipt(receipt);
   };
   
   return (
@@ -497,20 +558,20 @@ function OrderConfirmationModal({ orderNumber, customer, total, paymentMethod, o
           {/* Order Number */}
           <div className="bg-slate-50 rounded-xl p-4">
             <p className="text-sm text-slate-500 mb-1">Número de Orden</p>
-            <p className="text-3xl font-bold text-slate-800">{orderNumber}</p>
+            <p className="text-3xl font-bold text-slate-800">{orderData.orderNumber}</p>
           </div>
           
           {/* Customer */}
           <div className="flex items-center justify-between py-3 border-b border-slate-100">
             <span className="text-slate-500">Cliente</span>
-            <span className="font-semibold text-slate-800">{customer}</span>
+            <span className="font-semibold text-slate-800">{orderData.customerName}</span>
           </div>
           
           {/* Payment Method */}
           <div className="flex items-center justify-between py-3 border-b border-slate-100">
             <span className="text-slate-500">Método de Pago</span>
             <span className="font-medium text-slate-700">
-              {paymentMethodNames[paymentMethod] || paymentMethod}
+              {paymentMethodNames[orderData.paymentMethod] || orderData.paymentMethod}
             </span>
           </div>
           
@@ -518,8 +579,27 @@ function OrderConfirmationModal({ orderNumber, customer, total, paymentMethod, o
           <div className="flex items-center justify-between py-3">
             <span className="text-slate-500">Total Pagado</span>
             <span className="text-2xl font-bold text-success-600">
-              {formatCurrency(total)}
+              {formatCurrency(orderData.total)}
             </span>
+          </div>
+          
+          {/* Print Status */}
+          <div className={`rounded-xl p-3 flex items-center gap-3 ${
+            printStatus === 'printing' ? 'bg-blue-50 text-blue-700' :
+            printStatus === 'success' ? 'bg-success-50 text-success-700' :
+            printStatus === 'error' ? 'bg-amber-50 text-amber-700' :
+            'bg-slate-50 text-slate-600'
+          }`}>
+            {printStatus === 'printing' && (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            )}
+            {printStatus === 'success' && (
+              <Check className="w-5 h-5" />
+            )}
+            {printStatus === 'error' && (
+              <AlertTriangle className="w-5 h-5" />
+            )}
+            <span className="text-sm">{printMessage || 'Listo para imprimir'}</span>
           </div>
           
           {/* Actions */}
@@ -530,16 +610,29 @@ function OrderConfirmationModal({ orderNumber, customer, total, paymentMethod, o
             >
               Cerrar
             </button>
-            <button
-              onClick={() => {
-                // TODO: Implement print functionality
-                onClose();
-              }}
-              className="flex-1 py-3 px-4 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              <Printer className="w-4 h-4" />
-              Imprimir
-            </button>
+            
+            {printStatus === 'error' ? (
+              <button
+                onClick={handleBrowserPrint}
+                className="flex-1 py-3 px-4 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                Imprimir (Navegador)
+              </button>
+            ) : (
+              <button
+                onClick={handlePrint}
+                disabled={printStatus === 'printing'}
+                className="flex-1 py-3 px-4 bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                {printStatus === 'printing' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Printer className="w-4 h-4" />
+                )}
+                {printStatus === 'success' ? 'Reimprimir' : 'Imprimir'}
+              </button>
+            )}
           </div>
         </div>
       </div>
