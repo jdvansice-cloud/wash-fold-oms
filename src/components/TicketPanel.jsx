@@ -107,14 +107,6 @@ function TicketPanel() {
     <div className="ticket-sidebar h-full flex flex-col bg-white">
       {/* Customer Selection */}
       <div className="p-4 border-b border-slate-100">
-        {/* Customer Required Notification */}
-        {needsCustomer && (
-          <div className="mb-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
-            <p className="font-medium text-amber-800 text-sm">Selecciona un cliente para continuar</p>
-            <p className="text-amber-600 text-xs mt-0.5">Puedes elegir un cliente existente o continuar como Walk-in</p>
-          </div>
-        )}
-        
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
