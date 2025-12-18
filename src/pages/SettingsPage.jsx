@@ -503,10 +503,15 @@ function ProductsSettings() {
   
   const ITBMS_RATE = state.settings?.itbms_rate || 7;
   
-  // Helper to calculate price with ITBMS
-  const getPriceWithTax = (basePrice) => {
+  // Helper to get display price (with ITBMS only if taxable)
+  const getDisplayPrice = (product, priceField = 'price') => {
+    const basePrice = product[priceField];
     if (!basePrice) return null;
-    return basePrice * (1 + ITBMS_RATE / 100);
+    // Only add ITBMS if product is taxable
+    if (product.is_taxable === false) {
+      return basePrice; // No ITBMS - price as stored
+    }
+    return basePrice * (1 + ITBMS_RATE / 100); // Add ITBMS
   };
   
   // Sections from state
@@ -603,13 +608,14 @@ function ProductsSettings() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Sección</th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
                     <span>Precio</span>
-                    <span className="block text-[10px] font-normal normal-case text-slate-400">con ITBMS</span>
+                    <span className="block text-[10px] font-normal normal-case text-slate-400">venta</span>
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
                     <span>Express</span>
-                    <span className="block text-[10px] font-normal normal-case text-slate-400">con ITBMS</span>
+                    <span className="block text-[10px] font-normal normal-case text-slate-400">venta</span>
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Tipo</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">ITBMS</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Activo</th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Acciones</th>
                 </tr>
@@ -618,6 +624,8 @@ function ProductsSettings() {
                 {filteredProducts.map((product) => {
                   const section = sections.find(s => s.id === product.section_id);
                   const isChild = product.parent_id !== null;
+                  const displayPrice = getDisplayPrice(product, 'price');
+                  const displayExpressPrice = getDisplayPrice(product, 'express_price');
                   
                   return (
                     <tr key={product.id} className={`hover:bg-slate-50 ${isChild ? 'bg-slate-25' : ''}`}>
@@ -650,10 +658,10 @@ function ProductsSettings() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-medium text-slate-800">
-                        {product.price ? `B/${getPriceWithTax(product.price).toFixed(2)}` : '-'}
+                        {displayPrice ? `B/${displayPrice.toFixed(2)}` : '-'}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-600">
-                        {product.express_price ? `B/${getPriceWithTax(product.express_price).toFixed(2)}` : '-'}
+                        {displayExpressPrice ? `B/${displayExpressPrice.toFixed(2)}` : '-'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {product.pricing_type === 'weight' ? (
@@ -665,6 +673,18 @@ function ProductsSettings() {
                           <span className="badge bg-slate-100 text-slate-700">
                             <Hash className="w-3 h-3 mr-1" />
                             Cantidad
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {product.is_taxable !== false ? (
+                          <span className="badge bg-primary-100 text-primary-700">
+                            <Percent className="w-3 h-3 mr-1" />
+                            Sí
+                          </span>
+                        ) : (
+                          <span className="badge bg-slate-100 text-slate-500">
+                            Exento
                           </span>
                         )}
                       </td>

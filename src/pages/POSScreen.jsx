@@ -241,11 +241,17 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   return (
     <button
       onClick={onClick}
-      className="product-tile flex flex-col items-center text-center group"
+      className={`product-tile flex flex-col items-center text-center group ${
+        hasChildren ? 'ring-2 ring-primary-200 ring-offset-2' : ''
+      }`}
       style={{ animationDelay: `${delay}ms` }}
     >
-      {/* Icon */}
-      <div className="w-16 h-16 flex items-center justify-center mb-3 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl group-hover:from-primary-50 group-hover:to-primary-100 transition-colors">
+      {/* Icon - different style for parents */}
+      <div className={`w-16 h-16 flex items-center justify-center mb-3 rounded-2xl transition-colors ${
+        hasChildren 
+          ? 'bg-gradient-to-br from-primary-50 to-primary-100 group-hover:from-primary-100 group-hover:to-primary-200' 
+          : 'bg-gradient-to-br from-slate-50 to-slate-100 group-hover:from-primary-50 group-hover:to-primary-100'
+      }`}>
         <span className="text-3xl">{product.icon || '📦'}</span>
       </div>
       
@@ -254,8 +260,15 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
         {product.name}
       </p>
       
-      {/* Price Badge */}
-      {isWeightBased ? (
+      {/* Price Badge - Only show for non-parent products */}
+      {hasChildren ? (
+        <div className="flex items-center gap-1 text-xs text-primary-600 font-medium">
+          <span>Ver opciones</span>
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      ) : isWeightBased ? (
         <div className="flex flex-col items-center">
           <span className="text-xs text-slate-500">por kg</span>
           <span className="text-sm font-semibold text-primary-600">
@@ -268,15 +281,17 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
         </span>
       )}
       
-      {/* Indicators */}
+      {/* Parent indicator badge */}
       {hasChildren && (
-        <span className="absolute top-2 right-2 w-5 h-5 bg-primary-100 text-primary-600 rounded-full text-xs flex items-center justify-center font-bold">
-          +
+        <span className="absolute top-2 right-2 px-2 py-0.5 bg-primary-500 text-white rounded-full text-[10px] font-semibold flex items-center gap-1">
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+          </svg>
         </span>
       )}
       
       {/* Weight indicator */}
-      {isWeightBased && (
+      {isWeightBased && !hasChildren && (
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary-500 rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity" />
       )}
     </button>
