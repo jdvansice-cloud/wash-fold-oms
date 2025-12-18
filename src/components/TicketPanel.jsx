@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { 
   Plus, X, User, Zap, ChevronDown, ChevronUp, 
-  Trash2, Tag, Truck, MessageSquare, AlertCircle 
+  Trash2, Tag, Truck, MessageSquare, AlertCircle,
+  CheckCircle, Printer, Share2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import CustomerSearchModal from './modals/CustomerSearchModal';
@@ -10,9 +11,11 @@ import PaymentModal from './modals/PaymentModal';
 function TicketPanel() {
   const { state, actions, ticketCalculations } = useApp();
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [customerModalMode, setCustomerModalMode] = useState('select'); // 'select' or 'required'
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [discountExpanded, setDiscountExpanded] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [orderConfirmation, setOrderConfirmation] = useState(null); // {orderNumber, customer, total}
   
   const calculations = ticketCalculations();
   const { ticket } = state;
@@ -42,6 +45,61 @@ function TicketPanel() {
     });
   };
   
+  // Process button handler - check for customer first
+  const handleProcessClick = () => {
+    if (!ticket.customerConfirmed) {
+      // No customer selected - open modal in required mode
+      setCustomerModalMode('required');
+      setCustomerModalOpen(true);
+    } else {
+      // Customer selected - proceed to payment
+      setPaymentModalOpen(true);
+    }
+  };
+  
+  // Handle customer selection when in required mode
+  const handleCustomerSelect = (customer) => {
+    actions.setCustomer(customer);
+    setCustomerModalOpen(false);
+    if (customerModalMode === 'required') {
+      // After selecting customer in required mode, open payment
+      setTimeout(() => setPaymentModalOpen(true), 100);
+    }
+  };
+  
+  // Handle walk-in selection when in required mode
+  const handleWalkIn = () => {
+    actions.confirmWalkIn();
+    setCustomerModalOpen(false);
+    if (customerModalMode === 'required') {
+      // After selecting walk-in in required mode, open payment
+      setTimeout(() => setPaymentModalOpen(true), 100);
+    }
+  };
+  
+  // Handle payment completion
+  const handlePaymentComplete = (paymentInfo) => {
+    // Generate order number
+    const orderNumber = `#${Math.floor(Math.random() * 9000) + 1000}`;
+    
+    // Store confirmation data before clearing ticket
+    const confirmationData = {
+      orderNumber,
+      customer: ticket.customer 
+        ? `${ticket.customer.first_name} ${ticket.customer.last_name}`
+        : 'Walk-in',
+      total: calculations.total,
+      paymentMethod: paymentInfo.method,
+    };
+    
+    // Process the order
+    actions.processOrder(paymentInfo);
+    setPaymentModalOpen(false);
+    
+    // Show confirmation popup
+    setOrderConfirmation(confirmationData);
+  };
+  
   const canProcess = ticket.items.length > 0;
   
   return (
@@ -50,14 +108,17 @@ function TicketPanel() {
       <div className="p-4 border-b border-slate-100">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setCustomerModalOpen(true)}
+            onClick={() => {
+              setCustomerModalMode('select');
+              setCustomerModalOpen(true);
+            }}
             className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-left ${
               ticket.customerConfirmed 
                 ? 'bg-slate-50 hover:bg-slate-100' 
-                : 'bg-amber-50 border-2 border-amber-200 hover:bg-amber-100'
+                : 'bg-slate-50 hover:bg-slate-100'
             }`}
           >
-            <User className={`w-5 h-5 ${ticket.customerConfirmed ? 'text-slate-400' : 'text-amber-500'}`} />
+            <User className={`w-5 h-5 ${ticket.customerConfirmed ? 'text-primary-500' : 'text-slate-400'}`} />
             <div className="flex-1 min-w-0">
               {ticket.customer ? (
                 <>
@@ -75,8 +136,8 @@ function TicketPanel() {
                 </>
               ) : (
                 <>
-                  <p className="text-amber-700 font-medium">Seleccionar Cliente</p>
-                  <p className="text-xs text-amber-600">Haz clic para elegir</p>
+                  <p className="text-slate-600 font-medium">Cliente</p>
+                  <p className="text-xs text-slate-400">Opcional - seleccionar al procesar</p>
                 </>
               )}
             </div>
@@ -86,7 +147,10 @@ function TicketPanel() {
           </button>
           
           <button
-            onClick={() => setCustomerModalOpen(true)}
+            onClick={() => {
+              setCustomerModalMode('select');
+              setCustomerModalOpen(true);
+            }}
             className="p-3 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-colors"
           >
             <Plus className="w-5 h-5" />
@@ -339,7 +403,7 @@ function TicketPanel() {
         
         {/* Process Button */}
         <button
-          onClick={() => setPaymentModalOpen(true)}
+          onClick={handleProcessClick}
           disabled={!canProcess}
           className={`w-full py-4 rounded-xl font-semibold text-white transition-all ${
             canProcess 
@@ -363,14 +427,9 @@ function TicketPanel() {
       {customerModalOpen && (
         <CustomerSearchModal 
           onClose={() => setCustomerModalOpen(false)}
-          onSelect={(customer) => {
-            actions.setCustomer(customer);
-            setCustomerModalOpen(false);
-          }}
-          onWalkIn={() => {
-            actions.confirmWalkIn();
-            setCustomerModalOpen(false);
-          }}
+          onSelect={handleCustomerSelect}
+          onWalkIn={handleWalkIn}
+          showWalkInPrompt={customerModalMode === 'required'}
         />
       )}
       
@@ -378,12 +437,101 @@ function TicketPanel() {
         <PaymentModal
           total={calculations.total}
           onClose={() => setPaymentModalOpen(false)}
-          onComplete={(paymentInfo) => {
-            actions.processOrder(paymentInfo);
-            setPaymentModalOpen(false);
-          }}
+          onComplete={handlePaymentComplete}
         />
       )}
+      
+      {/* Order Confirmation Modal */}
+      {orderConfirmation && (
+        <OrderConfirmationModal
+          orderNumber={orderConfirmation.orderNumber}
+          customer={orderConfirmation.customer}
+          total={orderConfirmation.total}
+          paymentMethod={orderConfirmation.paymentMethod}
+          onClose={() => setOrderConfirmation(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Order Confirmation Modal Component
+function OrderConfirmationModal({ orderNumber, customer, total, paymentMethod, onClose }) {
+  const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
+  
+  const paymentMethodNames = {
+    cash: 'Efectivo',
+    card: 'Tarjeta',
+    yappy: 'Yappy',
+    ach: 'ACH',
+    check: 'Cheque',
+    invoice: 'Factura',
+    pickup: 'Pagar en Recogida',
+    gift_card: 'Tarjeta Regalo',
+  };
+  
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-sm animate-scale-in text-center overflow-hidden">
+        {/* Success Header */}
+        <div className="bg-gradient-to-br from-success-500 to-success-600 p-6">
+          <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-12 h-12 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-white">¡Orden Creada!</h2>
+        </div>
+        
+        {/* Order Details */}
+        <div className="p-6 space-y-4">
+          {/* Order Number */}
+          <div className="bg-slate-50 rounded-xl p-4">
+            <p className="text-sm text-slate-500 mb-1">Número de Orden</p>
+            <p className="text-3xl font-bold text-slate-800">{orderNumber}</p>
+          </div>
+          
+          {/* Customer */}
+          <div className="flex items-center justify-between py-3 border-b border-slate-100">
+            <span className="text-slate-500">Cliente</span>
+            <span className="font-semibold text-slate-800">{customer}</span>
+          </div>
+          
+          {/* Payment Method */}
+          <div className="flex items-center justify-between py-3 border-b border-slate-100">
+            <span className="text-slate-500">Método de Pago</span>
+            <span className="font-medium text-slate-700">
+              {paymentMethodNames[paymentMethod] || paymentMethod}
+            </span>
+          </div>
+          
+          {/* Total */}
+          <div className="flex items-center justify-between py-3">
+            <span className="text-slate-500">Total Pagado</span>
+            <span className="text-2xl font-bold text-success-600">
+              {formatCurrency(total)}
+            </span>
+          </div>
+          
+          {/* Actions */}
+          <div className="flex gap-3 pt-4">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-xl transition-colors"
+            >
+              Cerrar
+            </button>
+            <button
+              onClick={() => {
+                // TODO: Implement print functionality
+                onClose();
+              }}
+              className="flex-1 py-3 px-4 bg-primary-500 hover:bg-primary-600 text-white font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              <Printer className="w-4 h-4" />
+              Imprimir
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
