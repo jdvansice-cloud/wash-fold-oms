@@ -829,8 +829,9 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
   const isEditing = product !== null;
   
   // Calculate initial total prices from base prices if editing
-  const calculateTotalFromBase = (basePrice) => {
+  const calculateTotalFromBase = (basePrice, isTaxable) => {
     if (!basePrice) return '';
+    if (!isTaxable) return basePrice.toFixed(2); // No ITBMS, price is as stored
     return (basePrice * (1 + ITBMS_RATE / 100)).toFixed(2);
   };
   
@@ -839,24 +840,29 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
     section_id: product?.section_id || sections[0]?.id || '',
     icon: product?.icon || '📦',
     pricing_type: product?.pricing_type || 'quantity',
-    // Store total prices (with ITBMS) for input
-    total_price: product?.price ? calculateTotalFromBase(product.price) : '',
-    total_express_price: product?.express_price ? calculateTotalFromBase(product.express_price) : '',
+    is_taxable: product?.is_taxable !== false, // Default to true
+    // Store the input prices
+    total_price: product?.price ? calculateTotalFromBase(product.price, product?.is_taxable !== false) : '',
+    total_express_price: product?.express_price ? calculateTotalFromBase(product.express_price, product?.is_taxable !== false) : '',
     cost: product?.cost || '',
     min_quantity: product?.min_quantity || 1,
     pieces_per_unit: product?.pieces_per_unit || 1,
     parent_id: product?.parent_id || '',
     is_active: product?.is_active !== false,
-    is_taxable: product?.is_taxable !== false,
     extra_days: product?.extra_days || 0,
   });
   
-  // Calculate base price and ITBMS from total price
+  // Calculate base price and ITBMS from total price (only when is_taxable)
   const calculatePriceBreakdown = (totalPrice) => {
     if (!totalPrice || isNaN(parseFloat(totalPrice))) {
       return { basePrice: 0, itbms: 0 };
     }
     const total = parseFloat(totalPrice);
+    if (!formData.is_taxable) {
+      // No ITBMS - price entered IS the sale price
+      return { basePrice: total, itbms: 0 };
+    }
+    // With ITBMS - calculate base from total
     const basePrice = total / (1 + ITBMS_RATE / 100);
     const itbms = total - basePrice;
     return { basePrice, itbms };
@@ -870,9 +876,20 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
   };
   
   const handleSubmit = () => {
-    // Calculate base prices to store in DB
-    const { basePrice } = calculatePriceBreakdown(formData.total_price);
-    const { basePrice: expressBasePrice } = calculatePriceBreakdown(formData.total_express_price);
+    // Calculate prices to store in DB
+    let priceToStore, expressPriceToStore;
+    
+    if (formData.is_taxable) {
+      // ITBMS included - calculate base price from total
+      const { basePrice } = calculatePriceBreakdown(formData.total_price);
+      const { basePrice: expressBasePrice } = calculatePriceBreakdown(formData.total_express_price);
+      priceToStore = parseFloat(basePrice.toFixed(2)) || 0;
+      expressPriceToStore = parseFloat(expressBasePrice.toFixed(2)) || 0;
+    } else {
+      // No ITBMS - store price as entered (it's the actual sale price)
+      priceToStore = parseFloat(formData.total_price) || 0;
+      expressPriceToStore = parseFloat(formData.total_express_price) || 0;
+    }
     
     onSave({
       id: product?.id || `prod-${Date.now()}`,
@@ -880,9 +897,8 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
       section_id: formData.section_id,
       icon: formData.icon,
       pricing_type: formData.pricing_type,
-      // Store base price (without ITBMS) in DB
-      price: parseFloat(basePrice.toFixed(2)) || 0,
-      express_price: parseFloat(expressBasePrice.toFixed(2)) || 0,
+      price: priceToStore,
+      express_price: expressPriceToStore,
       cost: parseFloat(formData.cost) || 0,
       min_quantity: formData.min_quantity,
       pieces_per_unit: formData.pieces_per_unit,
@@ -1019,15 +1035,25 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
             
             {/* Price Section - with ITBMS calculation */}
             <div className="col-span-2 p-4 bg-slate-50 rounded-xl space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Percent className="w-4 h-4 text-primary-500" />
-                <span className="text-sm font-medium text-slate-700">
-                  Precios (ITBMS {ITBMS_RATE}% incluido)
-                </span>
+              {/* ITBMS Toggle - FIRST */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <Percent className="w-4 h-4 text-primary-500" />
+                  <span className="text-sm font-medium text-slate-700">Precios</span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_taxable}
+                    onChange={(e) => handleChange('is_taxable', e.target.checked)}
+                    className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-slate-700">Incluye ITBMS ({ITBMS_RATE}%)</span>
+                </label>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
-                {/* Total Price (with ITBMS) */}
+                {/* Price Input */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Precio de Venta {formData.pricing_type === 'weight' ? '(por kg)' : ''} <span className="text-error-500">*</span>
@@ -1043,7 +1069,8 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                       placeholder="0.00"
                     />
                   </div>
-                  {formData.total_price && (
+                  {/* Only show breakdown when ITBMS is included */}
+                  {formData.is_taxable && formData.total_price && (
                     <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200">
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Precio base:</span>
@@ -1059,9 +1086,15 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                       </div>
                     </div>
                   )}
+                  {/* Show simple message when ITBMS is NOT included */}
+                  {!formData.is_taxable && formData.total_price && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Este precio se almacenará sin cálculo de ITBMS
+                    </p>
+                  )}
                 </div>
                 
-                {/* Express Total Price (with ITBMS) */}
+                {/* Express Price Input */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Precio Express {formData.pricing_type === 'weight' ? '(por kg)' : ''}
@@ -1077,7 +1110,8 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                       placeholder="0.00"
                     />
                   </div>
-                  {formData.total_express_price && (
+                  {/* Only show breakdown when ITBMS is included */}
+                  {formData.is_taxable && formData.total_express_price && (
                     <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200">
                       <div className="flex justify-between text-xs">
                         <span className="text-slate-500">Precio base:</span>
@@ -1171,16 +1205,6 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                   className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
                 />
                 <span className="text-sm text-slate-700">Producto activo</span>
-              </label>
-              
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.is_taxable}
-                  onChange={(e) => handleChange('is_taxable', e.target.checked)}
-                  className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
-                />
-                <span className="text-sm text-slate-700">Aplica ITBMS</span>
               </label>
             </div>
           </div>

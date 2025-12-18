@@ -231,8 +231,10 @@ function POSScreen() {
 // Product Tile Component
 function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   const basePrice = isExpress ? (product.express_price || product.price) : product.price;
-  // Calculate price with ITBMS included for display
-  const priceWithTax = basePrice * (1 + itbmsRate / 100);
+  // Only add ITBMS if product is taxable
+  const displayPrice = product.is_taxable !== false 
+    ? basePrice * (1 + itbmsRate / 100)  // With ITBMS
+    : basePrice;  // Price as stored (no ITBMS)
   const isWeightBased = product.pricing_type === 'weight';
   const hasChildren = product.has_children;
   
@@ -252,17 +254,17 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
         {product.name}
       </p>
       
-      {/* Price Badge - showing price WITH ITBMS */}
+      {/* Price Badge */}
       {isWeightBased ? (
         <div className="flex flex-col items-center">
           <span className="text-xs text-slate-500">por kg</span>
           <span className="text-sm font-semibold text-primary-600">
-            B/{priceWithTax.toFixed(2)}
+            B/{displayPrice.toFixed(2)}
           </span>
         </div>
       ) : (
         <span className="text-sm font-semibold text-primary-600">
-          B/{priceWithTax.toFixed(2)}
+          B/{displayPrice.toFixed(2)}
         </span>
       )}
       
