@@ -95,6 +95,8 @@ function TicketPanel() {
       subtotal: calculations.subtotal,
       taxAmount: calculations.taxAmount,
       discountAmount: calculations.discountAmount || 0,
+      discountType: ticket.manualDiscount?.type || null,
+      discountReason: ticket.manualDiscount?.reason || null,
       deliveryCharge: calculations.deliveryCharge || 0,
       total: calculations.total,
       paymentMethod: paymentInfo.method,
@@ -369,36 +371,12 @@ function TicketPanel() {
         </button>
         
         {discountExpanded && (
-          <div className="p-3 bg-slate-50 rounded-lg space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => actions.setManualDiscount({ type: 'percentage', value: 10 })}
-                className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:text-primary-600 transition-colors"
-              >
-                10%
-              </button>
-              <button
-                onClick={() => actions.setManualDiscount({ type: 'percentage', value: 15 })}
-                className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:text-primary-600 transition-colors"
-              >
-                15%
-              </button>
-              <button
-                onClick={() => actions.setManualDiscount({ type: 'amount', value: 5 })}
-                className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:text-primary-600 transition-colors"
-              >
-                B/5
-              </button>
-            </div>
-            {ticket.manualDiscount && (
-              <button
-                onClick={() => actions.setManualDiscount(null)}
-                className="w-full text-xs text-error-600 hover:underline"
-              >
-                Quitar descuento
-              </button>
-            )}
-          </div>
+          <DiscountInput 
+            currentDiscount={ticket.manualDiscount}
+            onApply={(discount) => actions.setManualDiscount(discount)}
+            onRemove={() => actions.setManualDiscount(null)}
+            subtotal={calculations.subtotal}
+          />
         )}
         
         {/* Totals */}
@@ -480,6 +458,144 @@ function TicketPanel() {
           onClose={() => setOrderConfirmation(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Discount Input Component - allows manual % or $ discount
+function DiscountInput({ currentDiscount, onApply, onRemove, subtotal }) {
+  const [discountType, setDiscountType] = useState(currentDiscount?.type || 'percentage');
+  const [discountValue, setDiscountValue] = useState(currentDiscount?.value?.toString() || '');
+  const [discountReason, setDiscountReason] = useState(currentDiscount?.reason || '');
+  
+  const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
+  
+  // Calculate preview of discount
+  const previewAmount = (() => {
+    const value = parseFloat(discountValue) || 0;
+    if (value <= 0) return 0;
+    if (discountType === 'percentage') {
+      return Math.min((subtotal * value) / 100, subtotal);
+    }
+    return Math.min(value, subtotal);
+  })();
+  
+  const handleApply = () => {
+    const value = parseFloat(discountValue) || 0;
+    if (value <= 0) return;
+    
+    // Validate percentage doesn't exceed 100%
+    if (discountType === 'percentage' && value > 100) {
+      alert('El porcentaje no puede ser mayor a 100%');
+      return;
+    }
+    
+    // Validate amount doesn't exceed subtotal
+    if (discountType === 'amount' && value > subtotal) {
+      alert('El descuento no puede ser mayor al subtotal');
+      return;
+    }
+    
+    onApply({
+      type: discountType,
+      value: value,
+      reason: discountReason || 'Descuento manual',
+      amount: previewAmount, // Store calculated amount for reporting
+    });
+  };
+  
+  const handleClear = () => {
+    setDiscountValue('');
+    setDiscountReason('');
+    onRemove();
+  };
+  
+  return (
+    <div className="p-3 bg-slate-50 rounded-lg space-y-3">
+      {/* Type Toggle */}
+      <div className="flex bg-white rounded-lg p-1 border border-slate-200">
+        <button
+          type="button"
+          onClick={() => setDiscountType('percentage')}
+          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+            discountType === 'percentage'
+              ? 'bg-primary-500 text-white'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Porcentaje (%)
+        </button>
+        <button
+          type="button"
+          onClick={() => setDiscountType('amount')}
+          className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+            discountType === 'amount'
+              ? 'bg-primary-500 text-white'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          Monto (B/)
+        </button>
+      </div>
+      
+      {/* Value Input */}
+      <div className="relative">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-medium">
+          {discountType === 'percentage' ? '%' : 'B/'}
+        </div>
+        <input
+          type="number"
+          value={discountValue}
+          onChange={(e) => setDiscountValue(e.target.value)}
+          placeholder={discountType === 'percentage' ? 'Ej: 10' : 'Ej: 5.00'}
+          className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-right text-lg font-semibold focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+          min="0"
+          max={discountType === 'percentage' ? '100' : subtotal}
+          step={discountType === 'percentage' ? '1' : '0.01'}
+        />
+      </div>
+      
+      {/* Reason Input */}
+      <input
+        type="text"
+        value={discountReason}
+        onChange={(e) => setDiscountReason(e.target.value)}
+        placeholder="Razón del descuento (opcional)"
+        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+      />
+      
+      {/* Preview */}
+      {previewAmount > 0 && (
+        <div className="flex items-center justify-between py-2 px-3 bg-warning-50 rounded-lg">
+          <span className="text-sm text-warning-700">Descuento a aplicar:</span>
+          <span className="font-bold text-warning-700">-{formatCurrency(previewAmount)}</span>
+        </div>
+      )}
+      
+      {/* Actions */}
+      <div className="flex gap-2">
+        {currentDiscount && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex-1 py-2 px-3 text-sm font-medium text-error-600 bg-error-50 hover:bg-error-100 rounded-lg transition-colors"
+          >
+            Quitar
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={handleApply}
+          disabled={!discountValue || parseFloat(discountValue) <= 0}
+          className={`flex-1 py-2 px-3 text-sm font-medium rounded-lg transition-colors ${
+            discountValue && parseFloat(discountValue) > 0
+              ? 'bg-primary-500 text-white hover:bg-primary-600'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+          }`}
+        >
+          Aplicar Descuento
+        </button>
+      </div>
     </div>
   );
 }

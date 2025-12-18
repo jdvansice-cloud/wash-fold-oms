@@ -146,6 +146,7 @@ export function generateReceiptContent(orderData, copyType = 'customer') {
     subtotal,
     taxAmount,
     discountAmount,
+    discountReason,
     deliveryCharge,
     total,
     paymentMethod,
@@ -269,6 +270,9 @@ export function generateReceiptContent(orderData, copyType = 'customer') {
   
   if (discountAmount > 0) {
     lines.push(formatLabelValue('Descuento:', `-${formatCurrency(discountAmount)}`));
+    if (discountReason && copyType === 'store') {
+      lines.push(`  (${discountReason})`);
+    }
   }
   
   if (deliveryCharge > 0) {
