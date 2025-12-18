@@ -1048,15 +1048,23 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                     onChange={(e) => handleChange('is_taxable', e.target.checked)}
                     className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
                   />
-                  <span className="text-sm text-slate-700">Incluye ITBMS ({ITBMS_RATE}%)</span>
+                  <span className="text-sm text-slate-700">Aplica ITBMS ({ITBMS_RATE}%)</span>
                 </label>
               </div>
+              
+              {/* Helper text based on ITBMS selection */}
+              <p className="text-xs text-slate-500 -mt-2">
+                {formData.is_taxable 
+                  ? `Ingrese el precio total (con ITBMS incluido). El sistema calculará el desglose.`
+                  : `Producto exento de ITBMS. El precio ingresado es el precio final de venta.`
+                }
+              </p>
               
               <div className="grid grid-cols-2 gap-4">
                 {/* Price Input */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Precio de Venta {formData.pricing_type === 'weight' ? '(por kg)' : ''} <span className="text-error-500">*</span>
+                    {formData.is_taxable ? 'Precio Total' : 'Precio de Venta'} {formData.pricing_type === 'weight' ? '(por kg)' : ''} <span className="text-error-500">*</span>
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">B/</span>
@@ -1081,23 +1089,17 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                         <span className="font-medium text-slate-700">B/{priceBreakdown.itbms.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-xs mt-1 pt-1 border-t border-slate-100">
-                        <span className="text-slate-600 font-medium">Total:</span>
+                        <span className="text-slate-600 font-medium">Total (precio de venta):</span>
                         <span className="font-bold text-primary-600">B/{parseFloat(formData.total_price).toFixed(2)}</span>
                       </div>
                     </div>
-                  )}
-                  {/* Show simple message when ITBMS is NOT included */}
-                  {!formData.is_taxable && formData.total_price && (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Este precio se almacenará sin cálculo de ITBMS
-                    </p>
                   )}
                 </div>
                 
                 {/* Express Price Input */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Precio Express {formData.pricing_type === 'weight' ? '(por kg)' : ''}
+                    {formData.is_taxable ? 'Precio Express Total' : 'Precio Express'} {formData.pricing_type === 'weight' ? '(por kg)' : ''}
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">B/</span>
