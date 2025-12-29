@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Building, Store, Users, CreditCard, Bell, Mail,
   Gift, Tag, Package, Clock, Percent, Save,
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
-  GripVertical, Eye, EyeOff
+  GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
+import { supabase } from '../lib/supabase';
 
 function SettingsPage() {
   const { state } = useApp();
@@ -84,6 +85,7 @@ function SettingsPage() {
 
 // Company Settings Section
 function CompanySettings({ company }) {
+  const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     name: company?.name || 'American Laundry',
     ruc: company?.ruc || '155737034-2-2023',
@@ -93,6 +95,87 @@ function CompanySettings({ company }) {
     itbms_rate: company?.itbms_rate || 7,
     logo_url: company?.logo_url || '',
   });
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+      setUploadError('Solo se permiten archivos PNG o JPG');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      setUploadError('El archivo debe ser menor a 2MB');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError(null);
+
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `logo-${Date.now()}.${fileExt}`;
+      const filePath = `logos/${fileName}`;
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('assets')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('assets')
+        .getPublicUrl(filePath);
+
+      setFormData({ ...formData, logo_url: urlData.publicUrl });
+    } catch (err) {
+      console.error('Error uploading logo:', err);
+      setUploadError('Error al subir el logo. Verifica que el bucket "assets" exista.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Save to Supabase
+      const { error } = await supabase
+        .from('companies')
+        .update({
+          name: formData.name,
+          ruc: formData.ruc,
+          dv: formData.dv,
+          address: formData.address,
+          phone: formData.phone,
+          itbms_rate: formData.itbms_rate,
+          logo_url: formData.logo_url,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', company?.id);
+
+      if (error) throw error;
+      alert('Datos guardados correctamente');
+    } catch (err) {
+      console.error('Error saving company:', err);
+      alert('Error al guardar: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="card p-6">
@@ -101,13 +184,74 @@ function CompanySettings({ company }) {
           <h2 className="text-lg font-semibold text-slate-800">Datos de la Empresa</h2>
           <p className="text-sm text-slate-500">Información general del negocio</p>
         </div>
-        <button className="btn-primary">
-          <Save className="w-4 h-4" />
-          Guardar
+        <button onClick={handleSave} disabled={saving} className="btn-primary">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? 'Guardando...' : 'Guardar'}
         </button>
       </div>
       
       <div className="grid grid-cols-2 gap-4">
+        {/* Logo Upload Section */}
+        <div className="col-span-2 p-4 bg-slate-50 rounded-xl">
+          <label className="block text-sm font-medium text-slate-700 mb-3">Logo de la Empresa</label>
+          <div className="flex items-start gap-6">
+            {/* Logo Preview */}
+            <div className="flex-shrink-0">
+              {formData.logo_url ? (
+                <div className="relative">
+                  <img 
+                    src={formData.logo_url} 
+                    alt="Logo" 
+                    className="w-32 h-32 object-contain bg-white rounded-xl border border-slate-200 p-2"
+                  />
+                  <button
+                    onClick={() => setFormData({ ...formData, logo_url: '' })}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-error-500 text-white rounded-full flex items-center justify-center hover:bg-error-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-32 h-32 bg-slate-200 rounded-xl flex items-center justify-center">
+                  <Image className="w-12 h-12 text-slate-400" />
+                </div>
+              )}
+            </div>
+            
+            {/* Upload Controls */}
+            <div className="flex-1">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleLogoUpload}
+                accept=".png,.jpg,.jpeg"
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="btn-secondary mb-2"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Subiendo...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    Subir Logo
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-slate-500">PNG o JPG, máximo 2MB</p>
+              {uploadError && (
+                <p className="text-xs text-error-600 mt-1">{uploadError}</p>
+              )}
+            </div>
+          </div>
+        </div>
+        
         <div className="col-span-2">
           <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Empresa</label>
           <input
@@ -167,31 +311,200 @@ function CompanySettings({ company }) {
             className="input"
           />
         </div>
-        
-        <div className="col-span-2">
-          <label className="block text-sm font-medium text-slate-700 mb-1">URL del Logo</label>
-          <input
-            type="url"
-            value={formData.logo_url}
-            onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
-            className="input"
-            placeholder="https://..."
-          />
-        </div>
       </div>
     </div>
   );
 }
 
-// Store Settings Section
+// Store Settings Section - Multi-store management
 function StoreSettings({ store }) {
-  const [formData, setFormData] = useState({
-    name: store?.name || 'American Laundry - Costa del Este',
-    address: store?.address || 'Costa del Este, Panamá',
-    phone: store?.phone || '+507 6123-4567',
-  });
+  const { state } = useApp();
+  const [stores, setStores] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingStore, setEditingStore] = useState(null);
 
-  const [hours, setHours] = useState({
+  // Load stores on mount
+  React.useEffect(() => {
+    loadStores();
+  }, []);
+
+  const loadStores = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('stores')
+        .select('*')
+        .order('name');
+      
+      if (error) throw error;
+      setStores(data || []);
+    } catch (err) {
+      console.error('Error loading stores:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteStore = async (storeId) => {
+    if (!window.confirm('¿Estás seguro de eliminar esta tienda? Esta acción no se puede deshacer.')) {
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('stores')
+        .delete()
+        .eq('id', storeId);
+      
+      if (error) throw error;
+      setStores(stores.filter(s => s.id !== storeId));
+    } catch (err) {
+      console.error('Error deleting store:', err);
+      alert('Error al eliminar: ' + err.message);
+    }
+  };
+
+  const handleSaveStore = async (storeData) => {
+    try {
+      if (editingStore) {
+        // Update existing
+        const { error } = await supabase
+          .from('stores')
+          .update({
+            ...storeData,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingStore.id);
+        
+        if (error) throw error;
+        setStores(stores.map(s => s.id === editingStore.id ? { ...s, ...storeData } : s));
+      } else {
+        // Create new
+        const { data, error } = await supabase
+          .from('stores')
+          .insert({
+            ...storeData,
+            company_id: state.company?.id
+          })
+          .select()
+          .single();
+        
+        if (error) throw error;
+        setStores([...stores, data]);
+      }
+      
+      setShowModal(false);
+      setEditingStore(null);
+    } catch (err) {
+      console.error('Error saving store:', err);
+      alert('Error al guardar: ' + err.message);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">Tiendas / Ubicaciones</h2>
+            <p className="text-sm text-slate-500">Administra las ubicaciones de tu negocio</p>
+          </div>
+          <button 
+            onClick={() => { setEditingStore(null); setShowModal(true); }}
+            className="btn-primary"
+          >
+            <Plus className="w-4 h-4" />
+            Nueva Tienda
+          </button>
+        </div>
+
+        {/* Stores List */}
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+          </div>
+        ) : stores.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            <Store className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p className="font-medium">No hay tiendas configuradas</p>
+            <p className="text-sm mt-1">Agrega tu primera tienda para comenzar</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {stores.map((storeItem) => (
+              <div 
+                key={storeItem.id}
+                className={`p-4 rounded-xl border-2 transition-all ${
+                  storeItem.id === store?.id 
+                    ? 'border-primary-300 bg-primary-50' 
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-slate-800">{storeItem.name}</h3>
+                      {storeItem.id === store?.id && (
+                        <span className="badge bg-primary-100 text-primary-700 text-xs">Actual</span>
+                      )}
+                      {!storeItem.is_active && (
+                        <span className="badge bg-slate-100 text-slate-500 text-xs">Inactiva</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      {storeItem.address || 'Sin dirección'}
+                    </p>
+                    {storeItem.phone && (
+                      <p className="text-sm text-slate-500 mt-1">{storeItem.phone}</p>
+                    )}
+                    {storeItem.geolocation && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        📍 {storeItem.geolocation.lat?.toFixed(6)}, {storeItem.geolocation.lng?.toFixed(6)}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => { setEditingStore(storeItem); setShowModal(true); }}
+                      className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-primary-600"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteStore(storeItem.id)}
+                      className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600"
+                      disabled={storeItem.id === store?.id}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Store Modal */}
+      {showModal && (
+        <StoreFormModal
+          store={editingStore}
+          onClose={() => { setShowModal(false); setEditingStore(null); }}
+          onSave={handleSaveStore}
+        />
+      )}
+    </div>
+  );
+}
+
+// Store Form Modal
+function StoreFormModal({ store, onClose, onSave }) {
+  const isEditing = store !== null;
+  
+  const defaultHours = {
     monday: { open: '07:00', close: '20:00', closed: false },
     tuesday: { open: '07:00', close: '20:00', closed: false },
     wednesday: { open: '07:00', close: '20:00', closed: false },
@@ -199,7 +512,20 @@ function StoreSettings({ store }) {
     friday: { open: '07:00', close: '20:00', closed: false },
     saturday: { open: '08:00', close: '18:00', closed: false },
     sunday: { open: '09:00', close: '15:00', closed: true },
+  };
+
+  const [formData, setFormData] = useState({
+    name: store?.name || '',
+    address: store?.address || '',
+    phone: store?.phone || '',
+    is_active: store?.is_active !== false,
+    geolocation: store?.geolocation || { lat: 9.0, lng: -79.5 }, // Default to Panama City
+    opening_hours: store?.opening_hours || defaultHours,
   });
+  
+  const [saving, setSaving] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [locationError, setLocationError] = useState(null);
 
   const dayNames = {
     monday: 'Lunes',
@@ -211,95 +537,269 @@ function StoreSettings({ store }) {
     sunday: 'Domingo',
   };
 
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocalización no soportada en este navegador');
+      return;
+    }
+
+    setGettingLocation(true);
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setFormData({
+          ...formData,
+          geolocation: {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          }
+        });
+        setGettingLocation(false);
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        setLocationError('No se pudo obtener la ubicación. Verifica los permisos.');
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleHoursChange = (day, field, value) => {
+    setFormData({
+      ...formData,
+      opening_hours: {
+        ...formData.opening_hours,
+        [day]: { ...formData.opening_hours[day], [field]: value }
+      }
+    });
+  };
+
+  const handleSubmit = async () => {
+    // Validate required fields
+    if (!formData.name.trim()) {
+      alert('El nombre de la tienda es requerido');
+      return;
+    }
+    if (!formData.geolocation?.lat || !formData.geolocation?.lng) {
+      alert('La geolocalización es requerida');
+      return;
+    }
+
+    setSaving(true);
+    await onSave(formData);
+    setSaving(false);
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">Datos de la Tienda</h2>
-            <p className="text-sm text-slate-500">Información de esta ubicación</p>
-          </div>
-          <button className="btn-primary">
-            <Save className="w-4 h-4" />
-            Guardar
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-2xl max-h-[90vh] flex flex-col animate-scale-in">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h2 className="text-lg font-semibold text-slate-800">
+            {isEditing ? 'Editar Tienda' : 'Nueva Tienda'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
         
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Tienda</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="input"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Dirección</label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              className="input"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono</label>
-            <input
-              type="text"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="input"
-            />
-          </div>
-        </div>
-      </div>
-      
-      {/* Opening Hours */}
-      <div className="card p-6">
-        <h3 className="text-lg font-semibold text-slate-800 mb-4">Horario de Atención</h3>
-        
-        <div className="space-y-3">
-          {Object.entries(hours).map(([day, schedule]) => (
-            <div key={day} className="flex items-center gap-4 py-2 border-b border-slate-100 last:border-0">
-              <span className="w-24 font-medium text-slate-700">{dayNames[day]}</span>
-              
-              <label className="flex items-center gap-2">
+        {/* Form */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          {/* Basic Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Nombre de Tienda <span className="text-error-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="input"
+                placeholder="American Laundry - Costa del Este"
+              />
+            </div>
+            
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Dirección</label>
+              <input
+                type="text"
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                className="input"
+                placeholder="Costa del Este, Panamá"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono</label>
+              <input
+                type="text"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                className="input"
+                placeholder="+507 6123-4567"
+              />
+            </div>
+            
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={!schedule.closed}
-                  onChange={(e) => setHours({ ...hours, [day]: { ...schedule, closed: !e.target.checked } })}
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                   className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
                 />
-                <span className="text-sm text-slate-600">Abierto</span>
+                <span className="text-sm text-slate-700">Tienda activa</span>
               </label>
-              
-              {!schedule.closed && (
-                <>
-                  <input
-                    type="time"
-                    value={schedule.open}
-                    onChange={(e) => setHours({ ...hours, [day]: { ...schedule, open: e.target.value } })}
-                    className="input w-32"
-                  />
-                  <span className="text-slate-400">a</span>
-                  <input
-                    type="time"
-                    value={schedule.close}
-                    onChange={(e) => setHours({ ...hours, [day]: { ...schedule, close: e.target.value } })}
-                    className="input w-32"
-                  />
-                </>
-              )}
-              
-              {schedule.closed && (
-                <span className="text-sm text-slate-400">Cerrado</span>
-              )}
             </div>
-          ))}
+          </div>
+
+          {/* Geolocation */}
+          <div className="p-4 bg-slate-50 rounded-xl">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700">
+                  Geolocalización <span className="text-error-500">*</span>
+                </label>
+                <p className="text-xs text-slate-500">Requerida para entregas y mapas</p>
+              </div>
+              <button
+                onClick={getCurrentLocation}
+                disabled={gettingLocation}
+                className="btn-secondary text-sm"
+              >
+                {gettingLocation ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Obteniendo...
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="w-4 h-4" />
+                    Usar mi ubicación
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Latitud</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={formData.geolocation?.lat || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    geolocation: { ...formData.geolocation, lat: parseFloat(e.target.value) }
+                  })}
+                  className="input"
+                  placeholder="9.0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Longitud</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={formData.geolocation?.lng || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    geolocation: { ...formData.geolocation, lng: parseFloat(e.target.value) }
+                  })}
+                  className="input"
+                  placeholder="-79.5"
+                />
+              </div>
+            </div>
+            
+            {locationError && (
+              <p className="text-xs text-error-600 mt-2">{locationError}</p>
+            )}
+            
+            {formData.geolocation?.lat && formData.geolocation?.lng && (
+              <a
+                href={`https://www.google.com/maps?q=${formData.geolocation.lat},${formData.geolocation.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary-600 hover:underline mt-2 inline-block"
+              >
+                Ver en Google Maps →
+              </a>
+            )}
+          </div>
+
+          {/* Opening Hours */}
+          <div>
+            <h3 className="text-sm font-medium text-slate-700 mb-3">Horario de Atención</h3>
+            <div className="space-y-2">
+              {Object.entries(formData.opening_hours).map(([day, schedule]) => (
+                <div key={day} className="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
+                  <span className="w-24 text-sm font-medium text-slate-700">{dayNames[day]}</span>
+                  
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={!schedule.closed}
+                      onChange={(e) => handleHoursChange(day, 'closed', !e.target.checked)}
+                      className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                    />
+                    <span className="text-xs text-slate-600">Abierto</span>
+                  </label>
+                  
+                  {!schedule.closed ? (
+                    <>
+                      <input
+                        type="time"
+                        value={schedule.open}
+                        onChange={(e) => handleHoursChange(day, 'open', e.target.value)}
+                        className="input w-28 text-sm"
+                      />
+                      <span className="text-slate-400 text-sm">a</span>
+                      <input
+                        type="time"
+                        value={schedule.close}
+                        onChange={(e) => handleHoursChange(day, 'close', e.target.value)}
+                        className="input w-28 text-sm"
+                      />
+                    </>
+                  ) : (
+                    <span className="text-sm text-slate-400">Cerrado</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-100">
+          <button type="button" onClick={onClose} className="btn-secondary">
+            Cancelar
+          </button>
+          <button 
+            onClick={handleSubmit}
+            disabled={saving}
+            className="btn-primary"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                {isEditing ? 'Guardar Cambios' : 'Crear Tienda'}
+              </>
+            )}
+          </button>
         </div>
       </div>
     </div>
