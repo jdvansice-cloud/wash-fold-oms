@@ -9,7 +9,6 @@ function POSScreen() {
   const [weightModalProduct, setWeightModalProduct] = useState(null);
   const [childModalProduct, setChildModalProduct] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
-  const [pendingProduct, setPendingProduct] = useState(null);
   
   // Set default active section when sections load
   useEffect(() => {
@@ -18,9 +17,6 @@ function POSScreen() {
       actions.setActiveSection(activeSections[0].id);
     }
   }, [state.sections, state.activeSection, actions]);
-  
-  // Check if customer is selected (either walk-in confirmed or actual customer)
-  const hasCustomerSelected = state.ticket.customer !== null || state.ticket.customerConfirmed;
   
   // Get products for active section from state (not sampleData)
   const sectionProducts = useMemo(() => {
@@ -37,13 +33,6 @@ function POSScreen() {
   };
   
   const handleProductClick = (product) => {
-    // Check if customer is selected first
-    if (!hasCustomerSelected) {
-      setPendingProduct(product);
-      setShowCustomerModal(true);
-      return;
-    }
-    
     // If product has children, show child selection modal
     if (product.has_children) {
       setChildModalProduct(product);
@@ -74,39 +63,11 @@ function POSScreen() {
   const handleCustomerSelect = (customer) => {
     actions.setCustomer(customer);
     setShowCustomerModal(false);
-    
-    // If there was a pending product, process it now
-    if (pendingProduct) {
-      setTimeout(() => {
-        if (pendingProduct.has_children) {
-          setChildModalProduct(pendingProduct);
-        } else if (pendingProduct.pricing_type === 'weight') {
-          setWeightModalProduct(pendingProduct);
-        } else {
-          addProductToTicket(pendingProduct);
-        }
-        setPendingProduct(null);
-      }, 100);
-    }
   };
   
   const handleWalkInSelect = () => {
     actions.confirmWalkIn();
     setShowCustomerModal(false);
-    
-    // If there was a pending product, process it now
-    if (pendingProduct) {
-      setTimeout(() => {
-        if (pendingProduct.has_children) {
-          setChildModalProduct(pendingProduct);
-        } else if (pendingProduct.pricing_type === 'weight') {
-          setWeightModalProduct(pendingProduct);
-        } else {
-          addProductToTicket(pendingProduct);
-        }
-        setPendingProduct(null);
-      }, 100);
-    }
   };
   
   const handleWeightEntry = (product, entries) => {
@@ -131,14 +92,6 @@ function POSScreen() {
   };
   
   const handleChildProductSelect = (childProduct) => {
-    // Check if customer is selected first
-    if (!hasCustomerSelected) {
-      setPendingProduct(childProduct);
-      setShowCustomerModal(true);
-      setChildModalProduct(null);
-      return;
-    }
-    
     if (childProduct.pricing_type === 'weight') {
       setWeightModalProduct(childProduct);
     } else {
@@ -218,10 +171,7 @@ function POSScreen() {
       
       {showCustomerModal && (
         <CustomerSearchModal
-          onClose={() => {
-            setShowCustomerModal(false);
-            setPendingProduct(null);
-          }}
+          onClose={() => setShowCustomerModal(false)}
           onSelect={handleCustomerSelect}
           onWalkIn={handleWalkInSelect}
           showWalkInPrompt={true}
@@ -239,6 +189,41 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   const isWeightBased = product.pricing_type === 'weight';
   const hasChildren = product.has_children;
   
+  // Parent product tile - different styling
+  if (hasChildren) {
+    return (
+      <button
+        onClick={onClick}
+        className="product-tile flex flex-col items-center text-center group relative overflow-hidden bg-gradient-to-br from-purple-50 to-indigo-50 border-2 border-purple-200 hover:border-purple-400 hover:shadow-lg"
+        style={{ animationDelay: `${delay}ms` }}
+      >
+        {/* Category indicator */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-400 to-indigo-400" />
+        
+        {/* Icon */}
+        <div className="w-16 h-16 flex items-center justify-center mb-3 mt-2 bg-white/60 rounded-2xl group-hover:bg-white transition-colors shadow-sm">
+          <span className="text-3xl">{product.icon || '📦'}</span>
+        </div>
+        
+        {/* Name */}
+        <p className="text-sm font-semibold text-purple-800 leading-tight mb-2 line-clamp-2">
+          {product.name}
+        </p>
+        
+        {/* "Ver opciones" label instead of price */}
+        <span className="text-xs font-medium text-purple-600 bg-purple-100 px-2 py-1 rounded-full">
+          Ver opciones →
+        </span>
+        
+        {/* Corner badge */}
+        <span className="absolute top-2 right-2 w-6 h-6 bg-purple-500 text-white rounded-full text-xs flex items-center justify-center font-bold shadow-sm">
+          +
+        </span>
+      </button>
+    );
+  }
+  
+  // Regular product tile
   return (
     <button
       onClick={onClick}
@@ -266,13 +251,6 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
       ) : (
         <span className="text-sm font-semibold text-primary-600">
           B/{priceWithTax.toFixed(2)}
-        </span>
-      )}
-      
-      {/* Indicators */}
-      {hasChildren && (
-        <span className="absolute top-2 right-2 w-5 h-5 bg-primary-100 text-primary-600 rounded-full text-xs flex items-center justify-center font-bold">
-          +
         </span>
       )}
       
