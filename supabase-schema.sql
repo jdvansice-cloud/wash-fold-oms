@@ -96,6 +96,7 @@ CREATE TABLE products (
   is_online BOOLEAN DEFAULT true,
   is_taxable BOOLEAN DEFAULT true,
   has_children BOOLEAN DEFAULT false,
+  display_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

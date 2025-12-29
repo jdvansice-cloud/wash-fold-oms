@@ -98,6 +98,7 @@ const actionTypes = {
   UPDATE_ORDER_STATUS: 'UPDATE_ORDER_STATUS',
   ADD_PRODUCT: 'ADD_PRODUCT',
   UPDATE_PRODUCT: 'UPDATE_PRODUCT',
+  UPDATE_PRODUCTS_ORDER: 'UPDATE_PRODUCTS_ORDER',
   DELETE_PRODUCT: 'DELETE_PRODUCT',
   ADD_SECTION: 'ADD_SECTION',
   UPDATE_SECTION: 'UPDATE_SECTION',
@@ -348,6 +349,16 @@ function appReducer(state, action) {
       return { ...state, products: newProducts };
     }
     
+    case actionTypes.UPDATE_PRODUCTS_ORDER: {
+      // action.payload is an array of { id, display_order }
+      const updates = action.payload;
+      const newProducts = state.products.map(p => {
+        const update = updates.find(u => u.id === p.id);
+        return update ? { ...p, display_order: update.display_order } : p;
+      });
+      return { ...state, products: newProducts };
+    }
+    
     case actionTypes.DELETE_PRODUCT:
       return {
         ...state,
@@ -483,6 +494,7 @@ export function AppProvider({ children }) {
     // Products CRUD
     addProduct: (product) => dispatch({ type: actionTypes.ADD_PRODUCT, payload: product }),
     updateProduct: (product) => dispatch({ type: actionTypes.UPDATE_PRODUCT, payload: product }),
+    updateProductsOrder: (updates) => dispatch({ type: actionTypes.UPDATE_PRODUCTS_ORDER, payload: updates }),
     deleteProduct: (productId) => dispatch({ type: actionTypes.DELETE_PRODUCT, payload: productId }),
     
     // Sections CRUD

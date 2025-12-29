@@ -7,6 +7,7 @@ import {
   GripVertical, Eye, EyeOff
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useDataLoader } from '../hooks/useDataLoader';
 
 function SettingsPage() {
   const { state } = useApp();
@@ -495,11 +496,14 @@ function NotificationsSettings() {
 // Products Settings - Full Implementation
 function ProductsSettings() {
   const { state, actions } = useApp();
+  const { updateProductsOrder } = useDataLoader();
   const [activeTab, setActiveTab] = useState('products'); // products, sections, preferences
   const [selectedSection, setSelectedSection] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showSectionModal, setShowSectionModal] = useState(false);
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverItem, setDragOverItem] = useState(null);
   
   const ITBMS_RATE = state.settings?.itbms_rate || 7;
   
@@ -515,10 +519,154 @@ function ProductsSettings() {
   // Products from state
   const products = state.products || [];
   
-  // Filter products by section
-  const filteredProducts = selectedSection === 'all' 
-    ? products 
-    : products.filter(p => p.section_id === selectedSection);
+  // Group and sort products: parents with their children, sorted by display_order
+  const getGroupedProducts = () => {
+    // Filter by section first
+    const sectionProducts = selectedSection === 'all' 
+      ? [...products] 
+      : products.filter(p => p.section_id === selectedSection);
+    
+    // Separate parents, standalone, and children
+    const parentProducts = sectionProducts.filter(p => p.has_children);
+    const childProducts = sectionProducts.filter(p => p.parent_id);
+    const standaloneProducts = sectionProducts.filter(p => !p.has_children && !p.parent_id);
+    
+    // Create grouped structure
+    const groups = [];
+    
+    // Add parent products with their children
+    parentProducts
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+      .forEach(parent => {
+        const children = childProducts
+          .filter(c => c.parent_id === parent.id)
+          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        groups.push({ type: 'group', parent, children });
+      });
+    
+    // Add standalone products
+    standaloneProducts
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+      .forEach(product => {
+        groups.push({ type: 'standalone', product });
+      });
+    
+    // Sort all groups by the display_order of the first item
+    groups.sort((a, b) => {
+      const orderA = a.type === 'group' ? (a.parent.display_order || 0) : (a.product.display_order || 0);
+      const orderB = b.type === 'group' ? (b.parent.display_order || 0) : (b.product.display_order || 0);
+      return orderA - orderB;
+    });
+    
+    return groups;
+  };
+  
+  const groupedProducts = getGroupedProducts();
+  
+  // Drag handlers for groups/standalone products
+  const handleDragStart = (e, index, type) => {
+    setDraggedItem({ index, type });
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+    // Add visual feedback
+    setTimeout(() => {
+      e.target.closest('.drag-group')?.classList.add('opacity-50');
+    }, 0);
+  };
+  
+  const handleDragEnd = (e) => {
+    e.target.closest('.drag-group')?.classList.remove('opacity-50');
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+  
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedItem?.index !== index) {
+      setDragOverItem(index);
+    }
+  };
+  
+  const handleDragLeave = () => {
+    setDragOverItem(null);
+  };
+  
+  const handleDrop = (e, dropIndex) => {
+    e.preventDefault();
+    
+    if (draggedItem === null || draggedItem.index === dropIndex) {
+      setDragOverItem(null);
+      return;
+    }
+    
+    // Reorder the groups
+    const newGroups = [...groupedProducts];
+    const [removed] = newGroups.splice(draggedItem.index, 1);
+    newGroups.splice(dropIndex, 0, removed);
+    
+    // Calculate new display orders and update products
+    let order = 0;
+    const updates = [];
+    
+    newGroups.forEach(group => {
+      if (group.type === 'group') {
+        updates.push({ id: group.parent.id, display_order: order++ });
+        group.children.forEach(child => {
+          updates.push({ id: child.id, display_order: order++ });
+        });
+      } else {
+        updates.push({ id: group.product.id, display_order: order++ });
+      }
+    });
+    
+    // Update all products with new order
+    updateProductsOrder(updates);
+    
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+  
+  // Drag handlers for children within a group
+  const handleChildDragStart = (e, parentId, childIndex) => {
+    setDraggedItem({ parentId, childIndex, type: 'child' });
+    e.dataTransfer.effectAllowed = 'move';
+    e.stopPropagation();
+  };
+  
+  const handleChildDragOver = (e, parentId, childIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedItem?.type === 'child' && draggedItem?.parentId === parentId && draggedItem?.childIndex !== childIndex) {
+      setDragOverItem({ parentId, childIndex });
+    }
+  };
+  
+  const handleChildDrop = (e, parentId, dropIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (draggedItem?.type !== 'child' || draggedItem?.parentId !== parentId) {
+      return;
+    }
+    
+    const group = groupedProducts.find(g => g.type === 'group' && g.parent.id === parentId);
+    if (!group) return;
+    
+    const newChildren = [...group.children];
+    const [removed] = newChildren.splice(draggedItem.childIndex, 1);
+    newChildren.splice(dropIndex, 0, removed);
+    
+    // Update child display orders
+    const updates = newChildren.map((child, index) => ({
+      id: child.id,
+      display_order: (group.parent.display_order || 0) + index + 1
+    }));
+    
+    updateProductsOrder(updates);
+    
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
   
   // Handle save product
   const handleSaveProduct = (productData) => {
@@ -526,8 +674,9 @@ function ProductsSettings() {
       // Update existing product
       actions.updateProduct(productData);
     } else {
-      // Add new product
-      actions.addProduct(productData);
+      // Add new product with display_order at the end
+      const maxOrder = Math.max(...products.map(p => p.display_order || 0), 0);
+      actions.addProduct({ ...productData, display_order: maxOrder + 1 });
     }
     setShowAddModal(false);
     setEditingProduct(null);
@@ -593,115 +742,205 @@ function ProductsSettings() {
             </button>
           </div>
           
-          {/* Products Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase w-8"></th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Producto</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Sección</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
-                    <span>Precio</span>
-                    <span className="block text-[10px] font-normal normal-case text-slate-400">con ITBMS</span>
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase">
-                    <span>Express</span>
-                    <span className="block text-[10px] font-normal normal-case text-slate-400">con ITBMS</span>
-                  </th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Tipo</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Activo</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredProducts.map((product) => {
-                  const section = sections.find(s => s.id === product.section_id);
-                  const isChild = product.parent_id !== null;
-                  
-                  return (
-                    <tr key={product.id} className={`hover:bg-slate-50 ${isChild ? 'bg-slate-25' : ''}`}>
-                      <td className="px-4 py-3">
-                        <GripVertical className="w-4 h-4 text-slate-300 cursor-grab" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <span className="text-2xl">{product.icon || '📦'}</span>
-                          <div>
-                            <p className={`font-medium text-slate-800 ${isChild ? 'pl-4 text-sm' : ''}`}>
-                              {isChild && <span className="text-slate-400 mr-1">↳</span>}
-                              {product.name}
-                            </p>
-                            {product.has_children && (
-                              <p className="text-xs text-slate-400">Tiene sub-productos</p>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span 
-                          className="badge text-xs"
-                          style={{ 
-                            backgroundColor: `${section?.color}20`, 
-                            color: section?.color 
-                          }}
-                        >
-                          {section?.name || '-'}
+          {/* Instructions */}
+          <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 text-xs text-blue-700 flex items-center gap-2">
+            <GripVertical className="w-4 h-4" />
+            <span>Arrastra los productos para cambiar el orden en la pantalla de órdenes. Los productos padre se mueven con sus sub-productos.</span>
+          </div>
+          
+          {/* Products List - Draggable Groups */}
+          <div className="p-4 space-y-2">
+            {groupedProducts.map((group, groupIndex) => (
+              <div
+                key={group.type === 'group' ? group.parent.id : group.product.id}
+                className={`drag-group rounded-xl transition-all ${
+                  dragOverItem === groupIndex ? 'ring-2 ring-primary-400 ring-offset-2' : ''
+                }`}
+                draggable
+                onDragStart={(e) => handleDragStart(e, groupIndex, group.type)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, groupIndex)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, groupIndex)}
+              >
+                {group.type === 'group' ? (
+                  // Parent with children
+                  <div className="border border-purple-200 rounded-xl overflow-hidden bg-gradient-to-r from-purple-50 to-white">
+                    {/* Parent Row */}
+                    <div className="flex items-center gap-3 p-3 bg-purple-50 border-b border-purple-100">
+                      <GripVertical className="w-5 h-5 text-purple-300 cursor-grab flex-shrink-0" />
+                      <span className="text-2xl flex-shrink-0">{group.parent.icon || '📦'}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-purple-900">{group.parent.name}</p>
+                        <p className="text-xs text-purple-600">{group.children.length} sub-productos</p>
+                      </div>
+                      <span 
+                        className="badge text-xs"
+                        style={{ 
+                          backgroundColor: `${sections.find(s => s.id === group.parent.section_id)?.color}20`, 
+                          color: sections.find(s => s.id === group.parent.section_id)?.color 
+                        }}
+                      >
+                        {sections.find(s => s.id === group.parent.section_id)?.name || '-'}
+                      </span>
+                      <span className="badge bg-purple-100 text-purple-700 text-xs">Padre</span>
+                      {group.parent.is_active !== false ? (
+                        <span className="w-6 h-6 bg-success-100 text-success-600 rounded-full flex items-center justify-center">
+                          <Check className="w-4 h-4" />
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-800">
-                        {product.price ? `B/${getPriceWithTax(product.price).toFixed(2)}` : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-slate-600">
-                        {product.express_price ? `B/${getPriceWithTax(product.express_price).toFixed(2)}` : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {product.pricing_type === 'weight' ? (
-                          <span className="badge bg-blue-100 text-blue-700">
-                            <Scale className="w-3 h-3 mr-1" />
-                            Peso
-                          </span>
-                        ) : (
-                          <span className="badge bg-slate-100 text-slate-700">
-                            <Hash className="w-3 h-3 mr-1" />
-                            Cantidad
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {product.is_active !== false ? (
-                          <span className="w-6 h-6 bg-success-100 text-success-600 rounded-full flex items-center justify-center mx-auto">
-                            <Check className="w-4 h-4" />
-                          </span>
-                        ) : (
-                          <span className="w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
-                            <X className="w-4 h-4" />
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
-                          <button 
-                            onClick={() => { setEditingProduct(product); setShowAddModal(true); }}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-primary-600"
+                      ) : (
+                        <span className="w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center">
+                          <X className="w-4 h-4" />
+                        </span>
+                      )}
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setEditingProduct(group.parent); setShowAddModal(true); }}
+                          className="p-2 hover:bg-purple-100 rounded-lg transition-colors text-purple-500 hover:text-purple-700"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDeleteProduct(group.parent.id); }}
+                          className="p-2 hover:bg-purple-100 rounded-lg transition-colors text-purple-500 hover:text-error-600"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Children Rows */}
+                    <div className="divide-y divide-purple-100">
+                      {group.children.map((child, childIndex) => {
+                        const section = sections.find(s => s.id === child.section_id);
+                        const isChildDragOver = dragOverItem?.parentId === group.parent.id && dragOverItem?.childIndex === childIndex;
+                        
+                        return (
+                          <div
+                            key={child.id}
+                            className={`flex items-center gap-3 p-3 pl-8 bg-white hover:bg-slate-50 transition-all ${
+                              isChildDragOver ? 'ring-2 ring-primary-300 ring-inset' : ''
+                            }`}
+                            draggable
+                            onDragStart={(e) => handleChildDragStart(e, group.parent.id, childIndex)}
+                            onDragOver={(e) => handleChildDragOver(e, group.parent.id, childIndex)}
+                            onDrop={(e) => handleChildDrop(e, group.parent.id, childIndex)}
+                            onDragEnd={handleDragEnd}
                           >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteProduct(product.id)}
-                            className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            <GripVertical className="w-4 h-4 text-slate-300 cursor-grab flex-shrink-0" />
+                            <span className="text-slate-400 text-sm">↳</span>
+                            <span className="text-xl flex-shrink-0">{child.icon || '📦'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-slate-700 text-sm">{child.name}</p>
+                            </div>
+                            <span className="text-sm font-medium text-slate-800 w-24 text-right">
+                              {child.price ? `B/${getPriceWithTax(child.price).toFixed(2)}` : '-'}
+                            </span>
+                            <span className="text-sm text-slate-500 w-24 text-right">
+                              {child.express_price ? `B/${getPriceWithTax(child.express_price).toFixed(2)}` : '-'}
+                            </span>
+                            {child.pricing_type === 'weight' ? (
+                              <span className="badge bg-blue-100 text-blue-700 text-xs w-20 justify-center">
+                                <Scale className="w-3 h-3 mr-1" />
+                                Peso
+                              </span>
+                            ) : (
+                              <span className="badge bg-slate-100 text-slate-700 text-xs w-20 justify-center">
+                                <Hash className="w-3 h-3 mr-1" />
+                                Cant.
+                              </span>
+                            )}
+                            {child.is_active !== false ? (
+                              <span className="w-6 h-6 bg-success-100 text-success-600 rounded-full flex items-center justify-center">
+                                <Check className="w-4 h-4" />
+                              </span>
+                            ) : (
+                              <span className="w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center">
+                                <X className="w-4 h-4" />
+                              </span>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setEditingProduct(child); setShowAddModal(true); }}
+                                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-primary-600"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDeleteProduct(child.id); }}
+                                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  // Standalone product
+                  <div className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl bg-white hover:bg-slate-50">
+                    <GripVertical className="w-5 h-5 text-slate-300 cursor-grab flex-shrink-0" />
+                    <span className="text-2xl flex-shrink-0">{group.product.icon || '📦'}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-800">{group.product.name}</p>
+                    </div>
+                    <span 
+                      className="badge text-xs"
+                      style={{ 
+                        backgroundColor: `${sections.find(s => s.id === group.product.section_id)?.color}20`, 
+                        color: sections.find(s => s.id === group.product.section_id)?.color 
+                      }}
+                    >
+                      {sections.find(s => s.id === group.product.section_id)?.name || '-'}
+                    </span>
+                    <span className="text-sm font-medium text-slate-800 w-24 text-right">
+                      {group.product.price ? `B/${getPriceWithTax(group.product.price).toFixed(2)}` : '-'}
+                    </span>
+                    <span className="text-sm text-slate-500 w-24 text-right">
+                      {group.product.express_price ? `B/${getPriceWithTax(group.product.express_price).toFixed(2)}` : '-'}
+                    </span>
+                    {group.product.pricing_type === 'weight' ? (
+                      <span className="badge bg-blue-100 text-blue-700 text-xs w-20 justify-center">
+                        <Scale className="w-3 h-3 mr-1" />
+                        Peso
+                      </span>
+                    ) : (
+                      <span className="badge bg-slate-100 text-slate-700 text-xs w-20 justify-center">
+                        <Hash className="w-3 h-3 mr-1" />
+                        Cant.
+                      </span>
+                    )}
+                    {group.product.is_active !== false ? (
+                      <span className="w-6 h-6 bg-success-100 text-success-600 rounded-full flex items-center justify-center">
+                        <Check className="w-4 h-4" />
+                      </span>
+                    ) : (
+                      <span className="w-6 h-6 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center">
+                        <X className="w-4 h-4" />
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setEditingProduct(group.product); setShowAddModal(true); }}
+                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-primary-600"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteProduct(group.product.id); }}
+                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
             
-            {filteredProducts.length === 0 && (
+            {groupedProducts.length === 0 && (
               <div className="text-center py-12 text-slate-400">
                 <Package className="w-12 h-12 mx-auto mb-3 opacity-50" />
                 <p className="font-medium">No hay productos</p>
@@ -849,6 +1088,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
     parent_id: product?.parent_id || '',
     is_active: product?.is_active !== false,
     is_taxable: product?.is_taxable !== false,
+    has_children: product?.has_children || false, // Is this a parent product?
     extra_days: product?.extra_days || 0,
   });
   
@@ -867,22 +1107,39 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
   const expressPriceBreakdown = formData.is_taxable ? calculatePriceBreakdown(formData.display_express_price) : null;
   
   const handleChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      
+      // If setting as parent product, clear parent_id (can't be both)
+      if (field === 'has_children' && value === true) {
+        newData.parent_id = '';
+      }
+      
+      // If selecting a parent, can't be a parent itself
+      if (field === 'parent_id' && value) {
+        newData.has_children = false;
+      }
+      
+      return newData;
+    });
   };
   
   const handleSubmit = () => {
-    let priceToSave, expressPriceToSave;
+    let priceToSave = 0, expressPriceToSave = 0;
     
-    if (formData.is_taxable) {
-      // When taxable: input is WITH ITBMS, save WITHOUT ITBMS
-      const { basePrice } = calculatePriceBreakdown(formData.display_price);
-      const { basePrice: expressBasePrice } = calculatePriceBreakdown(formData.display_express_price);
-      priceToSave = parseFloat(basePrice.toFixed(2)) || 0;
-      expressPriceToSave = parseFloat(expressBasePrice.toFixed(2)) || 0;
-    } else {
-      // When not taxable: input is the actual price, save as-is
-      priceToSave = parseFloat(formData.display_price) || 0;
-      expressPriceToSave = parseFloat(formData.display_express_price) || 0;
+    // Only process prices if NOT a parent product
+    if (!formData.has_children) {
+      if (formData.is_taxable) {
+        // When taxable: input is WITH ITBMS, save WITHOUT ITBMS
+        const { basePrice } = calculatePriceBreakdown(formData.display_price);
+        const { basePrice: expressBasePrice } = calculatePriceBreakdown(formData.display_express_price);
+        priceToSave = parseFloat(basePrice.toFixed(2)) || 0;
+        expressPriceToSave = parseFloat(expressBasePrice.toFixed(2)) || 0;
+      } else {
+        // When not taxable: input is the actual price, save as-is
+        priceToSave = parseFloat(formData.display_price) || 0;
+        expressPriceToSave = parseFloat(formData.display_express_price) || 0;
+      }
     }
     
     onSave({
@@ -893,18 +1150,19 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
       pricing_type: formData.pricing_type,
       price: priceToSave,
       express_price: expressPriceToSave,
-      cost: parseFloat(formData.cost) || 0,
-      min_quantity: formData.min_quantity,
-      pieces_per_unit: formData.pieces_per_unit,
+      cost: formData.has_children ? 0 : (parseFloat(formData.cost) || 0),
+      min_quantity: formData.has_children ? 1 : formData.min_quantity,
+      pieces_per_unit: formData.has_children ? 1 : formData.pieces_per_unit,
       parent_id: formData.parent_id || null,
       is_active: formData.is_active,
-      is_taxable: formData.is_taxable,
-      extra_days: formData.extra_days,
+      is_taxable: formData.has_children ? false : formData.is_taxable,
+      has_children: formData.has_children,
+      extra_days: formData.has_children ? 0 : formData.extra_days,
     });
   };
   
-  // Parent products (those without parent_id)
-  const parentProducts = products.filter(p => !p.parent_id && p.id !== product?.id);
+  // Parent products (only those with has_children: true)
+  const parentProducts = products.filter(p => p.has_children && p.id !== product?.id);
   
   // Common emoji options for icons
   const iconOptions = ['📦', '👕', '👖', '🧺', '🧹', '🧼', '🧴', '🛏️', '🪥', '🧽', '🧤', '🧦', '👔', '👗', '🩳', '🩱'];
@@ -978,56 +1236,111 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
               </div>
             </div>
             
-            {/* Pricing Type */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Precio</label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleChange('pricing_type', 'quantity')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                    formData.pricing_type === 'quantity'
-                      ? 'bg-primary-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <Hash className="w-4 h-4" />
-                  Cantidad
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleChange('pricing_type', 'weight')}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
-                    formData.pricing_type === 'weight'
-                      ? 'bg-primary-500 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <Scale className="w-4 h-4" />
-                  Por Peso
-                </button>
+            {/* Product Type - Parent or Regular */}
+            <div className="col-span-2 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Tipo de Producto</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {formData.has_children 
+                      ? 'Tile contenedor que abre modal con sub-productos' 
+                      : 'Producto con precio que se agrega al ticket'}
+                  </p>
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <span className={`text-sm ${!formData.has_children ? 'font-medium text-slate-700' : 'text-slate-400'}`}>
+                    Regular
+                  </span>
+                  <div 
+                    onClick={() => handleChange('has_children', !formData.has_children)}
+                    className={`relative w-12 h-6 rounded-full transition-colors cursor-pointer ${
+                      formData.has_children ? 'bg-purple-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                      formData.has_children ? 'translate-x-6' : ''
+                    }`} />
+                  </div>
+                  <span className={`text-sm ${formData.has_children ? 'font-medium text-purple-700' : 'text-slate-400'}`}>
+                    Padre
+                  </span>
+                </label>
               </div>
+              
+              {formData.has_children && (
+                <div className="mt-3 p-3 bg-white/60 rounded-lg border border-purple-100">
+                  <p className="text-xs text-purple-700">
+                    <strong>Producto Padre:</strong> Este producto aparecerá como un tile en la pantalla de órdenes. 
+                    Al hacer clic, abrirá un modal para seleccionar los sub-productos. 
+                    No tiene precio propio - los precios se definen en los sub-productos.
+                  </p>
+                </div>
+              )}
             </div>
             
-            {/* Parent Product */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Producto Padre (opcional)
-              </label>
-              <select
-                value={formData.parent_id}
-                onChange={(e) => handleChange('parent_id', e.target.value)}
-                className="input"
-              >
-                <option value="">Ninguno (producto principal)</option>
-                {parentProducts.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-400 mt-1">Si es sub-producto, selecciona el padre</p>
-            </div>
+            {/* Parent Product Selector - Only show if NOT a parent */}
+            {!formData.has_children && (
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Producto Padre (opcional)
+                </label>
+                <select
+                  value={formData.parent_id}
+                  onChange={(e) => handleChange('parent_id', e.target.value)}
+                  className="input"
+                  disabled={parentProducts.length === 0}
+                >
+                  <option value="">Ninguno (producto independiente)</option>
+                  {parentProducts.map((p) => (
+                    <option key={p.id} value={p.id}>{p.icon} {p.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">
+                  {parentProducts.length === 0 
+                    ? 'No hay productos padre. Crea uno primero si deseas agrupar productos.'
+                    : 'Si este es un sub-producto, selecciona a qué producto padre pertenece'}
+                </p>
+              </div>
+            )}
             
-            {/* Price Section - with ITBMS calculation */}
+            {/* Pricing Type - Only show if NOT a parent */}
+            {!formData.has_children && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Precio</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleChange('pricing_type', 'quantity')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                      formData.pricing_type === 'quantity'
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Hash className="w-4 h-4" />
+                    Cantidad
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChange('pricing_type', 'weight')}
+                    className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+                      formData.pricing_type === 'weight'
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Scale className="w-4 h-4" />
+                    Por Peso
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {/* Spacer for grid alignment when not parent */}
+            {!formData.has_children && <div></div>}
+            
+            {/* Price Section - Only show if NOT a parent */}
+            {!formData.has_children && (
             <div className="col-span-2 p-4 bg-slate-50 rounded-xl space-y-4">
               {/* ITBMS Toggle - BEFORE price inputs */}
               <div className="flex items-center justify-between pb-3 border-b border-slate-200">
@@ -1146,8 +1459,10 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                 </div>
               </div>
             </div>
+            )}
             
-            {/* Cost */}
+            {/* Cost - Only show if NOT a parent */}
+            {!formData.has_children && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Costo (interno)
@@ -1165,8 +1480,10 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
               </div>
               <p className="text-xs text-slate-400 mt-1">Para cálculo de margen (no incluye ITBMS)</p>
             </div>
+            )}
             
-            {/* Min Quantity */}
+            {/* Min Quantity - Only show if NOT a parent */}
+            {!formData.has_children && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Cantidad Mínima
@@ -1179,8 +1496,10 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                 min="1"
               />
             </div>
+            )}
             
-            {/* Pieces per Unit */}
+            {/* Pieces per Unit - Only show if NOT a parent */}
+            {!formData.has_children && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Piezas por Unidad
@@ -1193,8 +1512,10 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                 min="1"
               />
             </div>
+            )}
             
-            {/* Extra Days */}
+            {/* Extra Days - Only show if NOT a parent */}
+            {!formData.has_children && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Días Extra de Procesamiento
@@ -1210,6 +1531,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
                 <option value={3}>+3 días</option>
               </select>
             </div>
+            )}
             
             {/* Toggles */}
             <div className="col-span-2 flex items-center gap-6 pt-4 border-t border-slate-100">

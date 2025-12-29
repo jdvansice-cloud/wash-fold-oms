@@ -56,7 +56,7 @@ export function useDataLoader() {
         { data: paymentMethods, error: pmError },
       ] = await Promise.all([
         supabase.from('sections').select('*').eq('store_id', storeId).order('display_order'),
-        supabase.from('products').select('*').eq('store_id', storeId).eq('is_active', true).order('name'),
+        supabase.from('products').select('*').eq('store_id', storeId).eq('is_active', true).order('display_order'),
         supabase.from('customers').select('*').eq('store_id', storeId).eq('is_active', true).order('first_name'),
         supabase.from('orders').select('*').eq('store_id', storeId).order('created_at', { ascending: false }).limit(100),
         supabase.from('payment_methods').select('*').eq('store_id', storeId).eq('is_active', true).order('display_order'),
@@ -238,6 +238,27 @@ export function useDataLoader() {
     }
   };
 
+  const updateProductsOrder = async (updates) => {
+    try {
+      // Update each product's display_order
+      for (const update of updates) {
+        const { error } = await supabase
+          .from('products')
+          .update({ display_order: update.display_order, updated_at: new Date().toISOString() })
+          .eq('id', update.id);
+
+        if (error) throw error;
+      }
+
+      // Update local state
+      actions.updateProductsOrder(updates);
+      return true;
+    } catch (err) {
+      console.error('Error updating products order:', err);
+      throw err;
+    }
+  };
+
   return {
     isLoading,
     error,
@@ -247,6 +268,7 @@ export function useDataLoader() {
     updateOrderStatus,
     addCustomer,
     updateCustomer,
+    updateProductsOrder,
   };
 }
 
