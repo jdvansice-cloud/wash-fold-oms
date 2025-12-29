@@ -93,13 +93,8 @@ function TicketPanel() {
           </button>
         </div>
         
-        {/* Price List & Express Toggle */}
-        <div className="flex items-center gap-3 mt-3">
-          <select className="flex-1 px-3 py-2 bg-slate-50 border-0 rounded-lg text-sm text-slate-600 focus:ring-2 focus:ring-primary-500">
-            <option>Precios Por Defecto</option>
-            <option>Corporativo</option>
-          </select>
-          
+        {/* Express Toggle */}
+        <div className="flex items-center mt-3">
           <label className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg cursor-pointer">
             <input
               type="checkbox"
@@ -273,31 +268,70 @@ function TicketPanel() {
         </button>
         
         {discountExpanded && (
-          <div className="p-3 bg-slate-50 rounded-lg space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={() => actions.setManualDiscount({ type: 'percentage', value: 10 })}
-                className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:text-primary-600 transition-colors"
-              >
-                10%
-              </button>
-              <button
-                onClick={() => actions.setManualDiscount({ type: 'percentage', value: 15 })}
-                className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:text-primary-600 transition-colors"
-              >
-                15%
-              </button>
-              <button
-                onClick={() => actions.setManualDiscount({ type: 'amount', value: 5 })}
-                className="flex-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:text-primary-600 transition-colors"
-              >
-                B/5
-              </button>
+          <div className="p-3 bg-slate-50 rounded-lg space-y-3">
+            <div className="flex gap-3">
+              {/* Percentage Input */}
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 mb-1 block">Porcentaje</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    placeholder="0"
+                    value={ticket.manualDiscount?.type === 'percentage' ? ticket.manualDiscount.value : ''}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (value > 0 && value <= 100) {
+                        actions.setManualDiscount({ type: 'percentage', value });
+                      } else if (!e.target.value) {
+                        actions.setManualDiscount(null);
+                      }
+                    }}
+                    className={`w-full px-3 py-2 pr-8 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                      ticket.manualDiscount?.type === 'percentage' 
+                        ? 'border-warning-400 bg-warning-50' 
+                        : 'border-slate-200'
+                    }`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+                </div>
+              </div>
+              
+              {/* Amount Input */}
+              <div className="flex-1">
+                <label className="text-xs text-slate-500 mb-1 block">Monto Fijo</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={ticket.manualDiscount?.type === 'amount' ? ticket.manualDiscount.value : ''}
+                    onChange={(e) => {
+                      const value = parseFloat(e.target.value);
+                      if (value > 0) {
+                        actions.setManualDiscount({ type: 'amount', value });
+                      } else if (!e.target.value) {
+                        actions.setManualDiscount(null);
+                      }
+                    }}
+                    className={`w-full px-3 py-2 pl-9 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                      ticket.manualDiscount?.type === 'amount' 
+                        ? 'border-warning-400 bg-warning-50' 
+                        : 'border-slate-200'
+                    }`}
+                  />
+                </div>
+              </div>
             </div>
+            
             {ticket.manualDiscount && (
               <button
                 onClick={() => actions.setManualDiscount(null)}
-                className="w-full text-xs text-error-600 hover:underline"
+                className="w-full text-xs text-error-600 hover:text-error-700 hover:underline py-1"
               >
                 Quitar descuento
               </button>
