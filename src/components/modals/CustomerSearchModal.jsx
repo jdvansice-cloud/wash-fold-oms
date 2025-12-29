@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { X, Search, Plus, User, Phone, Mail, Building, UserCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { useDataLoader } from '../../hooks/useDataLoader';
 
 function CustomerSearchModal({ onClose, onSelect, onWalkIn, showWalkInPrompt = false }) {
   const { state, actions } = useApp();
+  const { addCustomer: dbAddCustomer } = useDataLoader();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
   
@@ -58,9 +60,13 @@ function CustomerSearchModal({ onClose, onSelect, onWalkIn, showWalkInPrompt = f
         {showAddForm ? (
           <AddCustomerForm 
             onCancel={() => setShowAddForm(false)}
-            onSave={(customer) => {
-              actions.addCustomer(customer);
-              onSelect(customer);
+            onSave={async (customerData) => {
+              try {
+                const newCustomer = await dbAddCustomer(customerData);
+                onSelect(newCustomer);
+              } catch (err) {
+                alert('Error al crear cliente: ' + err.message);
+              }
             }}
           />
         ) : (

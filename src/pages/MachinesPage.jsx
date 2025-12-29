@@ -4,6 +4,7 @@ import {
   Timer, MapPin, AlertCircle, ChevronRight 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 
 const workflowColumns = [
@@ -16,6 +17,7 @@ const workflowColumns = [
 
 function MachinesPage() {
   const { state, actions } = useApp();
+  const { updateOrderStatus: dbUpdateOrderStatus } = useDataLoader();
   const [sortBy, setSortBy] = useState('promised_date');
   const [draggedOrder, setDraggedOrder] = useState(null);
   
@@ -45,10 +47,14 @@ function MachinesPage() {
     e.dataTransfer.dropEffect = 'move';
   };
   
-  const handleDrop = (e, targetStatus) => {
+  const handleDrop = async (e, targetStatus) => {
     e.preventDefault();
     if (draggedOrder && draggedOrder.status !== targetStatus) {
-      actions.updateOrderStatus(draggedOrder.id, targetStatus);
+      try {
+        await dbUpdateOrderStatus(draggedOrder.id, targetStatus);
+      } catch (err) {
+        console.error('Error updating order status:', err);
+      }
     }
     setDraggedOrder(null);
   };
@@ -57,8 +63,12 @@ function MachinesPage() {
     setDraggedOrder(null);
   };
   
-  const moveOrder = (order, newStatus) => {
-    actions.updateOrderStatus(order.id, newStatus);
+  const moveOrder = async (order, newStatus) => {
+    try {
+      await dbUpdateOrderStatus(order.id, newStatus);
+    } catch (err) {
+      console.error('Error updating order status:', err);
+    }
   };
   
   return (

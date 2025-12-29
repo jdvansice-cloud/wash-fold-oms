@@ -2,10 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Eye, ChevronRight } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 
 function OrdersPage() {
   const { state, actions } = useApp();
+  const { updateOrderStatus: dbUpdateOrderStatus } = useDataLoader();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -203,9 +205,13 @@ function OrdersPage() {
         <OrderDetailsModal 
           order={selectedOrder} 
           onClose={() => setSelectedOrder(null)}
-          onStatusChange={(newStatus) => {
-            actions.updateOrderStatus(selectedOrder.id, newStatus);
-            setSelectedOrder({ ...selectedOrder, status: newStatus });
+          onStatusChange={async (newStatus) => {
+            try {
+              await dbUpdateOrderStatus(selectedOrder.id, newStatus);
+              setSelectedOrder({ ...selectedOrder, status: newStatus });
+            } catch (err) {
+              alert('Error al actualizar estado: ' + err.message);
+            }
           }}
         />
       )}

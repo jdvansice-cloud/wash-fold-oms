@@ -4,15 +4,18 @@ import {
   Trash2, Tag, Truck, MessageSquare, AlertCircle 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useDataLoader } from '../hooks/useDataLoader';
 import CustomerSearchModal from './modals/CustomerSearchModal';
 import PaymentModal from './modals/PaymentModal';
 
 function TicketPanel() {
   const { state, actions, ticketCalculations } = useApp();
+  const { addOrder: dbAddOrder } = useDataLoader();
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [discountExpanded, setDiscountExpanded] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [processing, setProcessing] = useState(false);
   
   const calculations = ticketCalculations();
   const { ticket } = state;
@@ -412,9 +415,40 @@ function TicketPanel() {
         <PaymentModal
           total={calculations.total}
           onClose={() => setPaymentModalOpen(false)}
-          onComplete={(paymentInfo) => {
-            actions.processOrder(paymentInfo);
-            setPaymentModalOpen(false);
+          onComplete={async (paymentInfo) => {
+            setProcessing(true);
+            try {
+              // Build order data for database
+              const orderData = {
+                customer_id: state.ticket.customer?.id || null,
+                customer_name: state.ticket.customer
+                  ? `${state.ticket.customer.first_name} ${state.ticket.customer.last_name}`
+                  : 'Walk-in',
+                is_walk_in: !state.ticket.customer,
+                is_express: state.ticket.isExpress,
+                subtotal: calculations.subtotal,
+                discount_amount: calculations.discountAmount,
+                delivery_charge: calculations.deliveryCharge,
+                tax_amount: calculations.taxAmount,
+                total: calculations.total,
+                total_weight: calculations.totalWeight,
+                total_bags: calculations.totalBags,
+                total_pieces: calculations.totalPieces,
+                notes: state.ticket.notes,
+                promised_date: calculations.promisedDate.toISOString(),
+                items: state.ticket.items,
+                payment: paymentInfo,
+              };
+              
+              await dbAddOrder(orderData);
+              actions.clearTicket();
+              setPaymentModalOpen(false);
+            } catch (err) {
+              console.error('Error processing order:', err);
+              alert('Error al procesar la orden: ' + err.message);
+            } finally {
+              setProcessing(false);
+            }
           }}
         />
       )}

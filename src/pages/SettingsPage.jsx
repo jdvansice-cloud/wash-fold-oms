@@ -996,15 +996,26 @@ function NotificationsSettings() {
 // Products Settings - Full Implementation
 function ProductsSettings() {
   const { state, actions } = useApp();
-  const { updateProductsOrder } = useDataLoader();
+  const { 
+    updateProductsOrder, 
+    addProduct: dbAddProduct, 
+    updateProduct: dbUpdateProduct, 
+    deleteProduct: dbDeleteProduct,
+    addSection: dbAddSection,
+    updateSection: dbUpdateSection,
+    deleteSection: dbDeleteSection,
+    storeId
+  } = useDataLoader();
   const [activeTab, setActiveTab] = useState('products'); // products, sections, preferences
   const [selectedSection, setSelectedSection] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [showSectionModal, setShowSectionModal] = useState(false);
+  const [editingSection, setEditingSection] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverItem, setDragOverItem] = useState(null);
   const [savingProducts, setSavingProducts] = useState(new Set()); // Track products being saved
+  const [saving, setSaving] = useState(false);
   
   const ITBMS_RATE = state.settings?.itbms_rate || 7;
   
@@ -1187,24 +1198,69 @@ function ProductsSettings() {
     }
   };
   
-  // Handle save product
-  const handleSaveProduct = (productData) => {
-    if (editingProduct) {
-      // Update existing product
-      actions.updateProduct(productData);
-    } else {
-      // Add new product with display_order at the end
-      const maxOrder = Math.max(...products.map(p => p.display_order || 0), 0);
-      actions.addProduct({ ...productData, display_order: maxOrder + 1 });
+  // Handle save product - saves to Supabase
+  const handleSaveProduct = async (productData) => {
+    setSaving(true);
+    try {
+      if (editingProduct) {
+        // Update existing product
+        await dbUpdateProduct(editingProduct.id, productData);
+      } else {
+        // Add new product with display_order at the end
+        const maxOrder = Math.max(...products.map(p => p.display_order || 0), 0);
+        await dbAddProduct({ ...productData, display_order: maxOrder + 1 });
+      }
+      setShowAddModal(false);
+      setEditingProduct(null);
+    } catch (err) {
+      console.error('Error saving product:', err);
+      alert('Error al guardar el producto: ' + err.message);
+    } finally {
+      setSaving(false);
     }
-    setShowAddModal(false);
-    setEditingProduct(null);
   };
   
-  // Handle delete product
-  const handleDeleteProduct = (productId) => {
+  // Handle delete product - deletes from Supabase
+  const handleDeleteProduct = async (productId) => {
     if (window.confirm('¿Estás seguro de eliminar este producto?')) {
-      actions.deleteProduct(productId);
+      try {
+        await dbDeleteProduct(productId);
+      } catch (err) {
+        console.error('Error deleting product:', err);
+        alert('Error al eliminar el producto: ' + err.message);
+      }
+    }
+  };
+
+  // Handle save section - saves to Supabase
+  const handleSaveSection = async (sectionData) => {
+    setSaving(true);
+    try {
+      if (editingSection) {
+        await dbUpdateSection(editingSection.id, sectionData);
+      } else {
+        const maxOrder = Math.max(...sections.map(s => s.display_order || 0), 0);
+        await dbAddSection({ ...sectionData, display_order: maxOrder + 1 });
+      }
+      setShowSectionModal(false);
+      setEditingSection(null);
+    } catch (err) {
+      console.error('Error saving section:', err);
+      alert('Error al guardar la sección: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Handle delete section - deletes from Supabase
+  const handleDeleteSection = async (sectionId) => {
+    if (window.confirm('¿Estás seguro de eliminar esta sección? Los productos asociados perderán su sección.')) {
+      try {
+        await dbDeleteSection(sectionId);
+      } catch (err) {
+        console.error('Error deleting section:', err);
+        alert('Error al eliminar la sección: ' + err.message);
+      }
     }
   };
   
@@ -1517,16 +1573,34 @@ function ProductsSettings() {
                 <label className="relative inline-flex items-center cursor-pointer">
                   <input 
                     type="checkbox" 
-                    defaultChecked={section.is_active} 
+                    checked={section.is_active !== false}
+                    onChange={(e) => dbUpdateSection(section.id, { is_active: e.target.checked })}
                     className="sr-only peer" 
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
                 </label>
-                <button className="p-2 hover:bg-white rounded-lg transition-colors text-slate-500 hover:text-primary-600">
+                <button 
+                  onClick={() => { setEditingSection(section); setShowSectionModal(true); }}
+                  className="p-2 hover:bg-white rounded-lg transition-colors text-slate-500 hover:text-primary-600"
+                >
                   <Edit2 className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => handleDeleteSection(section.id)}
+                  className="p-2 hover:bg-white rounded-lg transition-colors text-slate-500 hover:text-error-600"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               </div>
             ))}
+            
+            {sections.length === 0 && (
+              <div className="text-center py-8 text-slate-400">
+                <Package className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p>No hay secciones</p>
+                <p className="text-sm">Crea una sección para organizar tus productos</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1585,6 +1659,16 @@ function ProductsSettings() {
           products={products}
           onClose={() => { setShowAddModal(false); setEditingProduct(null); }}
           onSave={handleSaveProduct}
+          saving={saving}
+        />
+      )}
+      
+      {showSectionModal && (
+        <SectionFormModal
+          section={editingSection}
+          onClose={() => { setShowSectionModal(false); setEditingSection(null); }}
+          onSave={handleSaveSection}
+          saving={saving}
         />
       )}
     </div>
@@ -1592,7 +1676,7 @@ function ProductsSettings() {
 }
 
 // Product Form Modal
-function ProductFormModal({ product, sections, products, onClose, onSave }) {
+function ProductFormModal({ product, sections, products, onClose, onSave, saving }) {
   const { state } = useApp();
   const ITBMS_RATE = state.settings?.itbms_rate || 7; // Default 7%
   
@@ -2084,9 +2168,142 @@ function ProductFormModal({ product, sections, products, onClose, onSave }) {
           <button type="button" onClick={onClose} className="btn-secondary">
             Cancelar
           </button>
-          <button type="button" onClick={handleSubmit} className="btn-primary">
-            <Save className="w-4 h-4" />
-            {isEditing ? 'Guardar Cambios' : 'Crear Producto'}
+          <button type="button" onClick={handleSubmit} disabled={saving} className="btn-primary">
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                {isEditing ? 'Guardar Cambios' : 'Crear Producto'}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Section Form Modal
+function SectionFormModal({ section, onClose, onSave, saving }) {
+  const isEditing = section !== null;
+  
+  const [formData, setFormData] = useState({
+    name: section?.name || '',
+    color: section?.color || '#3B82F6',
+    is_active: section?.is_active !== false,
+  });
+  
+  const colorOptions = [
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Amber
+    '#EF4444', // Red
+    '#8B5CF6', // Purple
+    '#EC4899', // Pink
+    '#06B6D4', // Cyan
+    '#F97316', // Orange
+    '#6366F1', // Indigo
+    '#84CC16', // Lime
+  ];
+
+  const handleSubmit = () => {
+    if (!formData.name.trim()) {
+      alert('El nombre de la sección es requerido');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-md animate-scale-in">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h2 className="text-lg font-semibold text-slate-800">
+            {isEditing ? 'Editar Sección' : 'Nueva Sección'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+        
+        {/* Form */}
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Nombre de la Sección <span className="text-error-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="input"
+              placeholder="Ej: Lava y Dobla"
+              autoFocus
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
+            <div className="flex flex-wrap gap-2">
+              {colorOptions.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setFormData({ ...formData, color })}
+                  className={`w-8 h-8 rounded-full transition-all ${
+                    formData.color === color 
+                      ? 'ring-2 ring-offset-2 ring-primary-500 scale-110' 
+                      : 'hover:scale-110'
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.is_active}
+                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+            </label>
+            <span className="text-sm text-slate-700">Sección activa</span>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-100">
+          <button type="button" onClick={onClose} className="btn-secondary">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="btn-primary"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                {isEditing ? 'Guardar Cambios' : 'Crear Sección'}
+              </>
+            )}
           </button>
         </div>
       </div>

@@ -4,9 +4,11 @@ import {
   MapPin, Edit, Trash2, Eye, Star, Clock 
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useDataLoader } from '../hooks/useDataLoader';
 
 function CustomersPage() {
   const { state, actions } = useApp();
+  const { addCustomer: dbAddCustomer, updateCustomer: dbUpdateCustomer } = useDataLoader();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -106,9 +108,13 @@ function CustomersPage() {
       {showAddModal && (
         <AddCustomerModal
           onClose={() => setShowAddModal(false)}
-          onSave={(customer) => {
-            actions.addCustomer(customer);
-            setShowAddModal(false);
+          onSave={async (customerData) => {
+            try {
+              await dbAddCustomer(customerData);
+              setShowAddModal(false);
+            } catch (err) {
+              alert('Error al crear cliente: ' + err.message);
+            }
           }}
         />
       )}

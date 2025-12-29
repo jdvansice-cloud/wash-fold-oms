@@ -56,7 +56,7 @@ export function useDataLoader() {
         { data: paymentMethods, error: pmError },
       ] = await Promise.all([
         supabase.from('sections').select('*').eq('store_id', storeId).order('display_order'),
-        supabase.from('products').select('*').eq('store_id', storeId).eq('is_active', true).order('display_order'),
+        supabase.from('products').select('*').eq('store_id', storeId).order('display_order'),
         supabase.from('customers').select('*').eq('store_id', storeId).eq('is_active', true).order('first_name'),
         supabase.from('orders').select('*').eq('store_id', storeId).order('created_at', { ascending: false }).limit(100),
         supabase.from('payment_methods').select('*').eq('store_id', storeId).eq('is_active', true).order('display_order'),
@@ -262,6 +262,122 @@ export function useDataLoader() {
     }
   };
 
+  // Product CRUD operations
+  const addProduct = async (productData) => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          store_id: storeId,
+          ...productData
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      actions.addProduct(data);
+      return data;
+    } catch (err) {
+      console.error('Error creating product:', err);
+      throw err;
+    }
+  };
+
+  const updateProduct = async (productId, updates) => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', productId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      actions.updateProduct(data);
+      return data;
+    } catch (err) {
+      console.error('Error updating product:', err);
+      throw err;
+    }
+  };
+
+  const deleteProduct = async (productId) => {
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId);
+
+      if (error) throw error;
+
+      actions.deleteProduct(productId);
+      return true;
+    } catch (err) {
+      console.error('Error deleting product:', err);
+      throw err;
+    }
+  };
+
+  // Section CRUD operations
+  const addSection = async (sectionData) => {
+    try {
+      const { data, error } = await supabase
+        .from('sections')
+        .insert({
+          store_id: storeId,
+          ...sectionData
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      actions.addSection(data);
+      return data;
+    } catch (err) {
+      console.error('Error creating section:', err);
+      throw err;
+    }
+  };
+
+  const updateSection = async (sectionId, updates) => {
+    try {
+      const { data, error } = await supabase
+        .from('sections')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', sectionId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      actions.updateSection(data);
+      return data;
+    } catch (err) {
+      console.error('Error updating section:', err);
+      throw err;
+    }
+  };
+
+  const deleteSection = async (sectionId) => {
+    try {
+      const { error } = await supabase
+        .from('sections')
+        .delete()
+        .eq('id', sectionId);
+
+      if (error) throw error;
+
+      actions.deleteSection(sectionId);
+      return true;
+    } catch (err) {
+      console.error('Error deleting section:', err);
+      throw err;
+    }
+  };
+
   return {
     isLoading,
     error,
@@ -272,6 +388,14 @@ export function useDataLoader() {
     addCustomer,
     updateCustomer,
     updateProductsOrder,
+    // Product CRUD
+    addProduct,
+    updateProduct,
+    deleteProduct,
+    // Section CRUD
+    addSection,
+    updateSection,
+    deleteSection,
   };
 }
 
