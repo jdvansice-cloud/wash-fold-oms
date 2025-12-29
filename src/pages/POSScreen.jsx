@@ -2,11 +2,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import WeightEntryModal from '../components/modals/WeightEntryModal';
 import ChildProductsModal from '../components/modals/ChildProductsModal';
+import CustomerSearchModal from '../components/modals/CustomerSearchModal';
 
 function POSScreen() {
   const { state, actions } = useApp();
   const [weightModalProduct, setWeightModalProduct] = useState(null);
   const [childModalProduct, setChildModalProduct] = useState(null);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [pendingProduct, setPendingProduct] = useState(null);
   
   // Set default active section when sections load
   useEffect(() => {
@@ -16,21 +19,28 @@ function POSScreen() {
     }
   }, [state.sections, state.activeSection, actions]);
   
-  // Get products for active section from state (sorted by display_order)
+  // Check if customer is selected (either walk-in confirmed or actual customer)
+  const hasCustomerSelected = state.ticket.customer !== null || state.ticket.customerConfirmed;
+  
+  // Get products for active section from state (not sampleData)
   const sectionProducts = useMemo(() => {
     return state.products
-      .filter(p => p.section_id === state.activeSection && !p.parent_id && p.is_active !== false)
-      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      .filter(p => p.section_id === state.activeSection && !p.parent_id && p.is_active !== false);
   }, [state.products, state.activeSection]);
   
-  // Get child products for a parent (sorted by display_order)
+  // Get child products for a parent
   const getChildProducts = (parentId) => {
-    return state.products
-      .filter(p => p.parent_id === parentId && p.is_active !== false)
-      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    return state.products.filter(p => p.parent_id === parentId && p.is_active !== false);
   };
   
   const handleProductClick = (product) => {
+    // Check if customer is selected first
+    if (!hasCustomerSelected) {
+      setPendingProduct(product);
+      setShowCustomerModal(true);
+      return;
+    }
+    
     // If product has children, show child selection modal
     if (product.has_children) {
       setChildModalProduct(product);
@@ -58,6 +68,44 @@ function POSScreen() {
     });
   };
   
+  const handleCustomerSelect = (customer) => {
+    actions.setCustomer(customer);
+    setShowCustomerModal(false);
+    
+    // If there was a pending product, process it now
+    if (pendingProduct) {
+      setTimeout(() => {
+        if (pendingProduct.has_children) {
+          setChildModalProduct(pendingProduct);
+        } else if (pendingProduct.pricing_type === 'weight') {
+          setWeightModalProduct(pendingProduct);
+        } else {
+          addProductToTicket(pendingProduct);
+        }
+        setPendingProduct(null);
+      }, 100);
+    }
+  };
+  
+  const handleWalkInSelect = () => {
+    actions.confirmWalkIn();
+    setShowCustomerModal(false);
+    
+    // If there was a pending product, process it now
+    if (pendingProduct) {
+      setTimeout(() => {
+        if (pendingProduct.has_children) {
+          setChildModalProduct(pendingProduct);
+        } else if (pendingProduct.pricing_type === 'weight') {
+          setWeightModalProduct(pendingProduct);
+        } else {
+          addProductToTicket(pendingProduct);
+        }
+        setPendingProduct(null);
+      }, 100);
+    }
+  };
+  
   const handleWeightEntry = (product, entries) => {
     const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
     const totalBags = entries.length;
@@ -80,6 +128,13 @@ function POSScreen() {
   };
   
   const handleChildProductSelect = (childProduct) => {
+    // Check if customer is selected first
+    if (!hasCustomerSelected) {
+      setPendingProduct(childProduct);
+      setShowCustomerModal(true);
+      setChildModalProduct(null);
+      return;
+    }
     
     if (childProduct.pricing_type === 'weight') {
       setWeightModalProduct(childProduct);
@@ -157,6 +212,18 @@ function POSScreen() {
           itbmsRate={state.settings?.itbms_rate || 7}
         />
       )}
+      
+      {showCustomerModal && (
+        <CustomerSearchModal
+          onClose={() => {
+            setShowCustomerModal(false);
+            setPendingProduct(null);
+          }}
+          onSelect={handleCustomerSelect}
+          onWalkIn={handleWalkInSelect}
+          showWalkInPrompt={true}
+        />
+      )}
     </div>
   );
 }
@@ -164,27 +231,19 @@ function POSScreen() {
 // Product Tile Component
 function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   const basePrice = isExpress ? (product.express_price || product.price) : product.price;
-  // Only add ITBMS if product is taxable
-  const displayPrice = product.is_taxable !== false 
-    ? basePrice * (1 + itbmsRate / 100)  // With ITBMS
-    : basePrice;  // Price as stored (no ITBMS)
+  // Calculate price with ITBMS included for display
+  const priceWithTax = basePrice * (1 + itbmsRate / 100);
   const isWeightBased = product.pricing_type === 'weight';
   const hasChildren = product.has_children;
   
   return (
     <button
       onClick={onClick}
-      className={`product-tile flex flex-col items-center text-center group ${
-        hasChildren ? 'ring-2 ring-primary-200 ring-offset-2' : ''
-      }`}
+      className="product-tile flex flex-col items-center text-center group"
       style={{ animationDelay: `${delay}ms` }}
     >
-      {/* Icon - different style for parents */}
-      <div className={`w-16 h-16 flex items-center justify-center mb-3 rounded-2xl transition-colors ${
-        hasChildren 
-          ? 'bg-gradient-to-br from-primary-50 to-primary-100 group-hover:from-primary-100 group-hover:to-primary-200' 
-          : 'bg-gradient-to-br from-slate-50 to-slate-100 group-hover:from-primary-50 group-hover:to-primary-100'
-      }`}>
+      {/* Icon */}
+      <div className="w-16 h-16 flex items-center justify-center mb-3 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl group-hover:from-primary-50 group-hover:to-primary-100 transition-colors">
         <span className="text-3xl">{product.icon || '📦'}</span>
       </div>
       
@@ -193,38 +252,29 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
         {product.name}
       </p>
       
-      {/* Price Badge - Only show for non-parent products */}
-      {hasChildren ? (
-        <div className="flex items-center gap-1 text-xs text-primary-600 font-medium">
-          <span>Ver opciones</span>
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </div>
-      ) : isWeightBased ? (
+      {/* Price Badge - showing price WITH ITBMS */}
+      {isWeightBased ? (
         <div className="flex flex-col items-center">
           <span className="text-xs text-slate-500">por kg</span>
           <span className="text-sm font-semibold text-primary-600">
-            B/{displayPrice.toFixed(2)}
+            B/{priceWithTax.toFixed(2)}
           </span>
         </div>
       ) : (
         <span className="text-sm font-semibold text-primary-600">
-          B/{displayPrice.toFixed(2)}
+          B/{priceWithTax.toFixed(2)}
         </span>
       )}
       
-      {/* Parent indicator badge */}
+      {/* Indicators */}
       {hasChildren && (
-        <span className="absolute top-2 right-2 px-2 py-0.5 bg-primary-500 text-white rounded-full text-[10px] font-semibold flex items-center gap-1">
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-          </svg>
+        <span className="absolute top-2 right-2 w-5 h-5 bg-primary-100 text-primary-600 rounded-full text-xs flex items-center justify-center font-bold">
+          +
         </span>
       )}
       
       {/* Weight indicator */}
-      {isWeightBased && !hasChildren && (
+      {isWeightBased && (
         <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary-500 rounded-b-xl opacity-0 group-hover:opacity-100 transition-opacity" />
       )}
     </button>

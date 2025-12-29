@@ -1,18 +1,25 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
-// Supabase configuration
-// These values should be set in your environment variables
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.SUPABASE_URL
+const supabaseKey = import.meta.env.SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase environment variables!');
-  console.error('Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+// Check if Supabase is configured
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseKey)
+
+// Create client only if configured
+export const supabase = isSupabaseConfigured 
+  ? createClient(supabaseUrl, supabaseKey)
+  : null
+
+// Helper to check connection
+export const checkConnection = async () => {
+  if (!supabase) return { connected: false, error: 'Supabase not configured' }
+  
+  try {
+    const { error } = await supabase.from('companies').select('id').limit(1)
+    if (error) throw error
+    return { connected: true, error: null }
+  } catch (error) {
+    return { connected: false, error: error.message }
+  }
 }
-
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
-);
-
-export default supabase;

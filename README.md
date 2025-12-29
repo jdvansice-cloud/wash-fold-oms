@@ -10,6 +10,7 @@ A modern, responsive Order Management System for wash and fold laundry services 
 - **Customer Management**: Full customer database with Panama-specific fields (Cédula, RUC, DV)
 - **Payment Processing**: Multiple payment methods with cash change calculator
 - **Multi-store Support**: Designed for multi-location businesses
+- **Offline Ready**: Works with localStorage when Supabase is not configured
 
 ## Tech Stack
 
@@ -18,7 +19,7 @@ A modern, responsive Order Management System for wash and fold laundry services 
 - TailwindCSS 3
 - React Router DOM 6
 - Lucide React Icons
-- Supabase (database ready)
+- Supabase (optional - falls back to localStorage)
 
 ## Getting Started
 
@@ -40,7 +41,43 @@ npm run dev
 npm run build
 ```
 
-### Project Structure
+## Environment Variables
+
+The app works **without any environment variables** using localStorage for data persistence.
+
+To connect to Supabase, add these variables in Vercel (or `.env` locally):
+
+| Variable | Description |
+|----------|-------------|
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_ANON_KEY` | Your Supabase anonymous/public key |
+
+**Note**: No `VITE_` prefix needed - the vite config handles this automatically.
+
+### Local Development with Supabase
+
+Create a `.env` file in the project root:
+
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
+```
+
+## Deployment to Vercel
+
+1. Connect your repository to Vercel
+2. (Optional) Add environment variables in Vercel dashboard:
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+3. Deploy!
+
+The app will automatically:
+- Use **Supabase** if environment variables are configured
+- Fall back to **localStorage** if no Supabase connection
+
+A badge in the bottom-left corner shows the current data source.
+
+## Project Structure
 
 ```
 src/
@@ -57,12 +94,19 @@ src/
 ├── context/
 │   └── AppContext.jsx   # Global state management
 ├── data/
-│   └── sampleData.js    # Sample data for development
+│   ├── helpers.js       # Utility functions
+│   └── sampleData.js    # Sample data & localStorage helpers
+├── hooks/
+│   └── useDataLoader.js # Supabase/localStorage data loader
+├── lib/
+│   └── supabase.js      # Supabase client configuration
 ├── pages/
 │   ├── POSScreen.jsx    # Main POS/order entry
 │   ├── OrdersPage.jsx   # Orders listing
 │   ├── MachinesPage.jsx # Kanban workflow
-│   └── CustomersPage.jsx # Customer management
+│   ├── CustomersPage.jsx # Customer management
+│   ├── AnalyticsPage.jsx # Reports & analytics
+│   └── SettingsPage.jsx  # System settings
 ├── App.jsx              # App root with routing
 ├── main.jsx             # Entry point
 └── index.css            # TailwindCSS styles
@@ -76,12 +120,12 @@ src/
 - Currency format: B/ (Balboas)
 - Spanish language interface
 
-## Next Steps for Production
+## Data Persistence
 
-1. Connect to Supabase backend
-2. Implement authentication with Row Level Security
-3. Add real-time subscriptions for order updates
-4. Deploy to Netlify
+| Mode | Storage | Use Case |
+|------|---------|----------|
+| Development | localStorage | Testing without backend |
+| Production | Supabase | Full database with auth |
 
 ## License
 

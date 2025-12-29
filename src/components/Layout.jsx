@@ -5,7 +5,7 @@ import Sidebar from './Sidebar';
 import TicketPanel from './TicketPanel';
 import { useApp } from '../context/AppContext';
 
-function Layout({ children }) {
+function Layout({ children, dataSource }) {
   const { state, actions } = useApp();
   const location = useLocation();
   
@@ -36,6 +36,19 @@ function Layout({ children }) {
           </div>
         )}
       </div>
+      
+      {/* Data Source Indicator (dev mode) */}
+      {dataSource && (
+        <div className="fixed bottom-4 left-4 z-50">
+          <div className={`px-3 py-1.5 rounded-full text-xs font-medium shadow-lg ${
+            dataSource === 'supabase' 
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+              : 'bg-amber-100 text-amber-700 border border-amber-200'
+          }`}>
+            {dataSource === 'supabase' ? '🔗 Supabase' : '💾 LocalStorage'}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
