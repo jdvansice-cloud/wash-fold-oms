@@ -28,9 +28,15 @@ export function useDataLoader() {
     }
 
     try {
-      // Get default store
-      const storeId = await getDefaultStoreId();
-      if (!storeId) {
+      // Get default store with company info
+      const { data: storeData, error: storeError } = await supabase
+        .from('stores')
+        .select('*, companies(*)')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+      
+      if (storeError || !storeData) {
         setError({
           type: 'data',
           message: 'No se encontró una tienda activa',
@@ -39,6 +45,8 @@ export function useDataLoader() {
         setIsLoading(false);
         return;
       }
+      
+      const storeId = storeData.id;
       setStoreId(storeId);
 
       // Get default user
@@ -75,9 +83,12 @@ export function useDataLoader() {
       actions.setCustomers(customers || []);
       actions.setOrders(orders || []);
       actions.setPaymentMethods(paymentMethods || []);
-      actions.setStore({ id: storeId });
+      actions.setStore(storeData);
+      actions.setCompany(storeData.companies); // Set company from joined data
       
       console.log('Data loaded from Supabase:', {
+        store: storeData.name,
+        company: storeData.companies?.name,
         sections: sections?.length,
         products: products?.length,
         customers: customers?.length,
