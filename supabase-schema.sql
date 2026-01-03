@@ -19,6 +19,8 @@ CREATE TABLE companies (
   phone VARCHAR(50),
   logo_url TEXT,
   itbms_rate DECIMAL(5,2) DEFAULT 7.00,
+  default_completion_days INTEGER DEFAULT 1,
+  express_completion_days INTEGER DEFAULT 0,
   smtp_host VARCHAR(255),
   smtp_port INTEGER,
   smtp_user VARCHAR(255),

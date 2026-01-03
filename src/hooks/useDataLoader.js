@@ -86,6 +86,15 @@ export function useDataLoader() {
       actions.setStore(storeData);
       actions.setCompany(storeData.companies); // Set company from joined data
       
+      // Set settings from company data
+      if (storeData.companies) {
+        actions.setSettings({
+          itbms_rate: storeData.companies.itbms_rate || 7,
+          default_completion_days: storeData.companies.default_completion_days || 1,
+          express_completion_days: storeData.companies.express_completion_days || 0,
+        });
+      }
+      
       console.log('Data loaded from Supabase:', {
         store: storeData.name,
         company: storeData.companies?.name,

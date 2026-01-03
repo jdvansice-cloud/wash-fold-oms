@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Building, Store, Users, CreditCard, Bell, Mail,
+  Building, Store, Users, CreditCard, Bell, Mail, Send,
   Gift, Tag, Package, Clock, Percent, Save,
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
@@ -808,10 +808,35 @@ function StoreFormModal({ store, onClose, onSave }) {
 
 // Workflow Settings Section
 function WorkflowSettings({ settings }) {
+  const { state } = useApp();
+  const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     default_completion_days: settings?.default_completion_days || 1,
     express_completion_days: settings?.express_completion_days || 0,
   });
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Save to companies table (workflow settings stored with company)
+      const { error } = await supabase
+        .from('companies')
+        .update({
+          default_completion_days: formData.default_completion_days,
+          express_completion_days: formData.express_completion_days,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', state.company?.id);
+
+      if (error) throw error;
+      alert('Configuración guardada correctamente');
+    } catch (err) {
+      console.error('Error saving workflow settings:', err);
+      alert('Error al guardar: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="card p-6">
@@ -820,9 +845,9 @@ function WorkflowSettings({ settings }) {
           <h2 className="text-lg font-semibold text-slate-800">Flujo de Trabajo</h2>
           <p className="text-sm text-slate-500">Tiempos de procesamiento de órdenes</p>
         </div>
-        <button className="btn-primary">
-          <Save className="w-4 h-4" />
-          Guardar
+        <button onClick={handleSave} disabled={saving} className="btn-primary">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? 'Guardando...' : 'Guardar'}
         </button>
       </div>
       
@@ -865,17 +890,432 @@ function WorkflowSettings({ settings }) {
 
 // Users Settings Section
 function UsersSettings() {
-  const users = [
-    { id: 1, name: 'Juan David VanSice', email: 'juan@americanlaundry.com', role: 'admin', active: true },
-    { id: 2, name: 'María González', email: 'maria@americanlaundry.com', role: 'supervisor', active: true },
-    { id: 3, name: 'Carlos Pérez', email: 'carlos@americanlaundry.com', role: 'operator', active: true },
-  ];
+  const { state } = useApp();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [inviting, setInviting] = useState(false);
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('store_id', state.store?.id)
+        .order('full_name');
+
+      if (error) throw error;
+      setUsers(data || []);
+    } catch (err) {
+      console.error('Error loading users:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInviteUser = async (userData) => {
+    setInviting(true);
+    try {
+      // First create the user record in our users table
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
+        .insert({
+          store_id: state.store?.id,
+          full_name: userData.full_name,
+          email: userData.email,
+          role: userData.role,
+          initials: userData.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+          is_active: true
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Then send invitation email via Supabase Auth
+      // Using signUp which will send a confirmation email
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: crypto.randomUUID(), // Temporary password - user will set their own
+        options: {
+          data: {
+            full_name: userData.full_name,
+            role: userData.role,
+          },
+          emailRedirectTo: `${window.location.origin}/set-password`
+        }
+      });
+
+      if (authError) {
+        // If auth fails, still keep the user in our table but warn
+        console.warn('Auth signup warning:', authError);
+        
+        // Try sending a password reset email instead
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(userData.email, {
+          redirectTo: `${window.location.origin}/set-password`
+        });
+        
+        if (resetError) {
+          alert('Usuario creado pero hubo un problema enviando la invitación. El usuario puede usar "Olvidé mi contraseña" para acceder.');
+        } else {
+          alert('Invitación enviada correctamente a ' + userData.email);
+        }
+      } else {
+        // Link auth_id if we got one
+        if (authData?.user?.id) {
+          await supabase
+            .from('users')
+            .update({ auth_id: authData.user.id })
+            .eq('id', newUser.id);
+        }
+        alert('Invitación enviada correctamente a ' + userData.email);
+      }
+
+      await loadUsers();
+      setShowModal(false);
+    } catch (err) {
+      console.error('Error inviting user:', err);
+      if (err.message?.includes('duplicate key') || err.message?.includes('already exists')) {
+        alert('Ya existe un usuario con ese email');
+      } else {
+        alert('Error al crear usuario: ' + err.message);
+      }
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const handleResendInvitation = async (user) => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/set-password`
+      });
+      
+      if (error) throw error;
+      alert('Invitación reenviada a ' + user.email);
+    } catch (err) {
+      console.error('Error resending invitation:', err);
+      alert('Error al reenviar invitación: ' + err.message);
+    }
+  };
+
+  const handleUpdateUser = async (userData) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          full_name: userData.full_name,
+          role: userData.role,
+          initials: userData.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+          is_active: userData.is_active,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingUser.id);
+
+      if (error) throw error;
+
+      await loadUsers();
+      setShowModal(false);
+      setEditingUser(null);
+    } catch (err) {
+      console.error('Error updating user:', err);
+      alert('Error al actualizar usuario: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('¿Estás seguro de eliminar este usuario? Esta acción no se puede deshacer.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) throw error;
+      await loadUsers();
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      alert('Error al eliminar usuario: ' + err.message);
+    }
+  };
+
+  const toggleUserActive = async (user) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ is_active: !user.is_active, updated_at: new Date().toISOString() })
+        .eq('id', user.id);
+
+      if (error) throw error;
+      await loadUsers();
+    } catch (err) {
+      console.error('Error updating user:', err);
+    }
+  };
 
   const roleLabels = {
     admin: 'Administrador',
     supervisor: 'Supervisor',
     operator: 'Operador',
   };
+
+  if (loading) {
+    return (
+      <div className="card p-6 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-800">Gestión de Usuarios</h2>
+          <p className="text-sm text-slate-500">Invita y administra los usuarios del sistema</p>
+        </div>
+        <button 
+          onClick={() => { setEditingUser(null); setShowModal(true); }}
+          className="btn-primary"
+        >
+          <Mail className="w-4 h-4" />
+          Invitar Usuario
+        </button>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+        <p className="text-sm text-blue-700">
+          <strong>Nota:</strong> Los nuevos usuarios recibirán un email de invitación. Al confirmar, podrán establecer su contraseña.
+        </p>
+      </div>
+      
+      {users.length > 0 ? (
+        <div className="space-y-3">
+          {users.map((user) => (
+            <div key={user.id} className={`flex items-center gap-4 p-4 bg-slate-50 rounded-xl ${!user.is_active ? 'opacity-50' : ''}`}>
+              <div className={`w-10 h-10 ${user.auth_id ? 'bg-primary-500' : 'bg-amber-500'} text-white rounded-full flex items-center justify-center font-semibold`}>
+                {user.initials || user.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || '??'}
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-slate-800">{user.full_name}</p>
+                <p className="text-sm text-slate-500">{user.email}</p>
+              </div>
+              <span className={`badge ${
+                user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                user.role === 'supervisor' ? 'bg-blue-100 text-blue-700' :
+                'bg-slate-100 text-slate-700'
+              }`}>
+                {roleLabels[user.role] || user.role}
+              </span>
+              {!user.auth_id ? (
+                <span className="badge bg-amber-100 text-amber-700">Pendiente</span>
+              ) : (
+                <span className="badge bg-success-100 text-success-700">Confirmado</span>
+              )}
+              {!user.is_active && (
+                <span className="badge bg-red-100 text-red-700">Inactivo</span>
+              )}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={user.is_active} 
+                  onChange={() => toggleUserActive(user)}
+                  className="sr-only peer" 
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+              </label>
+              {!user.auth_id && (
+                <button 
+                  onClick={() => handleResendInvitation(user)}
+                  className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-primary-600"
+                  title="Reenviar invitación"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
+              <button 
+                onClick={() => { setEditingUser(user); setShowModal(true); }}
+                className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-primary-600"
+                title="Editar usuario"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => handleDeleteUser(user.id)}
+                className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-error-600"
+                title="Eliminar usuario"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-slate-400">
+          <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p>No hay usuarios registrados</p>
+          <p className="text-sm mt-1">Invita al primer usuario para comenzar</p>
+        </div>
+      )}
+
+      {/* User Form Modal */}
+      {showModal && (
+        <UserFormModal
+          user={editingUser}
+          onClose={() => { setShowModal(false); setEditingUser(null); }}
+          onSave={editingUser ? handleUpdateUser : handleInviteUser}
+          saving={saving || inviting}
+          isInvite={!editingUser}
+        />
+      )}
+    </div>
+  );
+}
+
+// User Form Modal
+function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
+  const isEditing = user !== null;
+  const [formData, setFormData] = useState({
+    full_name: user?.full_name || '',
+    email: user?.email || '',
+    role: user?.role || 'operator',
+    is_active: user?.is_active !== false,
+  });
+
+  const handleSubmit = () => {
+    if (!formData.full_name.trim()) {
+      alert('El nombre es requerido');
+      return;
+    }
+    if (!formData.email.trim() || !formData.email.includes('@')) {
+      alert('Email válido es requerido');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-md animate-scale-in">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h2 className="text-lg font-semibold text-slate-800">
+            {isEditing ? 'Editar Usuario' : 'Invitar Nuevo Usuario'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {isInvite && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-700">
+              El usuario recibirá un email con un enlace para establecer su contraseña.
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Nombre Completo <span className="text-error-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+              className="input"
+              placeholder="Juan Pérez"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Email <span className="text-error-500">*</span>
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="input"
+              placeholder="juan@ejemplo.com"
+              disabled={isEditing} // Can't change email after creation
+            />
+            {isEditing && (
+              <p className="text-xs text-slate-500 mt-1">El email no se puede modificar</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
+            <select
+              value={formData.role}
+              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              className="input"
+            >
+              <option value="operator">Operador</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="admin">Administrador</option>
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              {formData.role === 'admin' && 'Acceso completo a todas las funciones'}
+              {formData.role === 'supervisor' && 'Puede gestionar órdenes y ver reportes'}
+              {formData.role === 'operator' && 'Puede crear y procesar órdenes'}
+            </p>
+          </div>
+
+          {isEditing && (
+            <div className="flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+              </label>
+              <span className="text-sm text-slate-700">Usuario activo</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-100">
+          <button onClick={onClose} className="btn-secondary">Cancelar</button>
+          <button onClick={handleSubmit} disabled={saving} className="btn-primary">
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {isInvite ? 'Enviando...' : 'Guardando...'}
+              </>
+            ) : (
+              <>
+                {isInvite ? <Send className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                {isInvite ? 'Enviar Invitación' : 'Guardar Cambios'}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+  };
+
+  if (loading) {
+    return (
+      <div className="card p-6 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6">
@@ -884,47 +1324,288 @@ function UsersSettings() {
           <h2 className="text-lg font-semibold text-slate-800">Gestión de Usuarios</h2>
           <p className="text-sm text-slate-500">Administra los usuarios del sistema</p>
         </div>
-        <button className="btn-primary">
+        <button 
+          onClick={() => { setEditingUser(null); setShowModal(true); }}
+          className="btn-primary"
+        >
           <Users className="w-4 h-4" />
           Nuevo Usuario
         </button>
       </div>
       
-      <div className="space-y-3">
-        {users.map((user) => (
-          <div key={user.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
-            <div className="w-10 h-10 bg-primary-500 text-white rounded-full flex items-center justify-center font-semibold">
-              {user.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+      {users.length > 0 ? (
+        <div className="space-y-3">
+          {users.map((user) => (
+            <div key={user.id} className={`flex items-center gap-4 p-4 bg-slate-50 rounded-xl ${!user.is_active ? 'opacity-50' : ''}`}>
+              <div className="w-10 h-10 bg-primary-500 text-white rounded-full flex items-center justify-center font-semibold">
+                {user.initials || user.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || '??'}
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-slate-800">{user.full_name}</p>
+                <p className="text-sm text-slate-500">{user.email}</p>
+              </div>
+              <span className={`badge ${
+                user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
+                user.role === 'supervisor' ? 'bg-blue-100 text-blue-700' :
+                'bg-slate-100 text-slate-700'
+              }`}>
+                {roleLabels[user.role] || user.role}
+              </span>
+              {!user.is_active && (
+                <span className="badge bg-red-100 text-red-700">Inactivo</span>
+              )}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={user.is_active} 
+                  onChange={() => toggleUserActive(user)}
+                  className="sr-only peer" 
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+              </label>
+              <button 
+                onClick={() => { setEditingUser(user); setShowModal(true); }}
+                className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-primary-600"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => handleDeleteUser(user.id)}
+                className="p-2 hover:bg-white rounded-lg text-slate-500 hover:text-error-600"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
-            <div className="flex-1">
-              <p className="font-medium text-slate-800">{user.name}</p>
-              <p className="text-sm text-slate-500">{user.email}</p>
-            </div>
-            <span className={`badge ${
-              user.role === 'admin' ? 'bg-purple-100 text-purple-700' :
-              user.role === 'supervisor' ? 'bg-blue-100 text-blue-700' :
-              'bg-slate-100 text-slate-700'
-            }`}>
-              {roleLabels[user.role]}
-            </span>
-            <button className="text-sm text-primary-600 hover:underline">Editar</button>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-8 text-slate-400">
+          <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p>No hay usuarios registrados</p>
+          <p className="text-sm mt-1">Crea el primer usuario para comenzar</p>
+        </div>
+      )}
+
+      {/* User Form Modal */}
+      {showModal && (
+        <UserFormModal
+          user={editingUser}
+          onClose={() => { setShowModal(false); setEditingUser(null); }}
+          onSave={handleSaveUser}
+          saving={saving}
+        />
+      )}
+    </div>
+  );
+}
+
+// User Form Modal
+function UserFormModal({ user, onClose, onSave, saving }) {
+  const isEditing = user !== null;
+  const [formData, setFormData] = useState({
+    full_name: user?.full_name || '',
+    email: user?.email || '',
+    role: user?.role || 'operator',
+    is_active: user?.is_active !== false,
+  });
+
+  const handleSubmit = () => {
+    if (!formData.full_name.trim()) {
+      alert('El nombre es requerido');
+      return;
+    }
+    if (!formData.email.trim() || !formData.email.includes('@')) {
+      alert('Email válido es requerido');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-md animate-scale-in">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <h2 className="text-lg font-semibold text-slate-800">
+            {isEditing ? 'Editar Usuario' : 'Nuevo Usuario'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Nombre Completo <span className="text-error-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.full_name}
+              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+              className="input"
+              placeholder="Juan Pérez"
+            />
           </div>
-        ))}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Email <span className="text-error-500">*</span>
+            </label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="input"
+              placeholder="juan@ejemplo.com"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Rol</label>
+            <select
+              value={formData.role}
+              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              className="input"
+            >
+              <option value="operator">Operador</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="admin">Administrador</option>
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              {formData.role === 'admin' && 'Acceso completo a todas las funciones'}
+              {formData.role === 'supervisor' && 'Puede gestionar órdenes y ver reportes'}
+              {formData.role === 'operator' && 'Puede crear y procesar órdenes'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.is_active}
+                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+            </label>
+            <span className="text-sm text-slate-700">Usuario activo</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 p-4 border-t border-slate-100">
+          <button onClick={onClose} className="btn-secondary">Cancelar</button>
+          <button onClick={handleSubmit} disabled={saving} className="btn-primary">
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4" />
+                {isEditing ? 'Guardar Cambios' : 'Crear Usuario'}
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 // Payment Methods Settings Section
-function PaymentMethodsSettings({ methods }) {
-  const paymentMethods = [
-    { id: 'cash', name: 'Efectivo', enabled: true, icon: '💵' },
-    { id: 'card', name: 'Tarjeta', enabled: true, icon: '💳' },
-    { id: 'yappy', name: 'Yappy', enabled: true, icon: '📱' },
-    { id: 'ach', name: 'ACH', enabled: true, icon: '🏦' },
-    { id: 'invoice', name: 'Facturar', enabled: true, icon: '📄' },
-    { id: 'pickup', name: 'Pagar al Recoger', enabled: true, icon: '🛒' },
-  ];
+function PaymentMethodsSettings() {
+  const { state } = useApp();
+  const [saving, setSaving] = useState(false);
+  const [methods, setMethods] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load payment methods from database
+  useEffect(() => {
+    loadPaymentMethods();
+  }, []);
+
+  const loadPaymentMethods = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('store_id', state.store?.id)
+        .order('display_order');
+
+      if (error) throw error;
+      
+      // If no methods exist, create defaults
+      if (!data || data.length === 0) {
+        const defaultMethods = [
+          { name: 'Efectivo', icon: '💵', is_active: true, display_order: 0 },
+          { name: 'Tarjeta', icon: '💳', is_active: true, display_order: 1 },
+          { name: 'Yappy', icon: '📱', is_active: true, display_order: 2 },
+          { name: 'ACH', icon: '🏦', is_active: true, display_order: 3 },
+          { name: 'Facturar', icon: '📄', is_active: true, display_order: 4 },
+          { name: 'Pagar al Recoger', icon: '🛒', is_active: true, display_order: 5 },
+        ];
+        setMethods(defaultMethods.map((m, i) => ({ ...m, id: `temp-${i}`, store_id: state.store?.id })));
+      } else {
+        setMethods(data);
+      }
+    } catch (err) {
+      console.error('Error loading payment methods:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleMethod = (id) => {
+    setMethods(methods.map(m => 
+      m.id === id ? { ...m, is_active: !m.is_active } : m
+    ));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // Upsert all payment methods
+      for (const method of methods) {
+        if (method.id.toString().startsWith('temp-')) {
+          // Insert new method
+          const { error } = await supabase
+            .from('payment_methods')
+            .insert({
+              store_id: state.store?.id,
+              name: method.name,
+              icon: method.icon,
+              is_active: method.is_active,
+              display_order: method.display_order
+            });
+          if (error) throw error;
+        } else {
+          // Update existing method
+          const { error } = await supabase
+            .from('payment_methods')
+            .update({ is_active: method.is_active, updated_at: new Date().toISOString() })
+            .eq('id', method.id);
+          if (error) throw error;
+        }
+      }
+      
+      alert('Métodos de pago guardados correctamente');
+      loadPaymentMethods(); // Reload to get proper IDs
+    } catch (err) {
+      console.error('Error saving payment methods:', err);
+      alert('Error al guardar: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="card p-6 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6">
@@ -933,19 +1614,24 @@ function PaymentMethodsSettings({ methods }) {
           <h2 className="text-lg font-semibold text-slate-800">Métodos de Pago</h2>
           <p className="text-sm text-slate-500">Configura las formas de pago aceptadas</p>
         </div>
-        <button className="btn-primary">
-          <Save className="w-4 h-4" />
-          Guardar
+        <button onClick={handleSave} disabled={saving} className="btn-primary">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? 'Guardando...' : 'Guardar'}
         </button>
       </div>
       
       <div className="space-y-3">
-        {paymentMethods.map((method) => (
+        {methods.map((method) => (
           <div key={method.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
             <span className="text-2xl">{method.icon}</span>
             <span className="flex-1 font-medium text-slate-700">{method.name}</span>
             <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked={method.enabled} className="sr-only peer" />
+              <input 
+                type="checkbox" 
+                checked={method.is_active} 
+                onChange={() => toggleMethod(method.id)}
+                className="sr-only peer" 
+              />
               <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
             </label>
           </div>
@@ -956,6 +1642,7 @@ function PaymentMethodsSettings({ methods }) {
 }
 
 // Notifications Settings Section
+// Notifications Settings (placeholder - requires SMTP configuration)
 function NotificationsSettings() {
   const templates = [
     { id: 'welcome', name: 'Bienvenida', description: 'Email de bienvenida al registrar cliente', enabled: true },
@@ -971,9 +1658,16 @@ function NotificationsSettings() {
           <h2 className="text-lg font-semibold text-slate-800">Notificaciones por Email</h2>
           <p className="text-sm text-slate-500">Configura las plantillas de correo electrónico</p>
         </div>
+        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Próximamente</span>
       </div>
       
-      <div className="space-y-3">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+        <p className="text-sm text-amber-700">
+          <strong>Nota:</strong> Las notificaciones por email requieren configuración SMTP en la sección de Empresa.
+        </p>
+      </div>
+      
+      <div className="space-y-3 opacity-60">
         {templates.map((template) => (
           <div key={template.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
             <Mail className="w-5 h-5 text-slate-400" />
@@ -981,11 +1675,10 @@ function NotificationsSettings() {
               <p className="font-medium text-slate-700">{template.name}</p>
               <p className="text-sm text-slate-500">{template.description}</p>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked={template.enabled} className="sr-only peer" />
+            <label className="relative inline-flex items-center cursor-not-allowed">
+              <input type="checkbox" defaultChecked={template.enabled} disabled className="sr-only peer" />
               <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
             </label>
-            <button className="text-sm text-primary-600 hover:underline">Editar</button>
           </div>
         ))}
       </div>
