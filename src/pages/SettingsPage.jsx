@@ -1757,8 +1757,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
       }
     }
     
-    onSave({
-      id: product?.id || `prod-${Date.now()}`,
+    const productData = {
       name: formData.name,
       section_id: formData.section_id,
       icon: formData.icon,
@@ -1773,7 +1772,14 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
       is_taxable: formData.has_children ? false : formData.is_taxable,
       has_children: formData.has_children,
       extra_days: formData.has_children ? 0 : formData.extra_days,
-    });
+    };
+    
+    // Only include ID when editing existing product
+    if (product?.id) {
+      productData.id = product.id;
+    }
+    
+    onSave(productData);
   };
   
   // Parent products (only those with has_children: true)
