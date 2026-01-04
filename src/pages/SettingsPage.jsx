@@ -1842,31 +1842,76 @@ function NotificationsSettings() {
   };
 
   const handleSaveSMTP = async () => {
-    if (!companyId) return;
+    console.log('=== handleSaveSMTP called ===');
+    console.log('companyId:', companyId);
+    console.log('smtpConfig:', { ...smtpConfig, smtp_pass: '***HIDDEN***' });
+    
+    if (!companyId) {
+      alert('Error: No se encontró la empresa');
+      return;
+    }
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('companies')
-        .update({
-          smtp_host: smtpConfig.smtp_host || null,
-          smtp_port: smtpConfig.smtp_port || 587,
-          smtp_user: smtpConfig.smtp_user || null,
-          smtp_pass: smtpConfig.smtp_pass || null,
-          smtp_from_name: smtpConfig.smtp_from_name || null,
-          smtp_from_email: smtpConfig.smtp_from_email || null,
-          smtp_secure: smtpConfig.smtp_secure,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', companyId);
+      // First try with all fields
+      const updateData = {
+        smtp_host: smtpConfig.smtp_host || null,
+        smtp_port: smtpConfig.smtp_port || 587,
+        smtp_user: smtpConfig.smtp_user || null,
+        smtp_pass: smtpConfig.smtp_pass || null,
+        smtp_from_name: smtpConfig.smtp_from_name || null,
+        smtp_from_email: smtpConfig.smtp_from_email || null,
+        smtp_secure: smtpConfig.smtp_secure,
+        updated_at: new Date().toISOString()
+      };
+      
+      console.log('Attempting to save SMTP config to companies table...');
 
-      if (error) throw error;
-      alert('Configuración SMTP guardada correctamente');
+      const { data, error } = await supabase
+        .from('companies')
+        .update(updateData)
+        .eq('id', companyId)
+        .select();
+
+      console.log('Supabase response - data:', data, 'error:', error);
+
+      if (error) {
+        console.error('Supabase error:', error);
+        // If error mentions missing column, try with basic fields only
+        if (error.message.includes('column') || error.message.includes('schema')) {
+          console.log('Trying with basic SMTP fields only...');
+          const basicData = {
+            smtp_host: smtpConfig.smtp_host || null,
+            smtp_port: smtpConfig.smtp_port || 587,
+            smtp_user: smtpConfig.smtp_user || null,
+            smtp_pass: smtpConfig.smtp_pass || null,
+            updated_at: new Date().toISOString()
+          };
+          
+          const { data: basicResult, error: basicError } = await supabase
+            .from('companies')
+            .update(basicData)
+            .eq('id', companyId)
+            .select();
+            
+          console.log('Basic save result:', basicResult, basicError);
+            
+          if (basicError) throw basicError;
+          
+          alert('Configuración SMTP básica guardada.\n\nNota: Ejecuta supabase-smtp-setup.sql para habilitar campos adicionales (from_name, from_email, etc.)');
+        } else {
+          throw error;
+        }
+      } else {
+        console.log('SMTP saved successfully:', data);
+        alert('✅ Configuración SMTP guardada correctamente');
+      }
     } catch (err) {
       console.error('Error saving SMTP:', err);
       alert('Error al guardar: ' + err.message);
     } finally {
       setSaving(false);
+      console.log('=== handleSaveSMTP finished ===');
     }
   };
 
@@ -2163,52 +2208,57 @@ function NotificationsSettings() {
             </ol>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2">
-              <input
-                type="email"
-                value={testEmail}
-                onChange={(e) => setTestEmail(e.target.value)}
-                className="input w-64"
-                placeholder="Email para prueba"
-              />
+          {/* Actions - Sticky at bottom */}
+          <div className="sticky bottom-0 bg-white pt-4 pb-2 border-t border-slate-200 -mx-6 px-6 mt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <input
+                  type="email"
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  className="input w-64"
+                  placeholder="Email para prueba"
+                />
+                <button
+                  onClick={handleTestEmail}
+                  disabled={testing || !isConfigured}
+                  className="btn-secondary"
+                >
+                  {testing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Enviar Prueba
+                    </>
+                  )}
+                </button>
+              </div>
+              
               <button
-                onClick={handleTestEmail}
-                disabled={testing || !isConfigured}
-                className="btn-secondary"
+                onClick={() => {
+                  console.log('Save button clicked!');
+                  handleSaveSMTP();
+                }}
+                disabled={saving}
+                className="btn-primary px-6"
               >
-                {testing ? (
+                {saving ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Enviando...
+                    Guardando...
                   </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" />
-                    Enviar Prueba
+                    <Save className="w-4 h-4" />
+                    Guardar Configuración
                   </>
                 )}
               </button>
             </div>
-            
-            <button
-              onClick={handleSaveSMTP}
-              disabled={saving}
-              className="btn-primary"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Guardar Configuración
-                </>
-              )}
-            </button>
           </div>
         </div>
       )}
