@@ -67,9 +67,25 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    setAppUser(null);
+    try {
+      // Clear local state first
+      setSession(null);
+      setUser(null);
+      setAppUser(null);
+      
+      // Then sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Supabase signOut error:', error);
+        // Even if there's an error, we've already cleared local state
+      }
+    } catch (err) {
+      console.error('SignOut exception:', err);
+      // Still clear state even on exception
+      setSession(null);
+      setUser(null);
+      setAppUser(null);
+    }
   };
 
   const updatePassword = async (newPassword) => {

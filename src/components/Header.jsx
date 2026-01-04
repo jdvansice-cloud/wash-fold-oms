@@ -28,11 +28,14 @@ function Header() {
   }, []);
 
   const handleLogout = async () => {
+    setUserMenuOpen(false); // Close menu immediately
     try {
       await signOut();
-      navigate('/login');
+      navigate('/login', { replace: true });
     } catch (err) {
       console.error('Logout error:', err);
+      // Force navigation even on error
+      navigate('/login', { replace: true });
     }
   };
   

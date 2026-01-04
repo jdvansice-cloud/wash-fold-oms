@@ -14,11 +14,14 @@ function Sidebar({ isOpen, onClose }) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
+    onClose(); // Close sidebar immediately
     try {
       await signOut();
-      navigate('/login');
+      navigate('/login', { replace: true });
     } catch (err) {
       console.error('Logout error:', err);
+      // Force navigation even on error
+      navigate('/login', { replace: true });
     }
   };
 
