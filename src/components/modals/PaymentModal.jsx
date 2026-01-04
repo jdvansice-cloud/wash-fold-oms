@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, Banknote, CreditCard, Smartphone, Building2, 
-  FileText, Clock, Gift, Check 
+  FileText, Clock, Gift, Check, ChevronDown, ChevronUp 
 } from 'lucide-react';
 
 const paymentMethods = [
@@ -19,6 +19,7 @@ function PaymentModal({ total, onClose, onComplete }) {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [cashAmount, setCashAmount] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [showOtherMethods, setShowOtherMethods] = useState(true);
   
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
   
@@ -26,6 +27,10 @@ function PaymentModal({ total, onClose, onComplete }) {
     setSelectedMethod(methodId);
     if (methodId !== 'cash') {
       setCashAmount('');
+      setShowOtherMethods(true);
+    } else {
+      // Collapse other methods when cash is selected
+      setShowOtherMethods(false);
     }
   };
   
@@ -60,8 +65,12 @@ function PaymentModal({ total, onClose, onComplete }) {
   };
   
   return (
-    <div className="modal-backdrop flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-md max-h-[90vh] flex flex-col animate-scale-in">
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 pb-4 animate-fade-in" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div 
+        className="relative bg-white rounded-2xl shadow-elevated w-full max-w-md max-h-[calc(100vh-5rem)] flex flex-col animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-100 flex-shrink-0">
           <h2 className="text-lg font-semibold text-slate-800">Pago</h2>
@@ -75,14 +84,14 @@ function PaymentModal({ total, onClose, onComplete }) {
         
         {/* Scrollable Content */}
         <div className="p-4 overflow-y-auto flex-1">
-          {/* Total Display */}
-          <div className="text-center mb-6">
+          {/* Total Display - Always visible */}
+          <div className="text-center mb-4">
             <p className="text-sm text-slate-500 mb-1">Total a Pagar</p>
             <p className="text-4xl font-bold text-slate-800">{formatCurrency(total)}</p>
           </div>
           
-          {/* Payment Methods */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          {/* Primary Payment Methods - Always show */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
             {paymentMethods.filter(m => m.primary).map((method) => {
               const Icon = method.icon;
               const isSelected = selectedMethod === method.id;
@@ -110,35 +119,48 @@ function PaymentModal({ total, onClose, onComplete }) {
             })}
           </div>
           
-          {/* Other Methods */}
-          <div className="grid grid-cols-3 gap-2 mb-6">
-            {paymentMethods.filter(m => !m.primary).map((method) => {
-              const Icon = method.icon;
-              const isSelected = selectedMethod === method.id;
+          {/* Other Methods - Collapsible */}
+          {selectedMethod !== 'cash' && (
+            <div className="mb-4">
+              <button
+                onClick={() => setShowOtherMethods(!showOtherMethods)}
+                className="flex items-center justify-between w-full text-sm text-slate-500 mb-2"
+              >
+                <span>Otros métodos de pago</span>
+                {showOtherMethods ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
               
-              return (
-                <button
-                  key={method.id}
-                  onClick={() => handleMethodSelect(method.id)}
-                  className={`p-3 rounded-xl border text-center transition-all ${
-                    isSelected
-                      ? 'border-primary-500 bg-primary-50'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <p className={`text-xs font-medium ${
-                    isSelected ? 'text-primary-600' : 'text-slate-600'
-                  }`}>
-                    {method.name}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
+              {showOtherMethods && (
+                <div className="grid grid-cols-3 gap-2 animate-slide-up">
+                  {paymentMethods.filter(m => !m.primary).map((method) => {
+                    const isSelected = selectedMethod === method.id;
+                    
+                    return (
+                      <button
+                        key={method.id}
+                        onClick={() => handleMethodSelect(method.id)}
+                        className={`p-3 rounded-xl border text-center transition-all ${
+                          isSelected
+                            ? 'border-primary-500 bg-primary-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <p className={`text-xs font-medium ${
+                          isSelected ? 'text-primary-600' : 'text-slate-600'
+                        }`}>
+                          {method.name}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           
           {/* Cash Change Calculator */}
           {selectedMethod === 'cash' && (
-            <div className="bg-slate-50 rounded-xl p-4 mb-6 animate-slide-up">
+            <div className="bg-slate-50 rounded-xl p-4 animate-slide-up">
               <p className="text-sm font-semibold text-slate-700 mb-3">
                 Calculadora de Cambio
               </p>
