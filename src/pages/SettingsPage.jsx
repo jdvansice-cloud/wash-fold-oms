@@ -68,11 +68,11 @@ function SettingsPage() {
         
         {/* Settings Content */}
         <div className="flex-1">
-          {activeSection === 'company' && <CompanySettings company={state.company} />}
-          {activeSection === 'store' && <StoreSettings store={state.store} />}
-          {activeSection === 'workflow' && <WorkflowSettings settings={state.settings} />}
+          {activeSection === 'company' && <CompanySettings />}
+          {activeSection === 'store' && <StoreSettings />}
+          {activeSection === 'workflow' && <WorkflowSettings />}
           {activeSection === 'users' && <UsersSettings />}
-          {activeSection === 'payments' && <PaymentMethodsSettings methods={state.paymentMethods} />}
+          {activeSection === 'payments' && <PaymentMethodsSettings />}
           {activeSection === 'notifications' && <NotificationsSettings />}
           {activeSection === 'products' && <ProductsSettings />}
           {activeSection === 'promotions' && <PromotionsSettings />}
@@ -84,20 +84,65 @@ function SettingsPage() {
 }
 
 // Company Settings Section
-function CompanySettings({ company }) {
+function CompanySettings() {
   const fileInputRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [companyId, setCompanyId] = useState(null);
   const [formData, setFormData] = useState({
-    name: company?.name || 'American Laundry',
-    ruc: company?.ruc || '155737034-2-2023',
-    dv: company?.dv || '70',
-    address: company?.address || 'Panamá, Panamá',
-    phone: company?.phone || '+507 6123-4567',
-    itbms_rate: company?.itbms_rate || 7,
-    logo_url: company?.logo_url || '',
+    name: '',
+    ruc: '',
+    dv: '',
+    address: '',
+    phone: '',
+    itbms_rate: 7,
+    logo_url: '',
   });
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Load company data from database
+  useEffect(() => {
+    loadCompany();
+  }, []);
+
+  const loadCompany = async () => {
+    setLoading(true);
+    try {
+      // Get company through store
+      const { data: store, error: storeError } = await supabase
+        .from('stores')
+        .select('company_id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (storeError) throw storeError;
+
+      const { data: company, error: companyError } = await supabase
+        .from('companies')
+        .select('*')
+        .eq('id', store.company_id)
+        .single();
+
+      if (companyError) throw companyError;
+
+      setCompanyId(company.id);
+      setFormData({
+        name: company.name || '',
+        ruc: company.ruc || '',
+        dv: company.dv || '',
+        address: company.address || '',
+        phone: company.phone || '',
+        itbms_rate: company.itbms_rate || 7,
+        logo_url: company.logo_url || '',
+      });
+    } catch (err) {
+      console.error('Error loading company:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogoUpload = async (event) => {
     const file = event.target.files?.[0];
@@ -150,6 +195,11 @@ function CompanySettings({ company }) {
   };
 
   const handleSave = async () => {
+    if (!companyId) {
+      alert('Error: No se encontró el ID de la empresa. Recarga la página.');
+      return;
+    }
+
     setSaving(true);
     try {
       // Save to Supabase
@@ -165,7 +215,7 @@ function CompanySettings({ company }) {
           logo_url: formData.logo_url,
           updated_at: new Date().toISOString()
         })
-        .eq('id', company?.id);
+        .eq('id', companyId);
 
       if (error) throw error;
       alert('Datos guardados correctamente');
@@ -176,6 +226,14 @@ function CompanySettings({ company }) {
       setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="card p-6 flex items-center justify-center min-h-[300px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6">
@@ -317,21 +375,35 @@ function CompanySettings({ company }) {
 }
 
 // Store Settings Section - Multi-store management
-function StoreSettings({ store }) {
-  const { state } = useApp();
+function StoreSettings() {
   const [stores, setStores] = useState([]);
+  const [currentStoreId, setCurrentStoreId] = useState(null);
+  const [companyId, setCompanyId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingStore, setEditingStore] = useState(null);
 
   // Load stores on mount
-  React.useEffect(() => {
+  useEffect(() => {
     loadStores();
   }, []);
 
   const loadStores = async () => {
     setLoading(true);
     try {
+      // Get current active store to know which is "current"
+      const { data: activeStore } = await supabase
+        .from('stores')
+        .select('id, company_id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (activeStore) {
+        setCurrentStoreId(activeStore.id);
+        setCompanyId(activeStore.company_id);
+      }
+
       const { data, error } = await supabase
         .from('stores')
         .select('*')
@@ -378,20 +450,20 @@ function StoreSettings({ store }) {
           .eq('id', editingStore.id);
         
         if (error) throw error;
-        setStores(stores.map(s => s.id === editingStore.id ? { ...s, ...storeData } : s));
+        await loadStores(); // Reload to get fresh data
       } else {
         // Create new
         const { data, error } = await supabase
           .from('stores')
           .insert({
             ...storeData,
-            company_id: state.company?.id
+            company_id: companyId
           })
           .select()
           .single();
         
         if (error) throw error;
-        setStores([...stores, data]);
+        await loadStores(); // Reload to get fresh data
       }
       
       setShowModal(false);
@@ -437,7 +509,7 @@ function StoreSettings({ store }) {
               <div 
                 key={storeItem.id}
                 className={`p-4 rounded-xl border-2 transition-all ${
-                  storeItem.id === store?.id 
+                  storeItem.id === currentStoreId 
                     ? 'border-primary-300 bg-primary-50' 
                     : 'border-slate-200 bg-white hover:border-slate-300'
                 }`}
@@ -446,7 +518,7 @@ function StoreSettings({ store }) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className="font-semibold text-slate-800">{storeItem.name}</h3>
-                      {storeItem.id === store?.id && (
+                      {storeItem.id === currentStoreId && (
                         <span className="badge bg-primary-100 text-primary-700 text-xs">Actual</span>
                       )}
                       {!storeItem.is_active && (
@@ -807,15 +879,59 @@ function StoreFormModal({ store, onClose, onSave }) {
 }
 
 // Workflow Settings Section
-function WorkflowSettings({ settings }) {
-  const { state } = useApp();
+function WorkflowSettings() {
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [companyId, setCompanyId] = useState(null);
   const [formData, setFormData] = useState({
-    default_completion_days: settings?.default_completion_days || 1,
-    express_completion_days: settings?.express_completion_days || 0,
+    default_completion_days: 1,
+    express_completion_days: 0,
   });
 
+  // Load workflow settings from database
+  useEffect(() => {
+    loadWorkflowSettings();
+  }, []);
+
+  const loadWorkflowSettings = async () => {
+    setLoading(true);
+    try {
+      // Get company through store
+      const { data: store, error: storeError } = await supabase
+        .from('stores')
+        .select('company_id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (storeError) throw storeError;
+
+      const { data: company, error: companyError } = await supabase
+        .from('companies')
+        .select('id, default_completion_days, express_completion_days')
+        .eq('id', store.company_id)
+        .single();
+
+      if (companyError) throw companyError;
+
+      setCompanyId(company.id);
+      setFormData({
+        default_completion_days: company.default_completion_days ?? 1,
+        express_completion_days: company.express_completion_days ?? 0,
+      });
+    } catch (err) {
+      console.error('Error loading workflow settings:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSave = async () => {
+    if (!companyId) {
+      alert('Error: No se encontró el ID de la empresa. Recarga la página.');
+      return;
+    }
+
     setSaving(true);
     try {
       // Save to companies table (workflow settings stored with company)
@@ -826,7 +942,7 @@ function WorkflowSettings({ settings }) {
           express_completion_days: formData.express_completion_days,
           updated_at: new Date().toISOString()
         })
-        .eq('id', state.company?.id);
+        .eq('id', companyId);
 
       if (error) throw error;
       alert('Configuración guardada correctamente');
@@ -837,6 +953,14 @@ function WorkflowSettings({ settings }) {
       setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="card p-6 flex items-center justify-center min-h-[200px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6">
@@ -890,8 +1014,8 @@ function WorkflowSettings({ settings }) {
 
 // Users Settings Section
 function UsersSettings() {
-  const { state } = useApp();
   const [users, setUsers] = useState([]);
+  const [storeId, setStoreId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -904,10 +1028,21 @@ function UsersSettings() {
 
   const loadUsers = async () => {
     try {
+      // Get active store ID
+      const { data: store, error: storeError } = await supabase
+        .from('stores')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (storeError) throw storeError;
+      setStoreId(store.id);
+
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('store_id', state.store?.id)
+        .eq('store_id', store.id)
         .order('full_name');
 
       if (error) throw error;
@@ -920,13 +1055,18 @@ function UsersSettings() {
   };
 
   const handleInviteUser = async (userData) => {
+    if (!storeId) {
+      alert('Error: No se encontró la tienda. Recarga la página.');
+      return;
+    }
+
     setInviting(true);
     try {
       // First create the user record in our users table
       const { data: newUser, error: insertError } = await supabase
         .from('users')
         .insert({
-          store_id: state.store?.id,
+          store_id: storeId,
           full_name: userData.full_name,
           email: userData.email,
           role: userData.role,
@@ -1310,10 +1450,10 @@ function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
 
 // Payment Methods Settings Section
 function PaymentMethodsSettings() {
-  const { state } = useApp();
   const [saving, setSaving] = useState(false);
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [storeId, setStoreId] = useState(null);
 
   // Load payment methods from database
   useEffect(() => {
@@ -1322,10 +1462,21 @@ function PaymentMethodsSettings() {
 
   const loadPaymentMethods = async () => {
     try {
+      // Get active store ID
+      const { data: store, error: storeError } = await supabase
+        .from('stores')
+        .select('id')
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+
+      if (storeError) throw storeError;
+      setStoreId(store.id);
+
       const { data, error } = await supabase
         .from('payment_methods')
         .select('*')
-        .eq('store_id', state.store?.id)
+        .eq('store_id', store.id)
         .order('display_order');
 
       if (error) throw error;
@@ -1340,7 +1491,7 @@ function PaymentMethodsSettings() {
           { name: 'Facturar', icon: '📄', is_active: true, display_order: 4 },
           { name: 'Pagar al Recoger', icon: '🛒', is_active: true, display_order: 5 },
         ];
-        setMethods(defaultMethods.map((m, i) => ({ ...m, id: `temp-${i}`, store_id: state.store?.id })));
+        setMethods(defaultMethods.map((m, i) => ({ ...m, id: `temp-${i}`, store_id: store.id })));
       } else {
         setMethods(data);
       }
@@ -1358,6 +1509,11 @@ function PaymentMethodsSettings() {
   };
 
   const handleSave = async () => {
+    if (!storeId) {
+      alert('Error: No se encontró la tienda. Recarga la página.');
+      return;
+    }
+
     setSaving(true);
     try {
       // Upsert all payment methods
@@ -1367,7 +1523,7 @@ function PaymentMethodsSettings() {
           const { error } = await supabase
             .from('payment_methods')
             .insert({
-              store_id: state.store?.id,
+              store_id: storeId,
               name: method.name,
               icon: method.icon,
               is_active: method.is_active,
