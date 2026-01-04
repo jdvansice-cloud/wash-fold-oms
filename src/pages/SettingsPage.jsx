@@ -109,23 +109,18 @@ function CompanySettings() {
   const loadCompany = async () => {
     setLoading(true);
     try {
-      // Get company through store
-      const { data: store, error: storeError } = await supabase
-        .from('stores')
-        .select('company_id')
-        .eq('is_active', true)
-        .limit(1)
-        .single();
-
-      if (storeError) throw storeError;
-
+      // Get company directly
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .select('*')
-        .eq('id', store.company_id)
+        .limit(1)
         .single();
 
-      if (companyError) throw companyError;
+      if (companyError) {
+        console.error('No company found:', companyError);
+        setLoading(false);
+        return;
+      }
 
       setCompanyId(company.id);
       setFormData({
@@ -391,17 +386,31 @@ function StoreSettings() {
   const loadStores = async () => {
     setLoading(true);
     try {
+      // First get companyId from companies table (in case no stores exist yet)
+      const { data: company, error: companyError } = await supabase
+        .from('companies')
+        .select('id')
+        .limit(1)
+        .single();
+
+      if (company) {
+        setCompanyId(company.id);
+      }
+
       // Get current active store to know which is "current"
       const { data: activeStore } = await supabase
         .from('stores')
         .select('id, company_id')
         .eq('is_active', true)
         .limit(1)
-        .single();
+        .maybeSingle(); // Use maybeSingle to avoid error when no stores exist
 
       if (activeStore) {
         setCurrentStoreId(activeStore.id);
-        setCompanyId(activeStore.company_id);
+        // Override companyId if we got it from store
+        if (activeStore.company_id) {
+          setCompanyId(activeStore.company_id);
+        }
       }
 
       const { data, error } = await supabase
@@ -452,7 +461,12 @@ function StoreSettings() {
         if (error) throw error;
         await loadStores(); // Reload to get fresh data
       } else {
-        // Create new
+        // Create new - ensure we have companyId
+        if (!companyId) {
+          alert('Error: No se encontró una empresa. Primero configura los datos de la empresa.');
+          return;
+        }
+        
         const { data, error } = await supabase
           .from('stores')
           .insert({
@@ -548,7 +562,7 @@ function StoreSettings() {
                     <button 
                       onClick={() => handleDeleteStore(storeItem.id)}
                       className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-error-600"
-                      disabled={storeItem.id === store?.id}
+                      disabled={storeItem.id === currentStoreId}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -655,13 +669,18 @@ function StoreFormModal({ store, onClose, onSave }) {
       return;
     }
     if (!formData.geolocation?.lat || !formData.geolocation?.lng) {
-      alert('La geolocalización es requerida');
+      alert('La geolocalización es requerida. Usa "Obtener Ubicación" o ingresa las coordenadas manualmente.');
       return;
     }
 
     setSaving(true);
-    await onSave(formData);
-    setSaving(false);
+    try {
+      await onSave(formData);
+    } catch (err) {
+      console.error('Error saving store:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -896,23 +915,18 @@ function WorkflowSettings() {
   const loadWorkflowSettings = async () => {
     setLoading(true);
     try {
-      // Get company through store
-      const { data: store, error: storeError } = await supabase
-        .from('stores')
-        .select('company_id')
-        .eq('is_active', true)
-        .limit(1)
-        .single();
-
-      if (storeError) throw storeError;
-
+      // Get company directly (in case no stores exist)
       const { data: company, error: companyError } = await supabase
         .from('companies')
         .select('id, default_completion_days, express_completion_days')
-        .eq('id', store.company_id)
+        .limit(1)
         .single();
 
-      if (companyError) throw companyError;
+      if (companyError) {
+        console.error('No company found:', companyError);
+        setLoading(false);
+        return;
+      }
 
       setCompanyId(company.id);
       setFormData({
@@ -1017,6 +1031,7 @@ function UsersSettings() {
   const [users, setUsers] = useState([]);
   const [storeId, setStoreId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [noStore, setNoStore] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1034,9 +1049,14 @@ function UsersSettings() {
         .select('id')
         .eq('is_active', true)
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (storeError) throw storeError;
+      if (!store) {
+        setNoStore(true);
+        setLoading(false);
+        return;
+      }
+      
       setStoreId(store.id);
 
       const { data, error } = await supabase
@@ -1213,6 +1233,18 @@ function UsersSettings() {
     return (
       <div className="card p-6 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  if (noStore) {
+    return (
+      <div className="card p-6">
+        <div className="text-center py-12 text-slate-400">
+          <Store className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p className="font-medium">No hay tienda configurada</p>
+          <p className="text-sm mt-1">Primero crea una tienda en la sección "Tiendas"</p>
+        </div>
       </div>
     );
   }
@@ -1454,6 +1486,7 @@ function PaymentMethodsSettings() {
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [storeId, setStoreId] = useState(null);
+  const [noStore, setNoStore] = useState(false);
 
   // Load payment methods from database
   useEffect(() => {
@@ -1468,9 +1501,14 @@ function PaymentMethodsSettings() {
         .select('id')
         .eq('is_active', true)
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (storeError) throw storeError;
+      if (!store) {
+        setNoStore(true);
+        setLoading(false);
+        return;
+      }
+      
       setStoreId(store.id);
 
       const { data, error } = await supabase
@@ -1554,6 +1592,18 @@ function PaymentMethodsSettings() {
     return (
       <div className="card p-6 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  if (noStore) {
+    return (
+      <div className="card p-6">
+        <div className="text-center py-12 text-slate-400">
+          <Store className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p className="font-medium">No hay tienda configurada</p>
+          <p className="text-sm mt-1">Primero crea una tienda en la sección "Tiendas"</p>
+        </div>
       </div>
     );
   }
