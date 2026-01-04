@@ -1844,71 +1844,77 @@ function NotificationsSettings() {
   const handleSaveSMTP = async () => {
     console.log('=== handleSaveSMTP called ===');
     console.log('companyId:', companyId);
-    console.log('smtpConfig:', { ...smtpConfig, smtp_pass: '***HIDDEN***' });
     
     if (!companyId) {
       alert('Error: No se encontró la empresa');
       return;
     }
 
+    // Timeout helper
+    const withTimeout = (promise, ms) => {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout: La operación tardó demasiado')), ms)
+        )
+      ]);
+    };
+
     setSaving(true);
     try {
-      // First try with all fields
-      const updateData = {
-        smtp_host: smtpConfig.smtp_host || null,
-        smtp_port: smtpConfig.smtp_port || 587,
-        smtp_user: smtpConfig.smtp_user || null,
-        smtp_pass: smtpConfig.smtp_pass || null,
-        smtp_from_name: smtpConfig.smtp_from_name || null,
-        smtp_from_email: smtpConfig.smtp_from_email || null,
-        smtp_secure: smtpConfig.smtp_secure,
-        updated_at: new Date().toISOString()
-      };
+      console.log('Attempting to save SMTP via RPC function...');
       
-      console.log('Attempting to save SMTP config to companies table...');
+      // Try RPC function first (more reliable)
+      const { data, error } = await withTimeout(
+        supabase.rpc('update_company_smtp', {
+          p_company_id: companyId,
+          p_smtp_host: smtpConfig.smtp_host || null,
+          p_smtp_port: smtpConfig.smtp_port || 587,
+          p_smtp_user: smtpConfig.smtp_user || null,
+          p_smtp_pass: smtpConfig.smtp_pass || null,
+          p_smtp_from_name: smtpConfig.smtp_from_name || null,
+          p_smtp_from_email: smtpConfig.smtp_from_email || null,
+          p_smtp_secure: smtpConfig.smtp_secure
+        }),
+        10000
+      );
 
-      const { data, error } = await supabase
-        .from('companies')
-        .update(updateData)
-        .eq('id', companyId)
-        .select();
-
-      console.log('Supabase response - data:', data, 'error:', error);
+      console.log('RPC response:', data, error);
 
       if (error) {
-        console.error('Supabase error:', error);
-        // If error mentions missing column, try with basic fields only
-        if (error.message.includes('column') || error.message.includes('schema')) {
-          console.log('Trying with basic SMTP fields only...');
-          const basicData = {
+        // If RPC doesn't exist, fall back to direct update
+        if (error.message.includes('function') || error.message.includes('does not exist')) {
+          console.log('RPC not found, trying direct update...');
+          
+          const updateData = {
             smtp_host: smtpConfig.smtp_host || null,
             smtp_port: smtpConfig.smtp_port || 587,
             smtp_user: smtpConfig.smtp_user || null,
             smtp_pass: smtpConfig.smtp_pass || null,
+            smtp_from_name: smtpConfig.smtp_from_name || null,
+            smtp_from_email: smtpConfig.smtp_from_email || null,
+            smtp_secure: smtpConfig.smtp_secure,
             updated_at: new Date().toISOString()
           };
-          
-          const { data: basicResult, error: basicError } = await supabase
-            .from('companies')
-            .update(basicData)
-            .eq('id', companyId)
-            .select();
-            
-          console.log('Basic save result:', basicResult, basicError);
-            
-          if (basicError) throw basicError;
-          
-          alert('Configuración SMTP básica guardada.\n\nNota: Ejecuta supabase-smtp-setup.sql para habilitar campos adicionales (from_name, from_email, etc.)');
+
+          const { data: directData, error: directError } = await withTimeout(
+            supabase.from('companies').update(updateData).eq('id', companyId).select(),
+            10000
+          );
+
+          if (directError) throw directError;
+          console.log('Direct update successful:', directData);
+          alert('✅ Configuración SMTP guardada correctamente');
         } else {
           throw error;
         }
       } else {
-        console.log('SMTP saved successfully:', data);
+        console.log('SMTP saved via RPC successfully');
         alert('✅ Configuración SMTP guardada correctamente');
       }
     } catch (err) {
       console.error('Error saving SMTP:', err);
-      alert('Error al guardar: ' + err.message);
+      alert('Error al guardar: ' + err.message + '\n\nEjecuta supabase-smtp-columns.sql en Supabase SQL Editor para crear la función RPC.');
     } finally {
       setSaving(false);
       console.log('=== handleSaveSMTP finished ===');
