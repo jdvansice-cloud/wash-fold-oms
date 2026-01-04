@@ -447,12 +447,22 @@ function StoreSettings() {
   };
 
   const handleSaveStore = async (storeData) => {
+    // Helper function to add timeout to any promise
+    const withTimeout = (promise, ms) => {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout: La operación tardó demasiado. Verifica que RLS esté deshabilitado en Supabase.')), ms)
+        )
+      ]);
+    };
+
     try {
       if (editingStore) {
         // Update existing
-        console.log('Updating store:', editingStore.id, storeData);
+        console.log('Updating store:', editingStore.id);
         
-        // Prepare update data - only include non-undefined values
+        // Prepare update data
         const updateData = {
           name: storeData.name,
           address: storeData.address || null,
@@ -461,7 +471,6 @@ function StoreSettings() {
           updated_at: new Date().toISOString()
         };
         
-        // Only include geolocation if it has valid values
         if (storeData.geolocation?.lat != null && storeData.geolocation?.lng != null) {
           updateData.geolocation = {
             lat: storeData.geolocation.lat,
@@ -469,27 +478,28 @@ function StoreSettings() {
           };
         }
         
-        // Only include opening_hours if present
         if (storeData.opening_hours) {
           updateData.opening_hours = storeData.opening_hours;
         }
         
         console.log('Update data:', updateData);
         
-        const { error } = await supabase
-          .from('stores')
-          .update(updateData)
-          .eq('id', editingStore.id);
+        // Execute with timeout
+        const result = await withTimeout(
+          supabase.from('stores').update(updateData).eq('id', editingStore.id),
+          10000
+        );
         
-        if (error) {
-          console.error('Supabase update error:', error);
-          alert('Error al guardar: ' + error.message);
+        if (result.error) {
+          console.error('Supabase update error:', result.error);
+          alert('Error al guardar: ' + result.error.message);
           return;
         }
         
         console.log('Store updated successfully');
+        
       } else {
-        // Create new - ensure we have companyId
+        // Create new
         if (!companyId) {
           alert('Error: No se encontró una empresa. Primero configura los datos de la empresa.');
           return;
@@ -516,19 +526,18 @@ function StoreSettings() {
         
         console.log('Insert data:', insertData);
         
-        const { data, error } = await supabase
-          .from('stores')
-          .insert(insertData)
-          .select()
-          .single();
+        const result = await withTimeout(
+          supabase.from('stores').insert(insertData).select().single(),
+          10000
+        );
         
-        if (error) {
-          console.error('Supabase insert error:', error);
-          alert('Error al guardar: ' + error.message);
+        if (result.error) {
+          console.error('Supabase insert error:', result.error);
+          alert('Error al guardar: ' + result.error.message);
           return;
         }
         
-        console.log('Store created successfully:', data);
+        console.log('Store created successfully:', result.data);
       }
       
       // Success - close modal and reload
@@ -538,7 +547,7 @@ function StoreSettings() {
       
     } catch (err) {
       console.error('Error saving store:', err);
-      alert('Error al guardar: ' + (err.message || 'Error desconocido'));
+      alert(err.message || 'Error al guardar');
     }
   };
 

@@ -1,9 +1,19 @@
 -- =============================================
 -- Fix RLS Policies for American Laundry OMS
--- Run this if you're having permission issues
+-- Run this ENTIRE script in Supabase SQL Editor
 -- =============================================
 
--- Option 1: Disable RLS entirely for development (easier)
+-- First, drop ALL existing policies on stores (they might be blocking)
+DO $$ 
+DECLARE
+    pol RECORD;
+BEGIN
+    FOR pol IN SELECT policyname FROM pg_policies WHERE tablename = 'stores' LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON stores', pol.policyname);
+    END LOOP;
+END $$;
+
+-- Disable RLS on ALL tables
 ALTER TABLE stores DISABLE ROW LEVEL SECURITY;
 ALTER TABLE companies DISABLE ROW LEVEL SECURITY;
 ALTER TABLE sections DISABLE ROW LEVEL SECURITY;
@@ -23,39 +33,24 @@ ALTER TABLE refunds DISABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_movements DISABLE ROW LEVEL SECURITY;
 ALTER TABLE eod_closings DISABLE ROW LEVEL SECURITY;
 
--- =============================================
--- OR Option 2: Create permissive policies
--- =============================================
-
-/*
--- Enable RLS
-ALTER TABLE stores ENABLE ROW LEVEL SECURITY;
-
--- Drop existing policies
-DROP POLICY IF EXISTS "Allow all for authenticated users" ON stores;
-
--- Create permissive policy for authenticated users
-CREATE POLICY "Allow all for authenticated users" ON stores
-  FOR ALL
-  TO authenticated
-  USING (true)
-  WITH CHECK (true);
-
--- For anonymous access (if needed during development)
-CREATE POLICY "Allow all for anon" ON stores
-  FOR ALL
-  TO anon
-  USING (true)
-  WITH CHECK (true);
-*/
+-- Grant full access to anon and authenticated roles
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
 -- =============================================
--- Verify current RLS status
+-- Verify RLS is disabled
 -- =============================================
 SELECT 
-  schemaname,
   tablename,
-  rowsecurity
+  CASE WHEN rowsecurity THEN 'ENABLED ❌' ELSE 'DISABLED ✓' END as rls_status
 FROM pg_tables 
 WHERE schemaname = 'public'
 ORDER BY tablename;
+
+-- =============================================
+-- Test: Try to update a store directly
+-- =============================================
+-- UPDATE stores SET updated_at = NOW() WHERE name LIKE '%Tocumen%';
+-- If this works, the app should work too
