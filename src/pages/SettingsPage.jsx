@@ -1863,58 +1863,58 @@ function NotificationsSettings() {
         updated_at: new Date().toISOString()
       };
       
-      console.log('Saving SMTP config...');
+      console.log('Sending update (fire and forget)...');
 
-      // Try update with a race against timeout
-      let saved = false;
-      const updatePromise = supabase
+      // Fire the update but don't wait for it
+      supabase
         .from('companies')
         .update(updateData)
         .eq('id', companyId)
-        .then(result => {
-          saved = true;
-          return result;
-        });
+        .then(res => console.log('Update completed:', res))
+        .catch(err => console.log('Update error:', err));
 
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('TIMEOUT')), 8000)
-      );
-
-      try {
-        const { error } = await Promise.race([updatePromise, timeoutPromise]);
-        if (error) throw error;
-        console.log('SMTP saved successfully');
+      // Wait 2 seconds then verify
+      await new Promise(r => setTimeout(r, 2000));
+      
+      console.log('Verifying save...');
+      const { data: verifyData, error: verifyError } = await supabase
+        .from('companies')
+        .select('smtp_host, smtp_user, smtp_port, smtp_from_name')
+        .eq('id', companyId)
+        .single();
+      
+      console.log('Verification result:', verifyData, verifyError);
+      
+      if (verifyError) {
+        throw verifyError;
+      }
+      
+      if (verifyData?.smtp_host === smtpConfig.smtp_host && 
+          verifyData?.smtp_user === smtpConfig.smtp_user) {
+        console.log('Verified: Data was saved');
         alert('✅ Configuración SMTP guardada correctamente');
-      } catch (timeoutErr) {
-        if (timeoutErr.message === 'TIMEOUT') {
-          // Update timed out, but might have actually saved
-          // Wait a bit more then verify
-          console.log('Update timed out, waiting for background completion...');
-          await new Promise(r => setTimeout(r, 2000));
+      } else {
+        console.log('Data mismatch. Expected:', smtpConfig.smtp_host, 'Got:', verifyData?.smtp_host);
+        // Data didn't match - maybe needs more time
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Try one more verification
+        const { data: retry } = await supabase
+          .from('companies')
+          .select('smtp_host, smtp_user')
+          .eq('id', companyId)
+          .single();
           
-          // Check if it actually saved
-          const { data: verifyData } = await supabase
-            .from('companies')
-            .select('smtp_host, smtp_user')
-            .eq('id', companyId)
-            .single();
-          
-          if (verifyData?.smtp_host === smtpConfig.smtp_host && 
-              verifyData?.smtp_user === smtpConfig.smtp_user) {
-            console.log('Verified: Data was saved despite timeout');
-            alert('✅ Configuración SMTP guardada correctamente');
-          } else {
-            console.log('Data not saved:', verifyData);
-            alert('⚠️ La operación tardó demasiado.\n\nLos datos pueden no haberse guardado. Intenta de nuevo.');
-          }
+        if (retry?.smtp_host === smtpConfig.smtp_host) {
+          alert('✅ Configuración SMTP guardada correctamente');
         } else {
-          throw timeoutErr;
+          alert('⚠️ No se pudo verificar si los datos se guardaron.\n\nRecarga la página para verificar.');
         }
       }
       
     } catch (err) {
-      console.error('Error saving SMTP:', err);
-      alert('Error al guardar: ' + (err.message || JSON.stringify(err)));
+      console.error('Error:', err);
+      alert('Error: ' + (err.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
       console.log('=== handleSaveSMTP finished ===');
