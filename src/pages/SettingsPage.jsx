@@ -1788,11 +1788,89 @@ function NotificationsSettings() {
   });
 
   const [templates, setTemplates] = useState([
-    { id: 'welcome', name: 'Bienvenida', description: 'Email de bienvenida al registrar cliente', enabled: true, subject: '¡Bienvenido a {company_name}!' },
-    { id: 'order_created', name: 'Orden Creada', description: 'Confirmación de recepción de orden', enabled: true, subject: 'Tu orden #{order_number} ha sido recibida' },
-    { id: 'order_ready', name: 'Orden Lista', description: 'Notificación cuando la orden está lista para recoger', enabled: true, subject: 'Tu orden #{order_number} está lista' },
-    { id: 'order_delivered', name: 'Orden Entregada', description: 'Confirmación de entrega completada', enabled: false, subject: 'Tu orden #{order_number} ha sido entregada' },
+    { 
+      id: 'welcome', 
+      name: 'Bienvenida', 
+      description: 'Email de bienvenida al registrar cliente', 
+      enabled: true, 
+      subject: '¡Bienvenido a {company_name}!',
+      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #0891b2;">¡Bienvenido, {customer_name}!</h1>
+  <p>Gracias por registrarte en <strong>{company_name}</strong>.</p>
+  <p>Estamos aquí para hacer tu vida más fácil con nuestros servicios de lavandería profesional.</p>
+  <p>¡Te esperamos pronto!</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">
+    {company_name}<br>
+    Este es un mensaje automático, por favor no responder.
+  </p>
+</div>`
+    },
+    { 
+      id: 'order_created', 
+      name: 'Orden Creada', 
+      description: 'Confirmación de recepción de orden', 
+      enabled: true, 
+      subject: 'Tu orden #{order_number} ha sido recibida - {company_name}',
+      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #0891b2;">¡Orden Recibida!</h1>
+  <p>Hola {customer_name},</p>
+  <p>Hemos recibido tu orden <strong>#{order_number}</strong>.</p>
+  <table style="width: 100%; margin: 20px 0; border-collapse: collapse;">
+    <tr>
+      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Total:</strong></td>
+      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">B/{total}</td>
+    </tr>
+    <tr>
+      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Fecha estimada:</strong></td>
+      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">{promised_date}</td>
+    </tr>
+  </table>
+  <p>Te notificaremos cuando tu orden esté lista.</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p>
+</div>`
+    },
+    { 
+      id: 'order_ready', 
+      name: 'Orden Lista', 
+      description: 'Notificación cuando la orden está lista para recoger', 
+      enabled: true, 
+      subject: '¡Tu orden #{order_number} está lista! - {company_name}',
+      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #10b981;">¡Tu orden está lista!</h1>
+  <p>Hola {customer_name},</p>
+  <p>Tu orden <strong>#{order_number}</strong> está lista para recoger.</p>
+  <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 0; color: #166534;"><strong>✓ Lista para recoger</strong></p>
+  </div>
+  <p>Te esperamos en nuestra tienda.</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p>
+</div>`
+    },
+    { 
+      id: 'order_delivered', 
+      name: 'Orden Entregada', 
+      description: 'Confirmación de entrega completada', 
+      enabled: true, 
+      subject: 'Orden #{order_number} entregada - {company_name}',
+      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #10b981;">¡Orden Entregada!</h1>
+  <p>Hola {customer_name},</p>
+  <p>Tu orden <strong>#{order_number}</strong> ha sido entregada exitosamente.</p>
+  <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 0; color: #166534;"><strong>✓ Entrega completada</strong></p>
+  </div>
+  <p>¡Gracias por confiar en nosotros!</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name}</p>
+</div>`
+    },
   ]);
+  
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [savingTemplates, setSavingTemplates] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -1830,7 +1908,15 @@ function NotificationsSettings() {
       if (notifSettings && notifSettings.length > 0) {
         setTemplates(prev => prev.map(t => {
           const saved = notifSettings.find(n => n.template_id === t.id);
-          return saved ? { ...t, enabled: saved.enabled, subject: saved.subject || t.subject } : t;
+          if (saved) {
+            return { 
+              ...t, 
+              enabled: saved.enabled, 
+              subject: saved.subject || t.subject,
+              body: saved.body_template || t.body
+            };
+          }
+          return t;
         }));
       }
 
@@ -1990,6 +2076,7 @@ function NotificationsSettings() {
           template_id: templateId,
           enabled: newEnabled,
           subject: template.subject,
+          body_template: template.body,
           updated_at: new Date().toISOString()
         }, { onConflict: 'company_id,template_id' });
 
@@ -2000,6 +2087,94 @@ function NotificationsSettings() {
       setTemplates(prev => prev.map(t => 
         t.id === templateId ? { ...t, enabled: !newEnabled } : t
       ));
+    }
+  };
+
+  const saveTemplate = async (templateId) => {
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return;
+    
+    setSavingTemplates(true);
+    try {
+      const { error } = await supabase
+        .from('notification_settings')
+        .upsert({
+          company_id: companyId,
+          template_id: templateId,
+          enabled: template.enabled,
+          subject: template.subject,
+          body_template: template.body,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'company_id,template_id' });
+
+      if (error) throw error;
+      
+      alert('✅ Plantilla guardada correctamente');
+      setEditingTemplate(null);
+    } catch (err) {
+      console.error('Error saving template:', err);
+      alert('❌ Error al guardar la plantilla');
+    } finally {
+      setSavingTemplates(false);
+    }
+  };
+
+  const updateTemplate = (templateId, field, value) => {
+    setTemplates(prev => prev.map(t => 
+      t.id === templateId ? { ...t, [field]: value } : t
+    ));
+  };
+
+  const sendTestNotification = async (templateId) => {
+    const template = templates.find(t => t.id === templateId);
+    if (!template || !testEmail) {
+      alert('Ingresa un email de prueba');
+      return;
+    }
+
+    setTesting(true);
+    try {
+      // Replace variables with test data
+      let subject = template.subject;
+      let body = template.body;
+      
+      const testVars = {
+        customer_name: 'Cliente de Prueba',
+        company_name: smtpConfig.smtp_from_name || 'Tu Empresa',
+        order_number: '12345',
+        total: '25.00',
+        promised_date: new Date().toLocaleDateString('es-PA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+        store_phone: '+507 6123-4567'
+      };
+
+      Object.keys(testVars).forEach(key => {
+        const regex = new RegExp(`{${key}}`, 'g');
+        subject = subject.replace(regex, testVars[key]);
+        body = body.replace(regex, testVars[key]);
+      });
+
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: testEmail,
+          subject: `[PRUEBA] ${subject}`,
+          html: body,
+          company_id: companyId
+        })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        alert(`✅ Email de prueba enviado a ${testEmail}`);
+      } else {
+        throw new Error(result.error || 'Error desconocido');
+      }
+    } catch (err) {
+      console.error('Error sending test:', err);
+      alert(`❌ Error: ${err.message}`);
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -2262,7 +2437,7 @@ function NotificationsSettings() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-lg font-semibold text-slate-800">Plantillas de Notificación</h2>
-              <p className="text-sm text-slate-500">Activa o desactiva las notificaciones automáticas</p>
+              <p className="text-sm text-slate-500">Personaliza y activa las notificaciones automáticas</p>
             </div>
           </div>
 
@@ -2274,34 +2449,149 @@ function NotificationsSettings() {
             </div>
           )}
 
-          <div className="space-y-3">
+          {/* Test Email Input */}
+          {isConfigured && (
+            <div className="mb-6 p-4 bg-blue-50 rounded-xl">
+              <label className="block text-sm font-medium text-blue-800 mb-2">Email para pruebas</label>
+              <input
+                type="email"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="input w-full max-w-md"
+                placeholder="tu@email.com"
+              />
+              <p className="text-xs text-blue-600 mt-1">Usa este email para probar cada plantilla</p>
+            </div>
+          )}
+
+          <div className="space-y-4">
             {templates.map((template) => (
               <div 
                 key={template.id} 
-                className={`flex items-center gap-4 p-4 rounded-xl transition-colors ${
-                  isConfigured ? 'bg-slate-50 hover:bg-slate-100' : 'bg-slate-50 opacity-60'
-                }`}
+                className={`border rounded-xl overflow-hidden transition-all ${
+                  editingTemplate === template.id ? 'border-primary-300 shadow-lg' : 'border-slate-200'
+                } ${!isConfigured ? 'opacity-60' : ''}`}
               >
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                  template.enabled && isConfigured ? 'bg-primary-100 text-primary-600' : 'bg-slate-200 text-slate-400'
-                }`}>
-                  <Mail className="w-5 h-5" />
+                {/* Template Header */}
+                <div 
+                  className={`flex items-center gap-4 p-4 cursor-pointer transition-colors ${
+                    template.enabled ? 'bg-green-50' : 'bg-slate-50'
+                  }`}
+                  onClick={() => isConfigured && setEditingTemplate(editingTemplate === template.id ? null : template.id)}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    template.enabled && isConfigured ? 'bg-green-100 text-green-600' : 'bg-slate-200 text-slate-400'
+                  }`}>
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-slate-700">{template.name}</p>
+                      {template.enabled && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Activo</span>}
+                    </div>
+                    <p className="text-sm text-slate-500">{template.description}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className={`relative inline-flex items-center ${isConfigured ? 'cursor-pointer' : 'cursor-not-allowed'}`} onClick={(e) => e.stopPropagation()}>
+                      <input 
+                        type="checkbox" 
+                        checked={template.enabled}
+                        onChange={() => isConfigured && toggleTemplate(template.id)}
+                        disabled={!isConfigured}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                    </label>
+                    <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${editingTemplate === template.id ? 'rotate-180' : ''}`} />
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-700">{template.name}</p>
-                  <p className="text-sm text-slate-500">{template.description}</p>
-                  <p className="text-xs text-slate-400 mt-1">Asunto: {template.subject}</p>
-                </div>
-                <label className={`relative inline-flex items-center ${isConfigured ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
-                  <input 
-                    type="checkbox" 
-                    checked={template.enabled}
-                    onChange={() => isConfigured && toggleTemplate(template.id)}
-                    disabled={!isConfigured}
-                    className="sr-only peer" 
-                  />
-                  <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-                </label>
+
+                {/* Template Editor (Expanded) */}
+                {editingTemplate === template.id && (
+                  <div className="p-4 border-t border-slate-200 bg-white space-y-4">
+                    {/* Subject */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Asunto del Email</label>
+                      <input
+                        type="text"
+                        value={template.subject}
+                        onChange={(e) => updateTemplate(template.id, 'subject', e.target.value)}
+                        className="input w-full"
+                        placeholder="Asunto del email..."
+                      />
+                    </div>
+
+                    {/* Body Editor */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Contenido HTML del Email</label>
+                      <textarea
+                        value={template.body}
+                        onChange={(e) => updateTemplate(template.id, 'body', e.target.value)}
+                        className="input w-full font-mono text-sm"
+                        rows={12}
+                        placeholder="<div>Contenido HTML...</div>"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Usa HTML para dar formato. Variables disponibles: {'{customer_name}'}, {'{order_number}'}, {'{total}'}, {'{promised_date}'}, {'{company_name}'}, {'{store_phone}'}
+                      </p>
+                    </div>
+
+                    {/* Preview */}
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Vista Previa</label>
+                      <div 
+                        className="border border-slate-200 rounded-lg p-4 bg-white max-h-64 overflow-auto"
+                        dangerouslySetInnerHTML={{ 
+                          __html: template.body
+                            .replace(/{customer_name}/g, 'Cliente de Prueba')
+                            .replace(/{company_name}/g, smtpConfig.smtp_from_name || 'Tu Empresa')
+                            .replace(/{order_number}/g, '12345')
+                            .replace(/{total}/g, '25.00')
+                            .replace(/{promised_date}/g, new Date().toLocaleDateString('es-PA'))
+                            .replace(/{store_phone}/g, '+507 6123-4567')
+                        }}
+                      />
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                      <button
+                        onClick={() => sendTestNotification(template.id)}
+                        disabled={testing || !testEmail}
+                        className="btn-secondary"
+                      >
+                        {testing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            Enviar Prueba
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => saveTemplate(template.id)}
+                        disabled={savingTemplates}
+                        className="btn-primary"
+                      >
+                        {savingTemplates ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Guardando...
+                          </>
+                        ) : (
+                          <>
+                            <Save className="w-4 h-4" />
+                            Guardar Plantilla
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2309,7 +2599,7 @@ function NotificationsSettings() {
           {/* Variables Info */}
           <div className="mt-6 p-4 bg-slate-50 rounded-xl">
             <p className="text-sm font-medium text-slate-700 mb-2">Variables disponibles en plantillas:</p>
-            <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs text-slate-500">
               <span><code className="bg-slate-200 px-1 rounded">{'{customer_name}'}</code> - Nombre del cliente</span>
               <span><code className="bg-slate-200 px-1 rounded">{'{order_number}'}</code> - Número de orden</span>
               <span><code className="bg-slate-200 px-1 rounded">{'{company_name}'}</code> - Nombre de la empresa</span>

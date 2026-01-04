@@ -117,6 +117,149 @@ export function useDataLoader() {
     setIsLoading(false);
   };
 
+  // Helper function to send notification emails
+  const sendNotificationEmail = async (templateId, recipientEmail, variables) => {
+    if (!recipientEmail) return;
+    
+    try {
+      // Get company and store info
+      const { data: companyData } = await supabase
+        .from('companies')
+        .select('id, name, smtp_from_name, smtp_host')
+        .limit(1)
+        .single();
+
+      // Skip if SMTP not configured
+      if (!companyData?.smtp_host) {
+        console.log('SMTP not configured, skipping notification');
+        return;
+      }
+
+      // Get store info for phone number
+      const { data: storeData } = await supabase
+        .from('stores')
+        .select('phone')
+        .limit(1)
+        .single();
+
+      // Check if notification is enabled (default to enabled if no record)
+      const { data: settings } = await supabase
+        .from('notification_settings')
+        .select('enabled, subject, body_template')
+        .eq('company_id', companyData.id)
+        .eq('template_id', templateId)
+        .maybeSingle();
+      
+      // If settings exist and explicitly disabled, skip
+      if (settings && settings.enabled === false) {
+        console.log(`Notification ${templateId} is disabled`);
+        return;
+      }
+
+      // Build email content based on template
+      const companyName = companyData?.name || 'Nuestra Lavandería';
+      const storePhone = storeData?.phone || '';
+      
+      // Add company_name and store_phone to variables
+      const allVariables = {
+        ...variables,
+        company_name: companyName,
+        store_phone: storePhone
+      };
+      
+      // Default templates (fallback if no custom template saved)
+      const defaultTemplates = {
+        welcome: {
+          subject: `¡Bienvenido a ${companyName}!`,
+          html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #0891b2;">¡Bienvenido, {customer_name}!</h1>
+  <p>Gracias por registrarte en <strong>{company_name}</strong>.</p>
+  <p>Estamos aquí para hacer tu vida más fácil con nuestros servicios de lavandería profesional.</p>
+  <p>¡Te esperamos pronto!</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name}<br>Este es un mensaje automático, por favor no responder.</p>
+</div>`
+        },
+        order_created: {
+          subject: `Tu orden #{order_number} ha sido recibida - ${companyName}`,
+          html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #0891b2;">¡Orden Recibida!</h1>
+  <p>Hola {customer_name},</p>
+  <p>Hemos recibido tu orden <strong>#{order_number}</strong>.</p>
+  <table style="width: 100%; margin: 20px 0; border-collapse: collapse;">
+    <tr><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Total:</strong></td><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">B/{total}</td></tr>
+    <tr><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Fecha estimada:</strong></td><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">{promised_date}</td></tr>
+  </table>
+  <p>Te notificaremos cuando tu orden esté lista.</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p>
+</div>`
+        },
+        order_ready: {
+          subject: `¡Tu orden #{order_number} está lista! - ${companyName}`,
+          html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #10b981;">¡Tu orden está lista!</h1>
+  <p>Hola {customer_name},</p>
+  <p>Tu orden <strong>#{order_number}</strong> está lista para recoger.</p>
+  <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 0; color: #166534;"><strong>✓ Lista para recoger</strong></p>
+  </div>
+  <p>Te esperamos en nuestra tienda.</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p>
+</div>`
+        },
+        order_delivered: {
+          subject: `Orden #{order_number} entregada - ${companyName}`,
+          html: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <h1 style="color: #10b981;">¡Orden Entregada!</h1>
+  <p>Hola {customer_name},</p>
+  <p>Tu orden <strong>#{order_number}</strong> ha sido entregada exitosamente.</p>
+  <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;">
+    <p style="margin: 0; color: #166534;"><strong>✓ Entrega completada</strong></p>
+  </div>
+  <p>¡Gracias por confiar en nosotros!</p>
+  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+  <p style="color: #64748b; font-size: 12px;">{company_name}</p>
+</div>`
+        }
+      };
+
+      // Use custom template if exists, otherwise use default
+      let subject = settings?.subject || defaultTemplates[templateId]?.subject || 'Notificación';
+      let html = settings?.body_template || defaultTemplates[templateId]?.html || '';
+
+      // Replace variables in templates
+      Object.keys(allVariables).forEach(key => {
+        const regex = new RegExp(`{${key}}`, 'g');
+        subject = subject.replace(regex, allVariables[key] || '');
+        html = html.replace(regex, allVariables[key] || '');
+      });
+
+      // Send email via API
+      console.log(`Sending ${templateId} notification to ${recipientEmail}...`);
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipientEmail,
+          subject,
+          html,
+          company_id: companyData.id
+        })
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        console.log(`✅ Notification ${templateId} sent to ${recipientEmail}`);
+      } else {
+        console.error(`❌ Failed to send ${templateId}:`, result.error);
+      }
+    } catch (err) {
+      console.error(`Error sending notification ${templateId}:`, err);
+    }
+  };
+
   // CRUD Operations
   const addOrder = async (orderData) => {
     try {
@@ -185,6 +328,33 @@ export function useDataLoader() {
       // Add to local state
       actions.addOrder(order);
       
+      // Send order_created notification if customer has email
+      if (orderData.customer_id && !orderData.is_walk_in) {
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('email, first_name, last_name')
+          .eq('id', orderData.customer_id)
+          .single();
+        
+        if (customer?.email) {
+          const promisedDateFormatted = order.promised_date 
+            ? new Date(order.promised_date).toLocaleDateString('es-PA', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })
+            : 'Por confirmar';
+            
+          sendNotificationEmail('order_created', customer.email, {
+            customer_name: `${customer.first_name} ${customer.last_name || ''}`.trim(),
+            order_number: order.order_number,
+            total: order.total?.toFixed(2),
+            promised_date: promisedDateFormatted
+          });
+        }
+      }
+      
       return order;
     } catch (err) {
       console.error('Error creating order:', err);
@@ -211,6 +381,26 @@ export function useDataLoader() {
       if (error) throw error;
 
       actions.updateOrderStatus(orderId, newStatus);
+      
+      // Send notifications for status changes
+      if (newStatus === 'ready' || newStatus === 'completed') {
+        // Get order and customer info
+        const { data: order } = await supabase
+          .from('orders')
+          .select('*, customers(email, first_name, last_name)')
+          .eq('id', orderId)
+          .single();
+        
+        if (order?.customers?.email) {
+          const templateId = newStatus === 'ready' ? 'order_ready' : 'order_delivered';
+          sendNotificationEmail(templateId, order.customers.email, {
+            customer_name: `${order.customers.first_name} ${order.customers.last_name || ''}`.trim(),
+            order_number: order.order_number,
+            total: order.total?.toFixed(2)
+          });
+        }
+      }
+      
       return true;
     } catch (err) {
       console.error('Error updating order status:', err);
@@ -232,6 +422,14 @@ export function useDataLoader() {
       if (error) throw error;
 
       actions.addCustomer(data);
+      
+      // Send welcome email if customer has email
+      if (data.email) {
+        sendNotificationEmail('welcome', data.email, {
+          customer_name: `${data.first_name} ${data.last_name || ''}`.trim()
+        });
+      }
+
       return data;
     } catch (err) {
       console.error('Error creating customer:', err);
