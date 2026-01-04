@@ -12,6 +12,7 @@ function CustomersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
   
   const filteredCustomers = useMemo(() => {
     if (!searchQuery.trim()) return state.customers;
@@ -27,6 +28,21 @@ function CustomersPage() {
   }, [searchQuery, state.customers]);
   
   const formatCurrency = (amount) => `B/${amount?.toFixed(2) || '0.00'}`;
+
+  const handleEditCustomer = (customer) => {
+    setEditingCustomer(customer);
+    setSelectedCustomer(null); // Close details modal if open
+  };
+
+  const handleSaveEdit = async (updatedData) => {
+    try {
+      await dbUpdateCustomer(editingCustomer.id, updatedData);
+      setEditingCustomer(null);
+    } catch (err) {
+      console.error('Error updating customer:', err);
+      alert('Error al actualizar el cliente');
+    }
+  };
   
   return (
     <div className="p-6 animate-fade-in">
@@ -78,6 +94,7 @@ function CustomersPage() {
                 key={customer.id}
                 customer={customer}
                 onClick={() => setSelectedCustomer(customer)}
+                onEdit={() => handleEditCustomer(customer)}
               />
             ))}
           </tbody>
@@ -100,6 +117,7 @@ function CustomersPage() {
         <CustomerDetailsModal
           customer={selectedCustomer}
           onClose={() => setSelectedCustomer(null)}
+          onEdit={() => handleEditCustomer(selectedCustomer)}
           orders={state.orders.filter(o => o.customer_id === selectedCustomer.id)}
         />
       )}
@@ -118,11 +136,20 @@ function CustomersPage() {
           }}
         />
       )}
+
+      {/* Edit Customer Modal */}
+      {editingCustomer && (
+        <EditCustomerModal
+          customer={editingCustomer}
+          onClose={() => setEditingCustomer(null)}
+          onSave={handleSaveEdit}
+        />
+      )}
     </div>
   );
 }
 
-function CustomerRow({ customer, onClick }) {
+function CustomerRow({ customer, onClick, onEdit }) {
   const hasBalance = customer.account_balance > 0;
   const address = customer.address_street 
     ? `${customer.address_street}${customer.address_corregimiento ? ', ' + customer.address_corregimiento : ''}`
@@ -185,7 +212,7 @@ function CustomerRow({ customer, onClick }) {
             <Eye className="w-4 h-4" />
           </button>
           <button 
-            onClick={(e) => { e.stopPropagation(); }}
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
             className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
             title="Editar"
           >
@@ -197,7 +224,7 @@ function CustomerRow({ customer, onClick }) {
   );
 }
 
-function CustomerDetailsModal({ customer, onClose, orders }) {
+function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
   const formatCurrency = (amount) => `B/${amount?.toFixed(2) || '0.00'}`;
   
   const formatDate = (dateStr) => {
@@ -346,7 +373,7 @@ function CustomerDetailsModal({ customer, onClose, orders }) {
         </div>
         
         <div className="p-4 border-t border-slate-100 flex gap-3">
-          <button className="btn-secondary flex-1">
+          <button onClick={onEdit} className="btn-secondary flex-1">
             <Edit className="w-4 h-4" />
             Editar
           </button>
@@ -595,6 +622,305 @@ function AddCustomerModal({ onClose, onSave }) {
         <div className="p-4 border-t border-slate-100 flex gap-3">
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
           <button onClick={handleSubmit} className="btn-primary flex-1">Guardar Cliente</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditCustomerModal({ customer, onClose, onSave }) {
+  const [formData, setFormData] = useState({
+    first_name: customer.first_name || '',
+    last_name: customer.last_name || '',
+    phone_country: customer.phone_country || '+507',
+    phone: customer.phone || '',
+    email: customer.email || '',
+    address_street: customer.address_street || '',
+    address_building: customer.address_building || '',
+    address_corregimiento: customer.address_corregimiento || '',
+    address_district: customer.address_district || 'Panamá',
+    address_province: customer.address_province || 'Panamá',
+    id_type: customer.id_type || null,
+    id_number: customer.id_number || '',
+    company_name: customer.company_name || '',
+    ruc: customer.ruc || '',
+    dv: customer.dv || '',
+    can_be_invoiced: customer.can_be_invoiced || false,
+    notes: customer.notes || '',
+  });
+  
+  const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: null }));
+    }
+  };
+  
+  const validate = () => {
+    const newErrors = {};
+    if (!formData.first_name.trim()) newErrors.first_name = 'Nombre requerido';
+    if (!formData.last_name.trim()) newErrors.last_name = 'Apellido requerido';
+    if (!formData.phone.trim()) newErrors.phone = 'Teléfono requerido';
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+  
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    
+    setSaving(true);
+    try {
+      const updatedCustomer = {
+        first_name: formData.first_name,
+        last_name: formData.last_name,
+        phone_country: formData.phone_country,
+        phone: formData.phone,
+        email: formData.email || null,
+        address_street: formData.address_street || null,
+        address_building: formData.address_building || null,
+        address_corregimiento: formData.address_corregimiento || null,
+        address_district: formData.address_district || null,
+        address_province: formData.address_province || null,
+        id_type: formData.id_type,
+        id_number: formData.id_number || null,
+        company_name: formData.company_name || null,
+        ruc: formData.ruc || null,
+        dv: formData.dv || null,
+        can_be_invoiced: formData.id_type === 'ruc' || formData.can_be_invoiced,
+        notes: formData.notes || null,
+      };
+      
+      await onSave(updatedCustomer);
+    } catch (err) {
+      console.error('Error saving customer:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+  
+  return (
+    <div className="modal-backdrop flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-lg max-h-[90vh] overflow-hidden animate-scale-in">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-gradient-to-r from-primary-500 to-primary-600">
+          <h2 className="text-lg font-semibold text-white">Editar Cliente</h2>
+          <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+            <span className="text-white text-xl">&times;</span>
+          </button>
+        </div>
+        
+        <div className="p-4 overflow-y-auto max-h-[60vh] scrollbar-thin space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Nombre *</label>
+              <input
+                type="text"
+                value={formData.first_name}
+                onChange={(e) => handleChange('first_name', e.target.value)}
+                className={`input ${errors.first_name ? 'input-error' : ''}`}
+                placeholder="Juan"
+              />
+              {errors.first_name && <p className="text-xs text-error-500 mt-1">{errors.first_name}</p>}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Apellido *</label>
+              <input
+                type="text"
+                value={formData.last_name}
+                onChange={(e) => handleChange('last_name', e.target.value)}
+                className={`input ${errors.last_name ? 'input-error' : ''}`}
+                placeholder="Pérez"
+              />
+              {errors.last_name && <p className="text-xs text-error-500 mt-1">{errors.last_name}</p>}
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono *</label>
+            <div className="flex gap-2">
+              <select
+                value={formData.phone_country}
+                onChange={(e) => handleChange('phone_country', e.target.value)}
+                className="input w-24"
+              >
+                <option value="+507">+507</option>
+                <option value="+1">+1</option>
+              </select>
+              <input
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => handleChange('phone', e.target.value)}
+                className={`input flex-1 ${errors.phone ? 'input-error' : ''}`}
+                placeholder="6123-4567"
+              />
+            </div>
+            {errors.phone && <p className="text-xs text-error-500 mt-1">{errors.phone}</p>}
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => handleChange('email', e.target.value)}
+              className="input"
+              placeholder="correo@ejemplo.com"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Dirección</label>
+            <input
+              type="text"
+              value={formData.address_street}
+              onChange={(e) => handleChange('address_street', e.target.value)}
+              className="input mb-2"
+              placeholder="Calle, Avenida..."
+            />
+            <input
+              type="text"
+              value={formData.address_building}
+              onChange={(e) => handleChange('address_building', e.target.value)}
+              className="input"
+              placeholder="Edificio, Apt, Casa..."
+            />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Distrito</label>
+              <select
+                value={formData.address_district}
+                onChange={(e) => handleChange('address_district', e.target.value)}
+                className="input"
+              >
+                <option value="Panamá">Panamá</option>
+                <option value="San Miguelito">San Miguelito</option>
+                <option value="Arraiján">Arraiján</option>
+                <option value="La Chorrera">La Chorrera</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Corregimiento</label>
+              <input
+                type="text"
+                value={formData.address_corregimiento}
+                onChange={(e) => handleChange('address_corregimiento', e.target.value)}
+                className="input"
+                placeholder="Bella Vista"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Identificación</label>
+            <div className="flex gap-2">
+              {['cedula', 'passport', 'ruc'].map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => handleChange('id_type', formData.id_type === type ? null : type)}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                    formData.id_type === type
+                      ? 'bg-primary-500 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {type === 'cedula' ? 'Cédula' : type === 'passport' ? 'Pasaporte' : 'RUC'}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          {(formData.id_type === 'cedula' || formData.id_type === 'passport') && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Número de {formData.id_type === 'cedula' ? 'Cédula' : 'Pasaporte'}
+              </label>
+              <input
+                type="text"
+                value={formData.id_number}
+                onChange={(e) => handleChange('id_number', e.target.value)}
+                className="input"
+                placeholder={formData.id_type === 'cedula' ? '8-123-4567' : 'PA1234567'}
+              />
+            </div>
+          )}
+          
+          {formData.id_type === 'ruc' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Empresa</label>
+                <input
+                  type="text"
+                  value={formData.company_name}
+                  onChange={(e) => handleChange('company_name', e.target.value)}
+                  className="input"
+                  placeholder="Empresa S.A."
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">RUC</label>
+                  <input
+                    type="text"
+                    value={formData.ruc}
+                    onChange={(e) => handleChange('ruc', e.target.value)}
+                    className="input"
+                    placeholder="155737034-2-2023"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">DV</label>
+                  <input
+                    type="text"
+                    value={formData.dv}
+                    onChange={(e) => handleChange('dv', e.target.value)}
+                    className="input"
+                    placeholder="38"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Notas</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => handleChange('notes', e.target.value)}
+              className="input resize-none"
+              rows={2}
+              placeholder="Notas sobre el cliente..."
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="can_be_invoiced"
+              checked={formData.can_be_invoiced}
+              onChange={(e) => handleChange('can_be_invoiced', e.target.checked)}
+              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+            />
+            <label htmlFor="can_be_invoiced" className="text-sm text-slate-700">
+              Puede ser facturado (crédito)
+            </label>
+          </div>
+        </div>
+        
+        <div className="p-4 border-t border-slate-100 flex gap-3">
+          <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+          <button 
+            onClick={handleSubmit} 
+            disabled={saving}
+            className="btn-primary flex-1"
+          >
+            {saving ? 'Guardando...' : 'Guardar Cambios'}
+          </button>
         </div>
       </div>
     </div>
