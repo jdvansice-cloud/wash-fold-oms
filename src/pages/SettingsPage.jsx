@@ -1767,47 +1767,515 @@ function PaymentMethodsSettings() {
   );
 }
 
-// Notifications Settings Section
-// Notifications Settings (placeholder - requires SMTP configuration)
+// Notifications Settings Section with SMTP Configuration
 function NotificationsSettings() {
-  const templates = [
-    { id: 'welcome', name: 'Bienvenida', description: 'Email de bienvenida al registrar cliente', enabled: true },
-    { id: 'order_created', name: 'Orden Creada', description: 'Confirmación de recepción de orden', enabled: true },
-    { id: 'order_ready', name: 'Orden Lista', description: 'Notificación cuando la orden está lista', enabled: true },
-    { id: 'order_delivered', name: 'Orden Entregada', description: 'Confirmación de entrega', enabled: false },
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [companyId, setCompanyId] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [activeTab, setActiveTab] = useState('smtp'); // smtp, templates
+  
+  const [smtpConfig, setSmtpConfig] = useState({
+    smtp_host: '',
+    smtp_port: 587,
+    smtp_user: '',
+    smtp_pass: '',
+    smtp_from_name: '',
+    smtp_from_email: '',
+    smtp_secure: true, // TLS
+  });
+
+  const [templates, setTemplates] = useState([
+    { id: 'welcome', name: 'Bienvenida', description: 'Email de bienvenida al registrar cliente', enabled: true, subject: '¡Bienvenido a {company_name}!' },
+    { id: 'order_created', name: 'Orden Creada', description: 'Confirmación de recepción de orden', enabled: true, subject: 'Tu orden #{order_number} ha sido recibida' },
+    { id: 'order_ready', name: 'Orden Lista', description: 'Notificación cuando la orden está lista para recoger', enabled: true, subject: 'Tu orden #{order_number} está lista' },
+    { id: 'order_delivered', name: 'Orden Entregada', description: 'Confirmación de entrega completada', enabled: false, subject: 'Tu orden #{order_number} ha sido entregada' },
+  ]);
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      // Load company SMTP settings
+      const { data: company, error } = await supabase
+        .from('companies')
+        .select('id, name, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, smtp_secure')
+        .limit(1)
+        .single();
+
+      if (error) throw error;
+
+      setCompanyId(company.id);
+      setSmtpConfig({
+        smtp_host: company.smtp_host || '',
+        smtp_port: company.smtp_port || 587,
+        smtp_user: company.smtp_user || '',
+        smtp_pass: company.smtp_pass || '',
+        smtp_from_name: company.smtp_from_name || company.name || '',
+        smtp_from_email: company.smtp_from_email || '',
+        smtp_secure: company.smtp_secure !== false,
+      });
+
+      // Load notification settings if they exist
+      const { data: notifSettings } = await supabase
+        .from('notification_settings')
+        .select('*')
+        .eq('company_id', company.id);
+
+      if (notifSettings && notifSettings.length > 0) {
+        setTemplates(prev => prev.map(t => {
+          const saved = notifSettings.find(n => n.template_id === t.id);
+          return saved ? { ...t, enabled: saved.enabled, subject: saved.subject || t.subject } : t;
+        }));
+      }
+
+    } catch (err) {
+      console.error('Error loading SMTP settings:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSMTP = async () => {
+    if (!companyId) return;
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('companies')
+        .update({
+          smtp_host: smtpConfig.smtp_host || null,
+          smtp_port: smtpConfig.smtp_port || 587,
+          smtp_user: smtpConfig.smtp_user || null,
+          smtp_pass: smtpConfig.smtp_pass || null,
+          smtp_from_name: smtpConfig.smtp_from_name || null,
+          smtp_from_email: smtpConfig.smtp_from_email || null,
+          smtp_secure: smtpConfig.smtp_secure,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', companyId);
+
+      if (error) throw error;
+      alert('Configuración SMTP guardada correctamente');
+    } catch (err) {
+      console.error('Error saving SMTP:', err);
+      alert('Error al guardar: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTestEmail = async () => {
+    if (!testEmail) {
+      alert('Ingresa un email de prueba');
+      return;
+    }
+    if (!smtpConfig.smtp_host || !smtpConfig.smtp_user) {
+      alert('Primero configura y guarda los datos SMTP');
+      return;
+    }
+
+    setTesting(true);
+    try {
+      // Try Edge Function first
+      const { data, error } = await supabase.functions.invoke('send-email', {
+        body: {
+          to: testEmail,
+          subject: '✅ Prueba de Email - American Laundry',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h1 style="color: #0891b2;">¡Configuración Exitosa!</h1>
+              <p>Este es un email de prueba de tu sistema American Laundry OMS.</p>
+              <p>Si recibes este mensaje, tu configuración SMTP está funcionando correctamente.</p>
+              <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
+              <p style="color: #64748b; font-size: 12px;">
+                Enviado desde: ${smtpConfig.smtp_from_name || 'American Laundry'}<br>
+                Servidor: ${smtpConfig.smtp_host}:${smtpConfig.smtp_port}
+              </p>
+            </div>
+          `,
+          company_id: companyId
+        }
+      });
+
+      if (error) {
+        // If Edge Function not deployed, try RPC fallback
+        console.log('Edge Function error, trying RPC fallback:', error);
+        const { data: rpcData, error: rpcError } = await supabase.rpc('send_test_email', {
+          to_email: testEmail,
+          company_id: companyId
+        });
+
+        if (rpcError) throw rpcError;
+        
+        if (rpcData?.success) {
+          alert('✅ ' + (rpcData.message || 'Configuración SMTP válida'));
+        } else {
+          alert('❌ ' + (rpcData?.error || 'Error en la configuración'));
+        }
+        return;
+      }
+      
+      if (data?.success) {
+        alert('✅ Email de prueba enviado correctamente a ' + testEmail);
+      } else {
+        alert('❌ Error: ' + (data?.error || 'No se pudo enviar el email'));
+      }
+    } catch (err) {
+      console.error('Error sending test email:', err);
+      alert('Error: ' + err.message + '\n\nSi no has desplegado la Edge Function, la configuración SMTP se guardó correctamente pero no se puede enviar emails aún.\n\nVer docs/SMTP-SETUP.md para instrucciones.');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const toggleTemplate = async (templateId) => {
+    const template = templates.find(t => t.id === templateId);
+    const newEnabled = !template.enabled;
+    
+    setTemplates(prev => prev.map(t => 
+      t.id === templateId ? { ...t, enabled: newEnabled } : t
+    ));
+
+    // Save to database
+    try {
+      const { error } = await supabase
+        .from('notification_settings')
+        .upsert({
+          company_id: companyId,
+          template_id: templateId,
+          enabled: newEnabled,
+          subject: template.subject,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'company_id,template_id' });
+
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error saving template setting:', err);
+      // Revert on error
+      setTemplates(prev => prev.map(t => 
+        t.id === templateId ? { ...t, enabled: !newEnabled } : t
+      ));
+    }
+  };
+
+  const smtpPresets = [
+    { name: 'Gmail', host: 'smtp.gmail.com', port: 587 },
+    { name: 'Outlook', host: 'smtp.office365.com', port: 587 },
+    { name: 'Yahoo', host: 'smtp.mail.yahoo.com', port: 587 },
+    { name: 'SendGrid', host: 'smtp.sendgrid.net', port: 587 },
+    { name: 'Mailgun', host: 'smtp.mailgun.org', port: 587 },
   ];
 
+  const applyPreset = (preset) => {
+    setSmtpConfig(prev => ({
+      ...prev,
+      smtp_host: preset.host,
+      smtp_port: preset.port
+    }));
+  };
+
+  if (loading) {
+    return (
+      <div className="card p-6 flex items-center justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  const isConfigured = smtpConfig.smtp_host && smtpConfig.smtp_user && smtpConfig.smtp_pass;
+
   return (
-    <div className="card p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-800">Notificaciones por Email</h2>
-          <p className="text-sm text-slate-500">Configura las plantillas de correo electrónico</p>
-        </div>
-        <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Próximamente</span>
+    <div className="space-y-6">
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setActiveTab('smtp')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'smtp' 
+              ? 'bg-primary-500 text-white' 
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <SettingsIcon className="w-4 h-4 inline mr-2" />
+          Configuración SMTP
+        </button>
+        <button
+          onClick={() => setActiveTab('templates')}
+          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'templates' 
+              ? 'bg-primary-500 text-white' 
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Mail className="w-4 h-4 inline mr-2" />
+          Plantillas
+        </button>
       </div>
-      
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-        <p className="text-sm text-amber-700">
-          <strong>Nota:</strong> Las notificaciones por email requieren configuración SMTP en la sección de Empresa.
-        </p>
-      </div>
-      
-      <div className="space-y-3 opacity-60">
-        {templates.map((template) => (
-          <div key={template.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
-            <Mail className="w-5 h-5 text-slate-400" />
-            <div className="flex-1">
-              <p className="font-medium text-slate-700">{template.name}</p>
-              <p className="text-sm text-slate-500">{template.description}</p>
+
+      {activeTab === 'smtp' && (
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">Configuración del Servidor SMTP</h2>
+              <p className="text-sm text-slate-500">Configura tu servidor de correo para enviar notificaciones</p>
             </div>
-            <label className="relative inline-flex items-center cursor-not-allowed">
-              <input type="checkbox" defaultChecked={template.enabled} disabled className="sr-only peer" />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
-            </label>
+            {isConfigured ? (
+              <span className="badge bg-success-100 text-success-700">
+                <Check className="w-3 h-3 mr-1" />
+                Configurado
+              </span>
+            ) : (
+              <span className="badge bg-amber-100 text-amber-700">
+                Sin configurar
+              </span>
+            )}
           </div>
-        ))}
-      </div>
+
+          {/* Presets */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-slate-700 mb-2">Presets rápidos</label>
+            <div className="flex flex-wrap gap-2">
+              {smtpPresets.map(preset => (
+                <button
+                  key={preset.name}
+                  onClick={() => applyPreset(preset)}
+                  className="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* SMTP Form */}
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Servidor SMTP <span className="text-error-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={smtpConfig.smtp_host}
+                onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_host: e.target.value })}
+                className="input"
+                placeholder="smtp.gmail.com"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Puerto <span className="text-error-500">*</span>
+              </label>
+              <input
+                type="number"
+                value={smtpConfig.smtp_port}
+                onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_port: parseInt(e.target.value) || 587 })}
+                className="input"
+                placeholder="587"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Usuario / Email <span className="text-error-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={smtpConfig.smtp_user}
+                onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_user: e.target.value })}
+                className="input"
+                placeholder="tu-email@gmail.com"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Contraseña / App Password <span className="text-error-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={smtpConfig.smtp_pass}
+                  onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_pass: e.target.value })}
+                  className="input pr-10"
+                  placeholder="••••••••••••"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Nombre del remitente</label>
+              <input
+                type="text"
+                value={smtpConfig.smtp_from_name}
+                onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_from_name: e.target.value })}
+                className="input"
+                placeholder="American Laundry"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email del remitente</label>
+              <input
+                type="email"
+                value={smtpConfig.smtp_from_email}
+                onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_from_email: e.target.value })}
+                className="input"
+                placeholder="notificaciones@tuempresa.com"
+              />
+              <p className="text-xs text-slate-400 mt-1">Dejar vacío para usar el usuario SMTP</p>
+            </div>
+
+            <div className="col-span-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={smtpConfig.smtp_secure}
+                  onChange={(e) => setSmtpConfig({ ...smtpConfig, smtp_secure: e.target.checked })}
+                  className="rounded border-slate-300 text-primary-500 focus:ring-primary-500"
+                />
+                <span className="text-sm text-slate-700">Usar TLS/SSL (recomendado)</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Gmail Help */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <p className="text-sm text-blue-700 font-medium mb-2">📧 Usando Gmail?</p>
+            <ol className="text-sm text-blue-600 space-y-1 list-decimal list-inside">
+              <li>Activa la verificación en 2 pasos en tu cuenta de Google</li>
+              <li>Ve a <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline">myaccount.google.com/apppasswords</a></li>
+              <li>Crea una "Contraseña de aplicación" para "Correo"</li>
+              <li>Usa esa contraseña (16 caracteres) en el campo de arriba</li>
+            </ol>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+            <div className="flex items-center gap-2">
+              <input
+                type="email"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="input w-64"
+                placeholder="Email para prueba"
+              />
+              <button
+                onClick={handleTestEmail}
+                disabled={testing || !isConfigured}
+                className="btn-secondary"
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Enviar Prueba
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <button
+              onClick={handleSaveSMTP}
+              disabled={saving}
+              className="btn-primary"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Guardar Configuración
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'templates' && (
+        <div className="card p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">Plantillas de Notificación</h2>
+              <p className="text-sm text-slate-500">Activa o desactiva las notificaciones automáticas</p>
+            </div>
+          </div>
+
+          {!isConfigured && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+              <p className="text-sm text-amber-700">
+                <strong>⚠️ Atención:</strong> Primero configura el servidor SMTP para poder enviar notificaciones.
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {templates.map((template) => (
+              <div 
+                key={template.id} 
+                className={`flex items-center gap-4 p-4 rounded-xl transition-colors ${
+                  isConfigured ? 'bg-slate-50 hover:bg-slate-100' : 'bg-slate-50 opacity-60'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  template.enabled && isConfigured ? 'bg-primary-100 text-primary-600' : 'bg-slate-200 text-slate-400'
+                }`}>
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-slate-700">{template.name}</p>
+                  <p className="text-sm text-slate-500">{template.description}</p>
+                  <p className="text-xs text-slate-400 mt-1">Asunto: {template.subject}</p>
+                </div>
+                <label className={`relative inline-flex items-center ${isConfigured ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
+                  <input 
+                    type="checkbox" 
+                    checked={template.enabled}
+                    onChange={() => isConfigured && toggleTemplate(template.id)}
+                    disabled={!isConfigured}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+                </label>
+              </div>
+            ))}
+          </div>
+
+          {/* Variables Info */}
+          <div className="mt-6 p-4 bg-slate-50 rounded-xl">
+            <p className="text-sm font-medium text-slate-700 mb-2">Variables disponibles en plantillas:</p>
+            <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+              <span><code className="bg-slate-200 px-1 rounded">{'{customer_name}'}</code> - Nombre del cliente</span>
+              <span><code className="bg-slate-200 px-1 rounded">{'{order_number}'}</code> - Número de orden</span>
+              <span><code className="bg-slate-200 px-1 rounded">{'{company_name}'}</code> - Nombre de la empresa</span>
+              <span><code className="bg-slate-200 px-1 rounded">{'{total}'}</code> - Total de la orden</span>
+              <span><code className="bg-slate-200 px-1 rounded">{'{promised_date}'}</code> - Fecha prometida</span>
+              <span><code className="bg-slate-200 px-1 rounded">{'{store_phone}'}</code> - Teléfono de la tienda</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
