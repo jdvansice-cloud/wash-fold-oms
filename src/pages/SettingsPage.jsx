@@ -1933,13 +1933,17 @@ function NotificationsSettings() {
 
     setTesting(true);
     try {
-      // Try Edge Function first
-      const { data, error } = await supabase.functions.invoke('send-email', {
-        body: {
+      // Call Vercel API endpoint
+      const response = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           to: testEmail,
           subject: '✅ Prueba de Email - American Laundry',
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
               <h1 style="color: #0891b2;">¡Configuración Exitosa!</h1>
               <p>Este es un email de prueba de tu sistema American Laundry OMS.</p>
               <p>Si recibes este mensaje, tu configuración SMTP está funcionando correctamente.</p>
@@ -1951,35 +1955,19 @@ function NotificationsSettings() {
             </div>
           `,
           company_id: companyId
-        }
+        })
       });
 
-      if (error) {
-        // If Edge Function not deployed, try RPC fallback
-        console.log('Edge Function error, trying RPC fallback:', error);
-        const { data: rpcData, error: rpcError } = await supabase.rpc('send_test_email', {
-          to_email: testEmail,
-          company_id: companyId
-        });
-
-        if (rpcError) throw rpcError;
-        
-        if (rpcData?.success) {
-          alert('✅ ' + (rpcData.message || 'Configuración SMTP válida'));
-        } else {
-          alert('❌ ' + (rpcData?.error || 'Error en la configuración'));
-        }
-        return;
-      }
+      const data = await response.json();
       
-      if (data?.success) {
+      if (data.success) {
         alert('✅ Email de prueba enviado correctamente a ' + testEmail);
       } else {
-        alert('❌ Error: ' + (data?.error || 'No se pudo enviar el email'));
+        alert('❌ Error: ' + (data.error || 'No se pudo enviar el email'));
       }
     } catch (err) {
       console.error('Error sending test email:', err);
-      alert('Error: ' + err.message + '\n\nSi no has desplegado la Edge Function, la configuración SMTP se guardó correctamente pero no se puede enviar emails aún.\n\nVer docs/SMTP-SETUP.md para instrucciones.');
+      alert('Error: ' + err.message);
     } finally {
       setTesting(false);
     }
