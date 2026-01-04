@@ -1697,7 +1697,7 @@ function PaymentMethodsSettings() {
           // Update existing method
           const { error } = await supabase
             .from('payment_methods')
-            .update({ is_active: method.is_active, updated_at: new Date().toISOString() })
+            .update({ is_active: method.is_active })
             .eq('id', method.id);
           if (error) throw error;
         }
