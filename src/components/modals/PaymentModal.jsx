@@ -61,9 +61,9 @@ function PaymentModal({ total, onClose, onComplete }) {
   
   return (
     <div className="modal-backdrop flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-md animate-scale-in">
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-md max-h-[90vh] flex flex-col animate-scale-in">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 flex-shrink-0">
           <h2 className="text-lg font-semibold text-slate-800">Pago</h2>
           <button
             onClick={onClose}
@@ -73,7 +73,8 @@ function PaymentModal({ total, onClose, onComplete }) {
           </button>
         </div>
         
-        <div className="p-4">
+        {/* Scrollable Content */}
+        <div className="p-4 overflow-y-auto flex-1">
           {/* Total Display */}
           <div className="text-center mb-6">
             <p className="text-sm text-slate-500 mb-1">Total a Pagar</p>
@@ -194,8 +195,10 @@ function PaymentModal({ total, onClose, onComplete }) {
               )}
             </div>
           )}
-          
-          {/* Process Button */}
+        </div>
+        
+        {/* Process Button - Fixed at bottom */}
+        <div className="p-4 border-t border-slate-100 flex-shrink-0">
           <button
             onClick={handleProcess}
             disabled={!canProcess || processing}
@@ -213,7 +216,7 @@ function PaymentModal({ total, onClose, onComplete }) {
             ) : (
               <>
                 <Check className="w-5 h-5" />
-                Procesar
+                Procesar Pago
               </>
             )}
           </button>

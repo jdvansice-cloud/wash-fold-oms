@@ -53,7 +53,8 @@ function TicketPanel() {
     });
   };
   
-  const canProcess = ticket.items.length > 0;
+  // Require both items AND customer confirmation to process
+  const canProcess = ticket.items.length > 0 && ticket.customerConfirmed;
   
   return (
     <div className="ticket-sidebar h-full flex flex-col bg-white">
@@ -382,6 +383,15 @@ function TicketPanel() {
           </div>
         </div>
         
+        {/* Customer Required Warning */}
+        {ticket.items.length > 0 && !ticket.customerConfirmed && (
+          <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
+            <p className="text-sm text-amber-700 font-medium">
+              Selecciona un cliente para procesar
+            </p>
+          </div>
+        )}
+        
         {/* Process Button */}
         <button
           onClick={() => setPaymentModalOpen(true)}
@@ -394,7 +404,7 @@ function TicketPanel() {
         >
           <div className="flex items-center justify-center gap-3">
             <span>Procesar</span>
-            <span className="text-success-200">
+            <span className={canProcess ? "text-success-200" : "text-slate-400"}>
               {formatDate(calculations.promisedDate)}
             </span>
             <span className="px-2 py-0.5 bg-white/20 rounded-md">
