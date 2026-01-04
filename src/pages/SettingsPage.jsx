@@ -450,16 +450,44 @@ function StoreSettings() {
     try {
       if (editingStore) {
         // Update existing
+        console.log('Updating store:', editingStore.id, storeData);
+        
+        // Prepare update data - only include non-undefined values
+        const updateData = {
+          name: storeData.name,
+          address: storeData.address || null,
+          phone: storeData.phone || null,
+          is_active: storeData.is_active,
+          updated_at: new Date().toISOString()
+        };
+        
+        // Only include geolocation if it has valid values
+        if (storeData.geolocation?.lat != null && storeData.geolocation?.lng != null) {
+          updateData.geolocation = {
+            lat: storeData.geolocation.lat,
+            lng: storeData.geolocation.lng
+          };
+        }
+        
+        // Only include opening_hours if present
+        if (storeData.opening_hours) {
+          updateData.opening_hours = storeData.opening_hours;
+        }
+        
+        console.log('Update data:', updateData);
+        
         const { error } = await supabase
           .from('stores')
-          .update({
-            ...storeData,
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('id', editingStore.id);
         
-        if (error) throw error;
-        await loadStores(); // Reload to get fresh data
+        if (error) {
+          console.error('Supabase update error:', error);
+          alert('Error al guardar: ' + error.message);
+          return;
+        }
+        
+        console.log('Store updated successfully');
       } else {
         // Create new - ensure we have companyId
         if (!companyId) {
@@ -467,24 +495,50 @@ function StoreSettings() {
           return;
         }
         
+        const insertData = {
+          company_id: companyId,
+          name: storeData.name,
+          address: storeData.address || null,
+          phone: storeData.phone || null,
+          is_active: storeData.is_active !== false
+        };
+        
+        if (storeData.geolocation?.lat != null && storeData.geolocation?.lng != null) {
+          insertData.geolocation = {
+            lat: storeData.geolocation.lat,
+            lng: storeData.geolocation.lng
+          };
+        }
+        
+        if (storeData.opening_hours) {
+          insertData.opening_hours = storeData.opening_hours;
+        }
+        
+        console.log('Insert data:', insertData);
+        
         const { data, error } = await supabase
           .from('stores')
-          .insert({
-            ...storeData,
-            company_id: companyId
-          })
+          .insert(insertData)
           .select()
           .single();
         
-        if (error) throw error;
-        await loadStores(); // Reload to get fresh data
+        if (error) {
+          console.error('Supabase insert error:', error);
+          alert('Error al guardar: ' + error.message);
+          return;
+        }
+        
+        console.log('Store created successfully:', data);
       }
       
+      // Success - close modal and reload
       setShowModal(false);
       setEditingStore(null);
+      loadStores();
+      
     } catch (err) {
       console.error('Error saving store:', err);
-      alert('Error al guardar: ' + err.message);
+      alert('Error al guardar: ' + (err.message || 'Error desconocido'));
     }
   };
 
@@ -668,17 +722,24 @@ function StoreFormModal({ store, onClose, onSave }) {
       alert('El nombre de la tienda es requerido');
       return;
     }
-    if (!formData.geolocation?.lat || !formData.geolocation?.lng) {
-      alert('La geolocalización es requerida. Usa "Obtener Ubicación" o ingresa las coordenadas manualmente.');
+    
+    const lat = formData.geolocation?.lat;
+    const lng = formData.geolocation?.lng;
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) {
+      alert('La geolocalización es requerida. Usa "Usar mi ubicación" o ingresa las coordenadas manualmente.');
       return;
     }
 
     setSaving(true);
+    
+    // Use try-finally to ensure saving is always reset
     try {
       await onSave(formData);
     } catch (err) {
-      console.error('Error saving store:', err);
+      console.error('Error in handleSubmit:', err);
+      alert('Error al guardar: ' + (err.message || 'Error desconocido'));
     } finally {
+      // Always reset saving state (modal might already be closed, but that's ok)
       setSaving(false);
     }
   };
@@ -785,11 +846,17 @@ function StoreFormModal({ store, onClose, onSave }) {
                 <input
                   type="number"
                   step="0.000001"
-                  value={formData.geolocation?.lat || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    geolocation: { ...formData.geolocation, lat: parseFloat(e.target.value) }
-                  })}
+                  value={formData.geolocation?.lat ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData({
+                      ...formData,
+                      geolocation: { 
+                        ...formData.geolocation, 
+                        lat: val === '' ? null : parseFloat(val) 
+                      }
+                    });
+                  }}
                   className="input"
                   placeholder="9.0"
                 />
@@ -799,11 +866,17 @@ function StoreFormModal({ store, onClose, onSave }) {
                 <input
                   type="number"
                   step="0.000001"
-                  value={formData.geolocation?.lng || ''}
-                  onChange={(e) => setFormData({
-                    ...formData,
-                    geolocation: { ...formData.geolocation, lng: parseFloat(e.target.value) }
-                  })}
+                  value={formData.geolocation?.lng ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData({
+                      ...formData,
+                      geolocation: { 
+                        ...formData.geolocation, 
+                        lng: val === '' ? null : parseFloat(val) 
+                      }
+                    });
+                  }}
                   className="input"
                   placeholder="-79.5"
                 />
