@@ -40,6 +40,16 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
 -- =============================================
+-- Check for triggers on stores table that might block updates
+-- =============================================
+SELECT 
+  trigger_name,
+  event_manipulation,
+  action_statement
+FROM information_schema.triggers 
+WHERE event_object_table = 'stores';
+
+-- =============================================
 -- Verify RLS is disabled
 -- =============================================
 SELECT 
@@ -50,7 +60,17 @@ WHERE schemaname = 'public'
 ORDER BY tablename;
 
 -- =============================================
--- Test: Try to update a store directly
+-- TEST: Update geolocation directly
+-- Run this to verify geolocation updates work
 -- =============================================
--- UPDATE stores SET updated_at = NOW() WHERE name LIKE '%Tocumen%';
--- If this works, the app should work too
+UPDATE stores 
+SET geolocation = '{"lat": 9.06145, "lng": -79.42173}'::jsonb,
+    updated_at = NOW()
+WHERE name LIKE '%Tocumen%'
+RETURNING id, name, geolocation;
+
+-- If the above works, try updating with different geolocation:
+-- UPDATE stores 
+-- SET geolocation = '{"lat": 9.1, "lng": -79.5}'::jsonb
+-- WHERE name LIKE '%Tocumen%'
+-- RETURNING id, name, geolocation;

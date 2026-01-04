@@ -457,12 +457,20 @@ function StoreSettings() {
       ]);
     };
 
+    // Helper to validate geolocation
+    const isValidGeo = (geo) => {
+      if (!geo) return false;
+      const lat = Number(geo.lat);
+      const lng = Number(geo.lng);
+      return !isNaN(lat) && !isNaN(lng) && isFinite(lat) && isFinite(lng);
+    };
+
     try {
       if (editingStore) {
         // Update existing
         console.log('Updating store:', editingStore.id);
         
-        // Prepare update data
+        // Prepare update data - start with basic fields only
         const updateData = {
           name: storeData.name,
           address: storeData.address || null,
@@ -471,20 +479,14 @@ function StoreSettings() {
           updated_at: new Date().toISOString()
         };
         
-        if (storeData.geolocation?.lat != null && storeData.geolocation?.lng != null) {
-          updateData.geolocation = {
-            lat: storeData.geolocation.lat,
-            lng: storeData.geolocation.lng
-          };
-        }
-        
+        // Add opening_hours if present
         if (storeData.opening_hours) {
           updateData.opening_hours = storeData.opening_hours;
         }
         
-        console.log('Update data:', updateData);
+        console.log('Update data (without geo):', JSON.stringify(updateData, null, 2));
         
-        // Execute with timeout
+        // First update without geolocation
         const result = await withTimeout(
           supabase.from('stores').update(updateData).eq('id', editingStore.id),
           10000
@@ -494,6 +496,27 @@ function StoreSettings() {
           console.error('Supabase update error:', result.error);
           alert('Error al guardar: ' + result.error.message);
           return;
+        }
+        
+        // Now update geolocation separately if valid
+        if (isValidGeo(storeData.geolocation)) {
+          const geoData = {
+            lat: Number(storeData.geolocation.lat),
+            lng: Number(storeData.geolocation.lng)
+          };
+          console.log('Updating geolocation separately:', geoData);
+          
+          const geoResult = await withTimeout(
+            supabase.from('stores').update({ geolocation: geoData }).eq('id', editingStore.id),
+            10000
+          );
+          
+          if (geoResult.error) {
+            console.error('Geolocation update error:', geoResult.error);
+            // Don't fail the whole operation, just log it
+          } else {
+            console.log('Geolocation updated successfully');
+          }
         }
         
         console.log('Store updated successfully');
@@ -513,10 +536,10 @@ function StoreSettings() {
           is_active: storeData.is_active !== false
         };
         
-        if (storeData.geolocation?.lat != null && storeData.geolocation?.lng != null) {
+        if (isValidGeo(storeData.geolocation)) {
           insertData.geolocation = {
-            lat: storeData.geolocation.lat,
-            lng: storeData.geolocation.lng
+            lat: Number(storeData.geolocation.lat),
+            lng: Number(storeData.geolocation.lng)
           };
         }
         
@@ -524,7 +547,7 @@ function StoreSettings() {
           insertData.opening_hours = storeData.opening_hours;
         }
         
-        console.log('Insert data:', insertData);
+        console.log('Insert data:', JSON.stringify(insertData, null, 2));
         
         const result = await withTimeout(
           supabase.from('stores').insert(insertData).select().single(),
