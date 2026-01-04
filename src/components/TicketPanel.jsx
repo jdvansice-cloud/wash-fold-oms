@@ -20,6 +20,14 @@ function TicketPanel() {
   const calculations = ticketCalculations();
   const { ticket } = state;
   
+  // Count pending orders for the selected customer
+  const pendingOrdersCount = ticket.customer 
+    ? state.orders.filter(o => 
+        o.customer_id === ticket.customer.id && 
+        !['completed', 'cancelled'].includes(o.status)
+      ).length 
+    : 0;
+  
   const formatCurrency = (amount) => {
     return `B/${amount.toFixed(2)}`;
   };
@@ -119,11 +127,11 @@ function TicketPanel() {
           </label>
         </div>
         
-        {/* Pending Orders Alert */}
-        {ticket.customer && ticket.customerConfirmed && (
+        {/* Pending Orders Alert - Only show if customer has pending orders */}
+        {ticket.customer && ticket.customerConfirmed && pendingOrdersCount > 0 && (
           <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>2 órdenes pendientes</span>
+            <span>{pendingOrdersCount} {pendingOrdersCount === 1 ? 'orden pendiente' : 'órdenes pendientes'}</span>
           </div>
         )}
       </div>

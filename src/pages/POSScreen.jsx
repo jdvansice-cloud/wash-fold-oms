@@ -189,6 +189,9 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   const isWeightBased = product.pricing_type === 'weight';
   const hasChildren = product.has_children;
   
+  // Check if product has different express price
+  const hasExpressPrice = product.express_price && product.express_price !== product.price;
+  
   // Parent product tile - different styling
   if (hasChildren) {
     return (
@@ -227,9 +230,18 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   return (
     <button
       onClick={onClick}
-      className="product-tile flex flex-col items-center text-center group"
+      className={`product-tile flex flex-col items-center text-center group relative ${
+        isExpress ? 'ring-2 ring-warning-400 ring-offset-1' : ''
+      }`}
       style={{ animationDelay: `${delay}ms` }}
     >
+      {/* Express badge */}
+      {isExpress && hasExpressPrice && (
+        <div className="absolute -top-1 -right-1 bg-warning-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shadow-sm z-10">
+          <span>⚡</span>
+        </div>
+      )}
+      
       {/* Icon */}
       <div className="w-16 h-16 flex items-center justify-center mb-3 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl group-hover:from-primary-50 group-hover:to-primary-100 transition-colors">
         <span className="text-3xl">{product.icon || '📦'}</span>
@@ -244,12 +256,12 @@ function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
       {isWeightBased ? (
         <div className="flex flex-col items-center">
           <span className="text-xs text-slate-500">por kg</span>
-          <span className="text-sm font-semibold text-primary-600">
+          <span className={`text-sm font-semibold ${isExpress && hasExpressPrice ? 'text-warning-600' : 'text-primary-600'}`}>
             B/{priceWithTax.toFixed(2)}
           </span>
         </div>
       ) : (
-        <span className="text-sm font-semibold text-primary-600">
+        <span className={`text-sm font-semibold ${isExpress && hasExpressPrice ? 'text-warning-600' : 'text-primary-600'}`}>
           B/{priceWithTax.toFixed(2)}
         </span>
       )}

@@ -141,14 +141,40 @@ function appReducer(state, action) {
         },
       };
       
-    case actionTypes.SET_EXPRESS:
+    case actionTypes.SET_EXPRESS: {
+      const isExpress = action.payload;
+      // Recalculate all item prices based on express status
+      const updatedItems = state.ticket.items.map(item => {
+        const newUnitPrice = isExpress 
+          ? (item.product.express_price || item.product.price) 
+          : item.product.price;
+        
+        // For weight-based products
+        if (item.product.pricing_type === 'weight') {
+          return {
+            ...item,
+            unitPrice: newUnitPrice,
+            lineTotal: (item.totalWeight || 0) * newUnitPrice,
+          };
+        }
+        
+        // For quantity-based products
+        return {
+          ...item,
+          unitPrice: newUnitPrice,
+          lineTotal: item.quantity * newUnitPrice,
+        };
+      });
+
       return {
         ...state,
         ticket: {
           ...state.ticket,
-          isExpress: action.payload,
+          isExpress: isExpress,
+          items: updatedItems,
         },
       };
+    }
       
     case actionTypes.ADD_ITEM: {
       const existingIndex = state.ticket.items.findIndex(
