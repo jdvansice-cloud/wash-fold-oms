@@ -1850,23 +1850,24 @@ function NotificationsSettings() {
       return;
     }
 
-    // Timeout helper
-    const withTimeout = (promise, ms) => {
-      return Promise.race([
-        promise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout: La operación tardó demasiado')), ms)
-        )
-      ]);
-    };
-
     setSaving(true);
     try {
-      console.log('Attempting to save SMTP via RPC function...');
+      // Get Supabase URL and key from the client
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       
-      // Try RPC function first (more reliable)
-      const { data, error } = await withTimeout(
-        supabase.rpc('update_company_smtp', {
+      console.log('Calling RPC via direct fetch...');
+      
+      // Call RPC directly via fetch (bypasses potential client issues)
+      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/update_company_smtp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
           p_company_id: companyId,
           p_smtp_host: smtpConfig.smtp_host || null,
           p_smtp_port: smtpConfig.smtp_port || 587,
@@ -1875,46 +1876,23 @@ function NotificationsSettings() {
           p_smtp_from_name: smtpConfig.smtp_from_name || null,
           p_smtp_from_email: smtpConfig.smtp_from_email || null,
           p_smtp_secure: smtpConfig.smtp_secure
-        }),
-        10000
-      );
+        })
+      });
 
-      console.log('RPC response:', data, error);
+      console.log('Fetch response status:', response.status);
 
-      if (error) {
-        // If RPC doesn't exist, fall back to direct update
-        if (error.message.includes('function') || error.message.includes('does not exist')) {
-          console.log('RPC not found, trying direct update...');
-          
-          const updateData = {
-            smtp_host: smtpConfig.smtp_host || null,
-            smtp_port: smtpConfig.smtp_port || 587,
-            smtp_user: smtpConfig.smtp_user || null,
-            smtp_pass: smtpConfig.smtp_pass || null,
-            smtp_from_name: smtpConfig.smtp_from_name || null,
-            smtp_from_email: smtpConfig.smtp_from_email || null,
-            smtp_secure: smtpConfig.smtp_secure,
-            updated_at: new Date().toISOString()
-          };
-
-          const { data: directData, error: directError } = await withTimeout(
-            supabase.from('companies').update(updateData).eq('id', companyId).select(),
-            10000
-          );
-
-          if (directError) throw directError;
-          console.log('Direct update successful:', directData);
-          alert('✅ Configuración SMTP guardada correctamente');
-        } else {
-          throw error;
-        }
-      } else {
-        console.log('SMTP saved via RPC successfully');
-        alert('✅ Configuración SMTP guardada correctamente');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Fetch error:', errorText);
+        throw new Error(errorText || `HTTP ${response.status}`);
       }
+
+      console.log('SMTP saved successfully via direct fetch');
+      alert('✅ Configuración SMTP guardada correctamente');
+      
     } catch (err) {
       console.error('Error saving SMTP:', err);
-      alert('Error al guardar: ' + err.message + '\n\nEjecuta supabase-smtp-columns.sql en Supabase SQL Editor para crear la función RPC.');
+      alert('Error al guardar: ' + err.message);
     } finally {
       setSaving(false);
       console.log('=== handleSaveSMTP finished ===');
