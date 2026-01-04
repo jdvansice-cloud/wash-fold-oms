@@ -1852,47 +1852,69 @@ function NotificationsSettings() {
 
     setSaving(true);
     try {
-      // Get Supabase URL and key from the client
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const updateData = {
+        smtp_host: smtpConfig.smtp_host || null,
+        smtp_port: smtpConfig.smtp_port || 587,
+        smtp_user: smtpConfig.smtp_user || null,
+        smtp_pass: smtpConfig.smtp_pass || null,
+        smtp_from_name: smtpConfig.smtp_from_name || null,
+        smtp_from_email: smtpConfig.smtp_from_email || null,
+        smtp_secure: smtpConfig.smtp_secure,
+        updated_at: new Date().toISOString()
+      };
       
-      console.log('Calling RPC via direct fetch...');
-      
-      // Call RPC directly via fetch (bypasses potential client issues)
-      const response = await fetch(`${supabaseUrl}/rest/v1/rpc/update_company_smtp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          p_company_id: companyId,
-          p_smtp_host: smtpConfig.smtp_host || null,
-          p_smtp_port: smtpConfig.smtp_port || 587,
-          p_smtp_user: smtpConfig.smtp_user || null,
-          p_smtp_pass: smtpConfig.smtp_pass || null,
-          p_smtp_from_name: smtpConfig.smtp_from_name || null,
-          p_smtp_from_email: smtpConfig.smtp_from_email || null,
-          p_smtp_secure: smtpConfig.smtp_secure
-        })
-      });
+      console.log('Saving SMTP config...');
 
-      console.log('Fetch response status:', response.status);
+      // Try update with a race against timeout
+      let saved = false;
+      const updatePromise = supabase
+        .from('companies')
+        .update(updateData)
+        .eq('id', companyId)
+        .then(result => {
+          saved = true;
+          return result;
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Fetch error:', errorText);
-        throw new Error(errorText || `HTTP ${response.status}`);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('TIMEOUT')), 8000)
+      );
+
+      try {
+        const { error } = await Promise.race([updatePromise, timeoutPromise]);
+        if (error) throw error;
+        console.log('SMTP saved successfully');
+        alert('✅ Configuración SMTP guardada correctamente');
+      } catch (timeoutErr) {
+        if (timeoutErr.message === 'TIMEOUT') {
+          // Update timed out, but might have actually saved
+          // Wait a bit more then verify
+          console.log('Update timed out, waiting for background completion...');
+          await new Promise(r => setTimeout(r, 2000));
+          
+          // Check if it actually saved
+          const { data: verifyData } = await supabase
+            .from('companies')
+            .select('smtp_host, smtp_user')
+            .eq('id', companyId)
+            .single();
+          
+          if (verifyData?.smtp_host === smtpConfig.smtp_host && 
+              verifyData?.smtp_user === smtpConfig.smtp_user) {
+            console.log('Verified: Data was saved despite timeout');
+            alert('✅ Configuración SMTP guardada correctamente');
+          } else {
+            console.log('Data not saved:', verifyData);
+            alert('⚠️ La operación tardó demasiado.\n\nLos datos pueden no haberse guardado. Intenta de nuevo.');
+          }
+        } else {
+          throw timeoutErr;
+        }
       }
-
-      console.log('SMTP saved successfully via direct fetch');
-      alert('✅ Configuración SMTP guardada correctamente');
       
     } catch (err) {
       console.error('Error saving SMTP:', err);
-      alert('Error al guardar: ' + err.message);
+      alert('Error al guardar: ' + (err.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
       console.log('=== handleSaveSMTP finished ===');
