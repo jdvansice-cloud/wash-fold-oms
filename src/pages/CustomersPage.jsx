@@ -152,7 +152,7 @@ function CustomerRow({ customer, onClick }) {
         </div>
       </td>
       <td className="py-3 px-4">
-        <span className="text-sm text-slate-600">{customer.phone_country_code} {customer.phone}</span>
+        <span className="text-sm text-slate-600">{customer.phone_country} {customer.phone}</span>
       </td>
       <td className="py-3 px-4 hidden md:table-cell">
         <span className="text-sm text-slate-500">{customer.email || '—'}</span>
@@ -264,7 +264,7 @@ function CustomerDetailsModal({ customer, onClose, orders }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="flex items-center gap-3 text-sm">
                 <Phone className="w-4 h-4 text-slate-400" />
-                <span className="text-slate-700">{customer.phone_country_code} {customer.phone}</span>
+                <span className="text-slate-700">{customer.phone_country} {customer.phone}</span>
               </div>
               {customer.email && (
                 <div className="flex items-center gap-3 text-sm">
@@ -364,14 +364,14 @@ function AddCustomerModal({ onClose, onSave }) {
   const [formData, setFormData] = useState({
     first_name: '',
     last_name: '',
-    phone_country_code: '+507',
+    phone_country: '+507',
     phone: '',
     email: '',
     address_street: '',
     address_building: '',
-    address_city: 'Panamá',
-    address_district: 'Panamá',
     address_corregimiento: '',
+    address_district: 'Panamá',
+    address_province: 'Panamá',
     id_type: null,
     id_number: '',
     company_name: '',
@@ -401,13 +401,25 @@ function AddCustomerModal({ onClose, onSave }) {
   const handleSubmit = () => {
     if (!validate()) return;
     
+    // Only include fields that exist in the database
     const newCustomer = {
-      id: `cust-${Date.now()}`,
-      store_id: 'store-001',
-      ...formData,
+      first_name: formData.first_name,
+      last_name: formData.last_name,
+      phone_country: formData.phone_country,
+      phone: formData.phone,
+      email: formData.email || null,
+      address_street: formData.address_street || null,
+      address_building: formData.address_building || null,
+      address_corregimiento: formData.address_corregimiento || null,
+      address_district: formData.address_district || null,
+      address_province: formData.address_province || null,
+      id_type: formData.id_type,
+      id_number: formData.id_number || null,
+      company_name: formData.company_name || null,
+      ruc: formData.ruc || null,
+      dv: formData.dv || null,
       can_be_invoiced: formData.id_type === 'ruc',
       account_balance: 0,
-      loyalty_points: 0,
       preferences: { scent: 'Sin preferencia', softener: 'Sin preferencia' },
     };
     
@@ -452,8 +464,8 @@ function AddCustomerModal({ onClose, onSave }) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Teléfono *</label>
             <div className="flex gap-2">
               <select
-                value={formData.phone_country_code}
-                onChange={(e) => handleChange('phone_country_code', e.target.value)}
+                value={formData.phone_country}
+                onChange={(e) => handleChange('phone_country', e.target.value)}
                 className="input w-24"
               >
                 <option value="+507">+507</option>
