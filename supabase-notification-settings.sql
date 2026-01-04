@@ -23,6 +23,9 @@ ON public.notification_settings(company_id, template_id);
 -- Enable RLS
 ALTER TABLE public.notification_settings ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policy if exists
+DROP POLICY IF EXISTS "notification_settings_policy" ON public.notification_settings;
+
 -- RLS Policy: Allow all operations for authenticated users
 CREATE POLICY "notification_settings_policy" ON public.notification_settings
   FOR ALL
@@ -33,23 +36,6 @@ CREATE POLICY "notification_settings_policy" ON public.notification_settings
 GRANT ALL ON public.notification_settings TO authenticated;
 GRANT ALL ON public.notification_settings TO anon;
 
--- Insert default notification settings for existing companies
-INSERT INTO public.notification_settings (company_id, template_id, enabled, subject, body_template)
-SELECT 
-  c.id,
-  t.template_id,
-  true,
-  t.subject,
-  t.body_template
-FROM public.companies c
-CROSS JOIN (
-  VALUES 
-    ('welcome', '¡Bienvenido a {company_name}!', '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;"><h1 style="color: #0891b2;">¡Bienvenido, {customer_name}!</h1><p>Gracias por registrarte en <strong>{company_name}</strong>.</p><p>Estamos aquí para hacer tu vida más fácil con nuestros servicios de lavandería profesional.</p><p>¡Te esperamos pronto!</p><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;"><p style="color: #64748b; font-size: 12px;">{company_name}<br>Este es un mensaje automático, por favor no responder.</p></div>'),
-    ('order_created', 'Tu orden #{order_number} ha sido recibida - {company_name}', '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;"><h1 style="color: #0891b2;">¡Orden Recibida!</h1><p>Hola {customer_name},</p><p>Hemos recibido tu orden <strong>#{order_number}</strong>.</p><table style="width: 100%; margin: 20px 0; border-collapse: collapse;"><tr><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Total:</strong></td><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">B/{total}</td></tr><tr><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Fecha estimada:</strong></td><td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">{promised_date}</td></tr></table><p>Te notificaremos cuando tu orden esté lista.</p><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;"><p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p></div>'),
-    ('order_ready', '¡Tu orden #{order_number} está lista! - {company_name}', '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;"><h1 style="color: #10b981;">¡Tu orden está lista!</h1><p>Hola {customer_name},</p><p>Tu orden <strong>#{order_number}</strong> está lista para recoger.</p><div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;"><p style="margin: 0; color: #166534;"><strong>✓ Lista para recoger</strong></p></div><p>Te esperamos en nuestra tienda.</p><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;"><p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p></div>'),
-    ('order_delivered', 'Orden #{order_number} entregada - {company_name}', '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;"><h1 style="color: #10b981;">¡Orden Entregada!</h1><p>Hola {customer_name},</p><p>Tu orden <strong>#{order_number}</strong> ha sido entregada exitosamente.</p><div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;"><p style="margin: 0; color: #166534;"><strong>✓ Entrega completada</strong></p></div><p>¡Gracias por confiar en nosotros!</p><hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;"><p style="color: #64748b; font-size: 12px;">{company_name}</p></div>')
-) AS t(template_id, subject, body_template)
-ON CONFLICT (company_id, template_id) DO NOTHING;
-
 -- Verify
+SELECT 'notification_settings table created successfully' as status;
 SELECT * FROM public.notification_settings;

@@ -1776,6 +1776,8 @@ function NotificationsSettings() {
   const [showPassword, setShowPassword] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [activeTab, setActiveTab] = useState('smtp'); // smtp, templates
+  const [logoUrl, setLogoUrl] = useState('');
+  const [storePhone, setStorePhone] = useState('');
   
   const [smtpConfig, setSmtpConfig] = useState({
     smtp_host: '',
@@ -1793,79 +1795,399 @@ function NotificationsSettings() {
       name: 'Bienvenida', 
       description: 'Email de bienvenida al registrar cliente', 
       enabled: true, 
-      subject: '¡Bienvenido a {company_name}!',
-      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #0891b2;">¡Bienvenido, {customer_name}!</h1>
-  <p>Gracias por registrarte en <strong>{company_name}</strong>.</p>
-  <p>Estamos aquí para hacer tu vida más fácil con nuestros servicios de lavandería profesional.</p>
-  <p>¡Te esperamos pronto!</p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-  <p style="color: #64748b; font-size: 12px;">
-    {company_name}<br>
-    Este es un mensaje automático, por favor no responder.
-  </p>
-</div>`
+      subject: '¡Bienvenido a {company_name}! 🎉',
+      body: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+          <!-- Header with Logo -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%); padding: 40px 40px 30px; text-align: center;">
+              <img src="{logo_url}" alt="{company_name}" style="max-width: 180px; max-height: 60px; margin-bottom: 20px;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">¡Bienvenido!</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="color: #334155; font-size: 18px; margin: 0 0 20px; line-height: 1.6;">
+                Hola <strong>{customer_name}</strong>,
+              </p>
+              <p style="color: #64748b; font-size: 16px; margin: 0 0 25px; line-height: 1.7;">
+                ¡Gracias por registrarte en <strong style="color: #0891b2;">{company_name}</strong>! Estamos emocionados de tenerte como parte de nuestra familia.
+              </p>
+              
+              <!-- Features Box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f0f9ff; border-radius: 12px; margin: 25px 0;">
+                <tr>
+                  <td style="padding: 25px;">
+                    <p style="color: #0891b2; font-size: 14px; font-weight: 600; margin: 0 0 15px; text-transform: uppercase; letter-spacing: 1px;">
+                      ¿Qué puedes esperar?
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="color: #10b981; font-size: 16px;">✓</span>
+                          <span style="color: #475569; font-size: 15px; margin-left: 10px;">Servicio de lavado profesional</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="color: #10b981; font-size: 16px;">✓</span>
+                          <span style="color: #475569; font-size: 15px; margin-left: 10px;">Notificaciones cuando tu orden esté lista</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="color: #10b981; font-size: 16px;">✓</span>
+                          <span style="color: #475569; font-size: 15px; margin-left: 10px;">Atención personalizada</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="color: #64748b; font-size: 16px; margin: 25px 0; line-height: 1.7;">
+                Estamos aquí para hacer tu vida más fácil. ¡Te esperamos pronto!
+              </p>
+              
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 20px 0;">
+                    <a href="#" style="display: inline-block; background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%); color: #ffffff; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+                      Visítanos
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 30px 40px; border-top: 1px solid #e2e8f0;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="text-align: center;">
+                    <p style="color: #94a3b8; font-size: 14px; margin: 0 0 10px;">
+                      <strong style="color: #64748b;">{company_name}</strong>
+                    </p>
+                    <p style="color: #94a3b8; font-size: 13px; margin: 0;">
+                      {store_phone}
+                    </p>
+                    <p style="color: #cbd5e1; font-size: 12px; margin: 15px 0 0;">
+                      Este es un mensaje automático, por favor no responder.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
     },
     { 
       id: 'order_created', 
       name: 'Orden Creada', 
       description: 'Confirmación de recepción de orden', 
       enabled: true, 
-      subject: 'Tu orden #{order_number} ha sido recibida - {company_name}',
-      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #0891b2;">¡Orden Recibida!</h1>
-  <p>Hola {customer_name},</p>
-  <p>Hemos recibido tu orden <strong>#{order_number}</strong>.</p>
-  <table style="width: 100%; margin: 20px 0; border-collapse: collapse;">
+      subject: '✅ Orden #{order_number} recibida - {company_name}',
+      body: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 20px;">
     <tr>
-      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Total:</strong></td>
-      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">B/{total}</td>
-    </tr>
-    <tr>
-      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><strong>Fecha estimada:</strong></td>
-      <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">{promised_date}</td>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%); padding: 30px 40px; text-align: center;">
+              <img src="{logo_url}" alt="{company_name}" style="max-width: 150px; max-height: 50px; margin-bottom: 15px;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">¡Orden Recibida!</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="color: #334155; font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                Hola <strong>{customer_name}</strong>,
+              </p>
+              <p style="color: #64748b; font-size: 16px; margin: 0 0 25px; line-height: 1.7;">
+                Hemos recibido tu orden y ya está en proceso. Aquí están los detalles:
+              </p>
+              
+              <!-- Order Details Box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border-radius: 12px; overflow: hidden; margin: 25px 0;">
+                <tr>
+                  <td style="background-color: #0891b2; padding: 15px 20px;">
+                    <p style="color: #ffffff; font-size: 14px; font-weight: 600; margin: 0; text-transform: uppercase; letter-spacing: 1px;">
+                      Orden #{order_number}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 12px 0; border-bottom: 1px solid #e2e8f0;">
+                          <span style="color: #64748b; font-size: 14px;">Total:</span>
+                        </td>
+                        <td style="padding: 12px 0; border-bottom: 1px solid #e2e8f0; text-align: right;">
+                          <span style="color: #0891b2; font-size: 20px; font-weight: 700;">B/{total}</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 0;">
+                          <span style="color: #64748b; font-size: 14px;">Fecha estimada:</span>
+                        </td>
+                        <td style="padding: 12px 0; text-align: right;">
+                          <span style="color: #334155; font-size: 15px; font-weight: 600;">{promised_date}</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              
+              <!-- Status Timeline -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
+                <tr>
+                  <td width="25%" style="text-align: center;">
+                    <div style="width: 40px; height: 40px; background-color: #10b981; border-radius: 50%; margin: 0 auto 10px; line-height: 40px;">
+                      <span style="color: #ffffff; font-size: 18px;">✓</span>
+                    </div>
+                    <p style="color: #10b981; font-size: 12px; margin: 0; font-weight: 600;">Recibida</p>
+                  </td>
+                  <td width="25%" style="text-align: center;">
+                    <div style="width: 40px; height: 40px; background-color: #e2e8f0; border-radius: 50%; margin: 0 auto 10px; line-height: 40px;">
+                      <span style="color: #94a3b8; font-size: 16px;">2</span>
+                    </div>
+                    <p style="color: #94a3b8; font-size: 12px; margin: 0;">En Proceso</p>
+                  </td>
+                  <td width="25%" style="text-align: center;">
+                    <div style="width: 40px; height: 40px; background-color: #e2e8f0; border-radius: 50%; margin: 0 auto 10px; line-height: 40px;">
+                      <span style="color: #94a3b8; font-size: 16px;">3</span>
+                    </div>
+                    <p style="color: #94a3b8; font-size: 12px; margin: 0;">Lista</p>
+                  </td>
+                  <td width="25%" style="text-align: center;">
+                    <div style="width: 40px; height: 40px; background-color: #e2e8f0; border-radius: 50%; margin: 0 auto 10px; line-height: 40px;">
+                      <span style="color: #94a3b8; font-size: 16px;">4</span>
+                    </div>
+                    <p style="color: #94a3b8; font-size: 12px; margin: 0;">Entregada</p>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="color: #64748b; font-size: 15px; margin: 20px 0 0; line-height: 1.7; text-align: center;">
+                Te notificaremos cuando tu orden esté lista para recoger.
+              </p>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 25px 40px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <p style="color: #64748b; font-size: 14px; margin: 0;">
+                <strong>{company_name}</strong> | {store_phone}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
     </tr>
   </table>
-  <p>Te notificaremos cuando tu orden esté lista.</p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-  <p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p>
-</div>`
+</body>
+</html>`
     },
     { 
       id: 'order_ready', 
       name: 'Orden Lista', 
       description: 'Notificación cuando la orden está lista para recoger', 
       enabled: true, 
-      subject: '¡Tu orden #{order_number} está lista! - {company_name}',
-      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #10b981;">¡Tu orden está lista!</h1>
-  <p>Hola {customer_name},</p>
-  <p>Tu orden <strong>#{order_number}</strong> está lista para recoger.</p>
-  <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;">
-    <p style="margin: 0; color: #166534;"><strong>✓ Lista para recoger</strong></p>
-  </div>
-  <p>Te esperamos en nuestra tienda.</p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-  <p style="color: #64748b; font-size: 12px;">{company_name} | {store_phone}</p>
-</div>`
+      subject: '🎉 ¡Tu orden #{order_number} está lista! - {company_name}',
+      body: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px 40px; text-align: center;">
+              <img src="{logo_url}" alt="{company_name}" style="max-width: 150px; max-height: 50px; margin-bottom: 15px;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;">¡Tu orden está lista!</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="color: #334155; font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                Hola <strong>{customer_name}</strong>,
+              </p>
+              
+              <!-- Success Box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border-radius: 12px; margin: 25px 0;">
+                <tr>
+                  <td style="padding: 30px; text-align: center;">
+                    <div style="width: 70px; height: 70px; background-color: #10b981; border-radius: 50%; margin: 0 auto 20px; line-height: 70px;">
+                      <span style="color: #ffffff; font-size: 36px;">✓</span>
+                    </div>
+                    <p style="color: #065f46; font-size: 20px; font-weight: 700; margin: 0 0 10px;">
+                      Orden #{order_number}
+                    </p>
+                    <p style="color: #047857; font-size: 16px; margin: 0;">
+                      Lista para recoger
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="color: #64748b; font-size: 16px; margin: 25px 0; line-height: 1.7; text-align: center;">
+                Tu ropa está limpia, fresca y lista para ti. <br>
+                ¡Te esperamos en nuestra tienda!
+              </p>
+              
+              <!-- CTA Button -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 20px 0;">
+                    <a href="#" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 14px 40px; border-radius: 8px; font-size: 16px; font-weight: 600;">
+                      Ver ubicación
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 25px 40px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <p style="color: #64748b; font-size: 14px; margin: 0;">
+                <strong>{company_name}</strong> | {store_phone}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
     },
     { 
       id: 'order_delivered', 
       name: 'Orden Entregada', 
       description: 'Confirmación de entrega completada', 
       enabled: true, 
-      subject: 'Orden #{order_number} entregada - {company_name}',
-      body: `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h1 style="color: #10b981;">¡Orden Entregada!</h1>
-  <p>Hola {customer_name},</p>
-  <p>Tu orden <strong>#{order_number}</strong> ha sido entregada exitosamente.</p>
-  <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; margin: 20px 0;">
-    <p style="margin: 0; color: #166534;"><strong>✓ Entrega completada</strong></p>
-  </div>
-  <p>¡Gracias por confiar en nosotros!</p>
-  <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;">
-  <p style="color: #64748b; font-size: 12px;">{company_name}</p>
-</div>`
+      subject: '✨ Orden #{order_number} entregada - {company_name}',
+      body: `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 30px 40px; text-align: center;">
+              <img src="{logo_url}" alt="{company_name}" style="max-width: 150px; max-height: 50px; margin-bottom: 15px;">
+              <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600;">¡Orden Entregada!</h1>
+            </td>
+          </tr>
+          
+          <!-- Content -->
+          <tr>
+            <td style="padding: 40px;">
+              <p style="color: #334155; font-size: 16px; margin: 0 0 20px; line-height: 1.6;">
+                Hola <strong>{customer_name}</strong>,
+              </p>
+              
+              <!-- Completed Box -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border-radius: 12px; margin: 25px 0;">
+                <tr>
+                  <td style="padding: 30px; text-align: center;">
+                    <div style="width: 70px; height: 70px; background-color: #8b5cf6; border-radius: 50%; margin: 0 auto 20px; line-height: 70px;">
+                      <span style="color: #ffffff; font-size: 36px;">★</span>
+                    </div>
+                    <p style="color: #5b21b6; font-size: 20px; font-weight: 700; margin: 0 0 10px;">
+                      Orden #{order_number}
+                    </p>
+                    <p style="color: #7c3aed; font-size: 16px; margin: 0;">
+                      Entregada exitosamente
+                    </p>
+                  </td>
+                </tr>
+              </table>
+              
+              <p style="color: #64748b; font-size: 16px; margin: 25px 0; line-height: 1.7; text-align: center;">
+                ¡Gracias por confiar en nosotros! <br>
+                Esperamos verte pronto.
+              </p>
+              
+              <!-- Rating Request -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #fefce8; border-radius: 12px; margin: 25px 0;">
+                <tr>
+                  <td style="padding: 20px; text-align: center;">
+                    <p style="color: #854d0e; font-size: 14px; margin: 0 0 10px;">
+                      ¿Cómo fue tu experiencia?
+                    </p>
+                    <p style="margin: 0; font-size: 28px;">
+                      ⭐⭐⭐⭐⭐
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; padding: 25px 40px; border-top: 1px solid #e2e8f0; text-align: center;">
+              <p style="color: #64748b; font-size: 14px; margin: 0 0 10px;">
+                <strong>{company_name}</strong>
+              </p>
+              <p style="color: #94a3b8; font-size: 13px; margin: 0;">
+                {store_phone}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`
     },
   ]);
   
@@ -1879,16 +2201,17 @@ function NotificationsSettings() {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      // Load company SMTP settings
+      // Load company SMTP settings and logo
       const { data: company, error } = await supabase
         .from('companies')
-        .select('id, name, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, smtp_secure')
+        .select('id, name, logo_url, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, smtp_secure')
         .limit(1)
         .single();
 
       if (error) throw error;
 
       setCompanyId(company.id);
+      setLogoUrl(company.logo_url || '');
       setSmtpConfig({
         smtp_host: company.smtp_host || '',
         smtp_port: company.smtp_port || 587,
@@ -1898,6 +2221,17 @@ function NotificationsSettings() {
         smtp_from_email: company.smtp_from_email || '',
         smtp_secure: company.smtp_secure !== false,
       });
+
+      // Load store phone
+      const { data: store } = await supabase
+        .from('stores')
+        .select('phone')
+        .limit(1)
+        .single();
+      
+      if (store) {
+        setStorePhone(store.phone || '');
+      }
 
       // Load notification settings if they exist
       const { data: notifSettings } = await supabase
@@ -2134,6 +2468,20 @@ function NotificationsSettings() {
 
     setTesting(true);
     try {
+      // Get company logo from database
+      const { data: company } = await supabase
+        .from('companies')
+        .select('logo_url')
+        .eq('id', companyId)
+        .single();
+
+      // Get store phone
+      const { data: store } = await supabase
+        .from('stores')
+        .select('phone')
+        .limit(1)
+        .single();
+
       // Replace variables with test data
       let subject = template.subject;
       let body = template.body;
@@ -2144,7 +2492,8 @@ function NotificationsSettings() {
         order_number: '12345',
         total: '25.00',
         promised_date: new Date().toLocaleDateString('es-PA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-        store_phone: '+507 6123-4567'
+        store_phone: store?.phone || '+507 6123-4567',
+        logo_url: company?.logo_url || 'https://via.placeholder.com/180x60?text=Logo'
       };
 
       Object.keys(testVars).forEach(key => {
@@ -2532,7 +2881,7 @@ function NotificationsSettings() {
                         placeholder="<div>Contenido HTML...</div>"
                       />
                       <p className="text-xs text-slate-500 mt-1">
-                        Usa HTML para dar formato. Variables disponibles: {'{customer_name}'}, {'{order_number}'}, {'{total}'}, {'{promised_date}'}, {'{company_name}'}, {'{store_phone}'}
+                        Usa HTML para dar formato. Variables disponibles: {'{customer_name}'}, {'{order_number}'}, {'{total}'}, {'{promised_date}'}, {'{company_name}'}, {'{store_phone}'}, {'{logo_url}'}
                       </p>
                     </div>
 
@@ -2540,15 +2889,16 @@ function NotificationsSettings() {
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Vista Previa</label>
                       <div 
-                        className="border border-slate-200 rounded-lg p-4 bg-white max-h-64 overflow-auto"
+                        className="border border-slate-200 rounded-lg bg-slate-50 max-h-96 overflow-auto"
                         dangerouslySetInnerHTML={{ 
                           __html: template.body
                             .replace(/{customer_name}/g, 'Cliente de Prueba')
                             .replace(/{company_name}/g, smtpConfig.smtp_from_name || 'Tu Empresa')
                             .replace(/{order_number}/g, '12345')
                             .replace(/{total}/g, '25.00')
-                            .replace(/{promised_date}/g, new Date().toLocaleDateString('es-PA'))
-                            .replace(/{store_phone}/g, '+507 6123-4567')
+                            .replace(/{promised_date}/g, new Date().toLocaleDateString('es-PA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))
+                            .replace(/{store_phone}/g, storePhone || '+507 6123-4567')
+                            .replace(/{logo_url}/g, logoUrl || 'https://via.placeholder.com/180x60/0891b2/ffffff?text=LOGO')
                         }}
                       />
                     </div>
@@ -2606,6 +2956,7 @@ function NotificationsSettings() {
               <span><code className="bg-slate-200 px-1 rounded">{'{total}'}</code> - Total de la orden</span>
               <span><code className="bg-slate-200 px-1 rounded">{'{promised_date}'}</code> - Fecha prometida</span>
               <span><code className="bg-slate-200 px-1 rounded">{'{store_phone}'}</code> - Teléfono de la tienda</span>
+              <span><code className="bg-slate-200 px-1 rounded">{'{logo_url}'}</code> - URL del logo</span>
             </div>
           </div>
         </div>

@@ -125,7 +125,7 @@ export function useDataLoader() {
       // Get company and store info
       const { data: companyData } = await supabase
         .from('companies')
-        .select('id, name, smtp_from_name, smtp_host')
+        .select('id, name, smtp_from_name, smtp_host, logo_url')
         .limit(1)
         .single();
 
@@ -159,12 +159,14 @@ export function useDataLoader() {
       // Build email content based on template
       const companyName = companyData?.name || 'Nuestra Lavandería';
       const storePhone = storeData?.phone || '';
+      const logoUrl = companyData?.logo_url || '';
       
-      // Add company_name and store_phone to variables
+      // Add company info to variables
       const allVariables = {
         ...variables,
         company_name: companyName,
-        store_phone: storePhone
+        store_phone: storePhone,
+        logo_url: logoUrl
       };
       
       // Default templates (fallback if no custom template saved)
