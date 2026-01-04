@@ -498,24 +498,27 @@ function StoreSettings() {
           return;
         }
         
-        // Now update geolocation separately if valid
+        // Now update geolocation separately using RPC function
         if (isValidGeo(storeData.geolocation)) {
-          const geoData = {
-            lat: Number(storeData.geolocation.lat),
-            lng: Number(storeData.geolocation.lng)
-          };
-          console.log('Updating geolocation separately:', geoData);
+          const lat = Number(storeData.geolocation.lat);
+          const lng = Number(storeData.geolocation.lng);
+          console.log('Updating geolocation via RPC:', { lat, lng });
           
           const geoResult = await withTimeout(
-            supabase.from('stores').update({ geolocation: geoData }).eq('id', editingStore.id),
+            supabase.rpc('update_store_geolocation', {
+              store_id: editingStore.id,
+              lat: lat,
+              lng: lng
+            }),
             10000
           );
           
           if (geoResult.error) {
-            console.error('Geolocation update error:', geoResult.error);
+            console.error('Geolocation RPC error:', geoResult.error);
             // Don't fail the whole operation, just log it
+            alert('Nota: Los datos se guardaron pero la geolocalización no se actualizó. Error: ' + geoResult.error.message);
           } else {
-            console.log('Geolocation updated successfully');
+            console.log('Geolocation updated successfully via RPC');
           }
         }
         
@@ -528,6 +531,7 @@ function StoreSettings() {
           return;
         }
         
+        // Insert without geolocation first
         const insertData = {
           company_id: companyId,
           name: storeData.name,
@@ -535,13 +539,6 @@ function StoreSettings() {
           phone: storeData.phone || null,
           is_active: storeData.is_active !== false
         };
-        
-        if (isValidGeo(storeData.geolocation)) {
-          insertData.geolocation = {
-            lat: Number(storeData.geolocation.lat),
-            lng: Number(storeData.geolocation.lng)
-          };
-        }
         
         if (storeData.opening_hours) {
           insertData.opening_hours = storeData.opening_hours;
@@ -561,6 +558,29 @@ function StoreSettings() {
         }
         
         console.log('Store created successfully:', result.data);
+        
+        // Now update geolocation using RPC
+        if (isValidGeo(storeData.geolocation) && result.data?.id) {
+          const lat = Number(storeData.geolocation.lat);
+          const lng = Number(storeData.geolocation.lng);
+          console.log('Setting geolocation via RPC for new store:', { lat, lng });
+          
+          const geoResult = await withTimeout(
+            supabase.rpc('update_store_geolocation', {
+              store_id: result.data.id,
+              lat: lat,
+              lng: lng
+            }),
+            10000
+          );
+          
+          if (geoResult.error) {
+            console.error('Geolocation RPC error:', geoResult.error);
+            alert('Nota: La tienda se creó pero la geolocalización no se guardó. Error: ' + geoResult.error.message);
+          } else {
+            console.log('Geolocation set successfully via RPC');
+          }
+        }
       }
       
       // Success - close modal and reload
