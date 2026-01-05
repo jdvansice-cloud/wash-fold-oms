@@ -36,10 +36,10 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
   
   const formatCurrency = (amount) => `B/${Number(amount).toFixed(2)}`;
   
-  // Calculate totals
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
-  const remaining = Math.max(0, total - totalPaid);
-  const overpaid = Math.max(0, totalPaid - total);
+  // Calculate totals (round to 2 decimals to avoid floating point issues)
+  const totalPaid = Math.round(payments.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
+  const remaining = Math.round(Math.max(0, total - totalPaid) * 100) / 100;
+  const overpaid = Math.round(Math.max(0, totalPaid - total) * 100) / 100;
   
   const handleMethodSelect = (methodId) => {
     setActiveMethod(methodId);
@@ -117,8 +117,8 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
     setPayments(payments.filter((_, i) => i !== index));
   };
   
-  // Can process when total is covered
-  const canProcess = totalPaid >= total;
+  // Can process when total is covered (remaining is 0)
+  const canProcess = remaining === 0;
   
   const handleProcess = () => {
     if (!canProcess) return;

@@ -313,8 +313,23 @@ export function useDataLoader() {
         if (itemsError) throw itemsError;
       }
 
-      // Insert payment
-      if (orderData.payment) {
+      // Insert payment(s)
+      if (orderData.payments && orderData.payments.length > 0) {
+        const paymentsToInsert = orderData.payments.map(payment => ({
+          order_id: order.id,
+          payment_method: payment.method,
+          amount: payment.amount,
+          reference: payment.reference || null,
+          change_amount: payment.changeGiven || 0,
+        }));
+
+        const { error: paymentError } = await supabase
+          .from('payments')
+          .insert(paymentsToInsert);
+
+        if (paymentError) throw paymentError;
+      } else if (orderData.payment) {
+        // Legacy single payment support
         const { error: paymentError } = await supabase
           .from('payments')
           .insert({
@@ -598,6 +613,157 @@ export function useDataLoader() {
     }
   };
 
+  // Get full order details with items and payments
+  const getOrderDetails = async (orderId) => {
+    try {
+      // Get order with items and payments
+      const { data: order, error: orderError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
+
+      if (orderError) throw orderError;
+
+      // Get order items
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('*')
+        .eq('order_id', orderId);
+
+      if (itemsError) throw itemsError;
+
+      // Get payments
+      const { data: payments, error: paymentsError } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('order_id', orderId);
+
+      if (paymentsError) throw paymentsError;
+
+      return {
+        ...order,
+        items: items || [],
+        payments: payments || [],
+      };
+    } catch (err) {
+      console.error('Error getting order details:', err);
+      throw err;
+    }
+  };
+
+  // Create refund order
+  const createRefund = async (originalOrder, refundReason) => {
+    try {
+      // 1. Create refund order (negative amounts, status: 'refund')
+      const { data: refundOrder, error: refundError } = await supabase
+        .from('orders')
+        .insert({
+          store_id: storeId,
+          customer_id: originalOrder.customer_id,
+          customer_name: originalOrder.customer_name,
+          is_walk_in: originalOrder.is_walk_in,
+          status: 'refund', // Special status for refunds
+          is_express: false,
+          subtotal: -Math.abs(originalOrder.subtotal || 0),
+          discount_amount: -Math.abs(originalOrder.discount_amount || 0),
+          delivery_charge: -Math.abs(originalOrder.delivery_charge || 0),
+          tax_amount: -Math.abs(originalOrder.tax_amount || 0),
+          total: -Math.abs(originalOrder.total || 0),
+          total_weight: originalOrder.total_weight || 0,
+          total_bags: originalOrder.total_bags || 0,
+          total_pieces: originalOrder.total_pieces || 0,
+          notes: `REEMBOLSO de Orden #${originalOrder.order_number}. ${refundReason || ''}`.trim(),
+          promised_date: new Date().toISOString(), // Immediate
+          refund_for_order_id: originalOrder.id, // Reference to original
+        })
+        .select()
+        .single();
+
+      if (refundError) throw refundError;
+
+      // 2. Copy items as negative
+      if (originalOrder.items && originalOrder.items.length > 0) {
+        const refundItems = originalOrder.items.map(item => ({
+          order_id: refundOrder.id,
+          product_id: item.product_id,
+          product_name: item.product_name,
+          quantity: -Math.abs(item.quantity || 0),
+          total_weight: item.total_weight || 0,
+          bags: item.bags || 0,
+          pieces: item.pieces || 0,
+          unit_price: item.unit_price,
+          line_total: -Math.abs(item.line_total || 0),
+          weight_entries: item.weight_entries || [],
+          notes: 'Reembolso',
+        }));
+
+        const { error: itemsError } = await supabase
+          .from('order_items')
+          .insert(refundItems);
+
+        if (itemsError) throw itemsError;
+      }
+
+      // 3. Copy payments as negative (refund transactions)
+      if (originalOrder.payments && originalOrder.payments.length > 0) {
+        const refundPayments = originalOrder.payments.map(payment => ({
+          order_id: refundOrder.id,
+          payment_method: payment.payment_method,
+          amount: -Math.abs(payment.amount || 0),
+          reference: `REF-${payment.reference || originalOrder.order_number}`,
+          change_amount: 0,
+        }));
+
+        const { error: paymentsError } = await supabase
+          .from('payments')
+          .insert(refundPayments);
+
+        if (paymentsError) throw paymentsError;
+      }
+
+      // 4. Update original order status to 'refunded'
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ 
+          status: 'refunded',
+          updated_at: new Date().toISOString(),
+          notes: `${originalOrder.notes || ''}\n[REEMBOLSADO - Ver Orden #${refundOrder.order_number}]`.trim()
+        })
+        .eq('id', originalOrder.id);
+
+      if (updateError) throw updateError;
+
+      // 5. Create refund record
+      const { error: refundRecordError } = await supabase
+        .from('refunds')
+        .insert({
+          store_id: storeId,
+          order_id: originalOrder.id,
+          order_number: originalOrder.order_number,
+          customer_name: originalOrder.customer_name,
+          amount: Math.abs(originalOrder.total || 0),
+          refund_type: 'full',
+          reason: refundReason || 'Reembolso solicitado',
+          notes: `Orden de reembolso: #${refundOrder.order_number}`,
+        });
+
+      if (refundRecordError) {
+        console.warn('Could not create refund record:', refundRecordError);
+        // Don't throw - refund order was created successfully
+      }
+
+      // 6. Update local state
+      actions.addOrder(refundOrder);
+      actions.updateOrderStatus(originalOrder.id, 'refunded');
+
+      return refundOrder;
+    } catch (err) {
+      console.error('Error creating refund:', err);
+      throw err;
+    }
+  };
+
   return {
     isLoading,
     error,
@@ -605,6 +771,8 @@ export function useDataLoader() {
     reload: loadData,
     addOrder,
     updateOrderStatus,
+    getOrderDetails,
+    createRefund,
     addCustomer,
     updateCustomer,
     updateProductsOrder,
