@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS public.customer_loyalty (
   dry_punches integer DEFAULT 0,                  -- Current dry punches
   total_free_washes_earned integer DEFAULT 0,     -- Lifetime free washes earned
   total_free_drys_earned integer DEFAULT 0,       -- Lifetime free drys earned
+  total_free_washes_redeemed integer DEFAULT 0,   -- Lifetime free washes redeemed
+  total_free_drys_redeemed integer DEFAULT 0,     -- Lifetime free drys redeemed
   pending_free_washes integer DEFAULT 0,          -- Available free washes to redeem
   pending_free_drys integer DEFAULT 0,            -- Available free drys to redeem
   last_punch_date timestamp with time zone,       -- For expiry calculation
@@ -398,6 +400,30 @@ BEGIN
   );
 END;
 $$ LANGUAGE plpgsql;
+
+-- =====================================================
+-- MIGRATION: Add columns if they don't exist
+-- Run this if you're upgrading an existing installation
+-- =====================================================
+DO $$
+BEGIN
+  -- Add total_free_washes_redeemed if not exists
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_schema = 'public' 
+                 AND table_name = 'customer_loyalty' 
+                 AND column_name = 'total_free_washes_redeemed') THEN
+    ALTER TABLE public.customer_loyalty ADD COLUMN total_free_washes_redeemed integer DEFAULT 0;
+  END IF;
+  
+  -- Add total_free_drys_redeemed if not exists
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                 WHERE table_schema = 'public' 
+                 AND table_name = 'customer_loyalty' 
+                 AND column_name = 'total_free_drys_redeemed') THEN
+    ALTER TABLE public.customer_loyalty ADD COLUMN total_free_drys_redeemed integer DEFAULT 0;
+  END IF;
+END;
+$$;
 
 -- =====================================================
 -- VERIFICATION

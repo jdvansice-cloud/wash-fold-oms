@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, X, User, Zap, ChevronDown, ChevronUp, 
   Trash2, Tag, Truck, MessageSquare, AlertCircle,
@@ -488,6 +488,204 @@ const calculateLavamaticSubtotal = (items, sections) => {
   return subtotal;
 };
 
+// Helper to redeem loyalty points as payment
+const redeemLoyaltyPoints = async (customerId, storeId, amount, orderId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !customerId || !storeId || amount <= 0) return null;
+  
+  try {
+    // Get customer loyalty record
+    const loyaltyRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (!loyaltyRes.ok) return null;
+    const loyaltyData = await loyaltyRes.json();
+    const loyalty = loyaltyData && loyaltyData.length > 0 ? loyaltyData[0] : null;
+    
+    if (!loyalty || loyalty.points_balance < amount) {
+      console.error('Insufficient loyalty points balance');
+      return null;
+    }
+    
+    const balanceBefore = loyalty.points_balance;
+    const balanceAfter = Math.round((balanceBefore - amount) * 100) / 100;
+    const totalRedeemed = (loyalty.total_points_redeemed || 0) + amount;
+    
+    // Update loyalty balance
+    const updateRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          points_balance: balanceAfter,
+          total_points_redeemed: totalRedeemed,
+          updated_at: new Date().toISOString(),
+        })
+      }
+    );
+    
+    if (!updateRes.ok) {
+      console.error('Error updating loyalty balance:', await updateRes.text());
+      return null;
+    }
+    
+    // Log the transaction
+    await fetch(`${url}/rest/v1/loyalty_transactions`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        customer_id: customerId,
+        store_id: storeId,
+        order_id: orderId,
+        transaction_type: 'points_redeemed',
+        points_amount: -amount,
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        notes: `Redeemed B/${amount.toFixed(2)} in loyalty points`,
+      })
+    });
+    
+    console.log(`Loyalty points redeemed: -B/${amount.toFixed(2)}, new balance: B/${balanceAfter.toFixed(2)}`);
+    
+    return {
+      success: true,
+      points_redeemed: amount,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+    };
+  } catch (err) {
+    console.error('Error redeeming loyalty points:', err);
+    return null;
+  }
+};
+
+// Helper to redeem free services
+const redeemFreeServices = async (customerId, storeId, freeWashes, freeDrys, orderId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !customerId || (freeWashes <= 0 && freeDrys <= 0)) return null;
+  
+  try {
+    // Get customer loyalty record
+    const loyaltyRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (!loyaltyRes.ok) return null;
+    const loyaltyData = await loyaltyRes.json();
+    const loyalty = loyaltyData && loyaltyData.length > 0 ? loyaltyData[0] : null;
+    
+    if (!loyalty) {
+      console.error('No loyalty record found');
+      return null;
+    }
+    
+    const updateData = { updated_at: new Date().toISOString() };
+    
+    // Update free washes
+    if (freeWashes > 0) {
+      const currentFreeWashes = loyalty.pending_free_washes || 0;
+      if (currentFreeWashes < freeWashes) {
+        console.error('Insufficient free washes');
+        return null;
+      }
+      updateData.pending_free_washes = currentFreeWashes - freeWashes;
+      updateData.total_free_washes_redeemed = (loyalty.total_free_washes_redeemed || 0) + freeWashes;
+    }
+    
+    // Update free drys
+    if (freeDrys > 0) {
+      const currentFreeDrys = loyalty.pending_free_drys || 0;
+      if (currentFreeDrys < freeDrys) {
+        console.error('Insufficient free drys');
+        return null;
+      }
+      updateData.pending_free_drys = currentFreeDrys - freeDrys;
+      updateData.total_free_drys_redeemed = (loyalty.total_free_drys_redeemed || 0) + freeDrys;
+    }
+    
+    // Update loyalty record
+    const updateRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      }
+    );
+    
+    if (!updateRes.ok) {
+      console.error('Error updating free services:', await updateRes.text());
+      return null;
+    }
+    
+    // Log transactions
+    if (freeWashes > 0) {
+      await fetch(`${url}/rest/v1/loyalty_transactions`, {
+        method: 'POST',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          store_id: storeId,
+          order_id: orderId,
+          transaction_type: 'redeem_free_wash',
+          punch_count: -freeWashes,
+          notes: `Redeemed ${freeWashes} free wash(es)`,
+        })
+      });
+    }
+    
+    if (freeDrys > 0) {
+      await fetch(`${url}/rest/v1/loyalty_transactions`, {
+        method: 'POST',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          store_id: storeId,
+          order_id: orderId,
+          transaction_type: 'redeem_free_dry',
+          punch_count: -freeDrys,
+          notes: `Redeemed ${freeDrys} free dry(s)`,
+        })
+      });
+    }
+    
+    console.log(`Free services redeemed: ${freeWashes} wash(es), ${freeDrys} dry(s)`);
+    
+    return { success: true, freeWashes, freeDrys };
+  } catch (err) {
+    console.error('Error redeeming free services:', err);
+    return null;
+  }
+};
+
 function TicketPanel() {
   const { state, actions, ticketCalculations } = useApp();
   const { addOrder: dbAddOrder } = useDataLoader();
@@ -513,6 +711,92 @@ function TicketPanel() {
         !['completed', 'cancelled'].includes(o.status)
       ).length 
     : 0;
+  
+  // Calculate free services that can be auto-applied
+  const freeServicesApplied = useMemo(() => {
+    if (!customerLoyalty || !loyaltySettings?.punch_card_enabled) {
+      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, items: [] };
+    }
+    
+    const pendingFreeWashes = customerLoyalty.pending_free_washes || 0;
+    const pendingFreeDrys = customerLoyalty.pending_free_drys || 0;
+    
+    if (pendingFreeWashes === 0 && pendingFreeDrys === 0) {
+      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, items: [] };
+    }
+    
+    // Find Lavamático section
+    const lavamatico = state.sections?.find(s => {
+      const name = (s.name || '').toLowerCase().trim();
+      return name === 'lavamático' || name === 'lavamatico';
+    });
+    
+    if (!lavamatico) {
+      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, items: [] };
+    }
+    
+    let freeWashesUsed = 0;
+    let freeDrysUsed = 0;
+    let totalDiscount = 0;
+    const discountedItems = [];
+    
+    // Check ticket items for Lavado/Secado products
+    ticket.items.forEach((item, index) => {
+      const product = item.product;
+      if (!product || product.section_id !== lavamatico.id) return;
+      
+      const productName = (product.name || '').toLowerCase();
+      const quantity = item.quantity || 1;
+      
+      // Check for "Lavado" products
+      if (productName.includes('lavado') && freeWashesUsed < pendingFreeWashes) {
+        const freeCount = Math.min(quantity, pendingFreeWashes - freeWashesUsed);
+        const discountPerUnit = item.unitPrice || 0;
+        const itemDiscount = freeCount * discountPerUnit;
+        
+        if (freeCount > 0 && itemDiscount > 0) {
+          freeWashesUsed += freeCount;
+          totalDiscount += itemDiscount;
+          discountedItems.push({
+            index,
+            productName: product.name,
+            type: 'wash',
+            freeCount,
+            discount: itemDiscount,
+          });
+        }
+      }
+      
+      // Check for "Secado" products
+      if (productName.includes('secado') && freeDrysUsed < pendingFreeDrys) {
+        const freeCount = Math.min(quantity, pendingFreeDrys - freeDrysUsed);
+        const discountPerUnit = item.unitPrice || 0;
+        const itemDiscount = freeCount * discountPerUnit;
+        
+        if (freeCount > 0 && itemDiscount > 0) {
+          freeDrysUsed += freeCount;
+          totalDiscount += itemDiscount;
+          discountedItems.push({
+            index,
+            productName: product.name,
+            type: 'dry',
+            freeCount,
+            discount: itemDiscount,
+          });
+        }
+      }
+    });
+    
+    return {
+      freeWashes: freeWashesUsed,
+      freeDrys: freeDrysUsed,
+      discountAmount: totalDiscount,
+      items: discountedItems,
+    };
+  }, [ticket.items, customerLoyalty, loyaltySettings, state.sections]);
+  
+  // Adjust total with free services discount
+  const adjustedTotal = Math.max(0, calculations.total - freeServicesApplied.discountAmount);
   
   // Load loyalty settings on mount
   useEffect(() => {
@@ -648,61 +932,47 @@ function TicketPanel() {
           </div>
         )}
         
-        {/* Loyalty Info - Show when customer is selected and loyalty programs are enabled */}
+        {/* Loyalty Info - Compact single line when customer is selected */}
         {ticket.customer && ticket.customerConfirmed && (loyaltySettings?.punch_card_enabled || loyaltySettings?.points_enabled) && (
-          <div className="mt-3 space-y-2">
+          <div className="mt-3">
             {loadingLoyalty ? (
               <div className="flex items-center justify-center py-2">
                 <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
-              <>
-                {/* Points Balance */}
+              <div className="flex items-center gap-3 px-3 py-2 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-lg text-xs">
+                <Award className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                
+                {/* Points */}
                 {loyaltySettings?.points_enabled && (
-                  <div className="flex items-center justify-between px-3 py-2 bg-emerald-50 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Coins className="w-4 h-4 text-emerald-600" />
-                      <span className="text-sm font-medium text-emerald-700">Saldo Puntos</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-bold text-emerald-700">B/{(customerLoyalty?.points_balance || 0).toFixed(2)}</span>
-                      {(customerLoyalty?.points_balance || 0) >= (loyaltySettings?.min_redemption_amount || 0) && (customerLoyalty?.points_balance || 0) > 0 && (
-                        <span className="ml-1 text-xs text-emerald-600">✓</span>
-                      )}
-                    </div>
+                  <div className="flex items-center gap-1">
+                    <Coins className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="font-bold text-emerald-700">B/{(customerLoyalty?.points_balance || 0).toFixed(2)}</span>
                   </div>
                 )}
                 
-                {/* Punch Card Progress */}
+                {loyaltySettings?.points_enabled && loyaltySettings?.punch_card_enabled && (
+                  <span className="text-slate-300">|</span>
+                )}
+                
+                {/* Punches */}
                 {loyaltySettings?.punch_card_enabled && (
-                  <div className="px-3 py-2 bg-blue-50 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Stamp className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-700">Sellos Lavamático</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-600">🌀 Lavados:</span>
-                        <span className="font-medium text-slate-800">
-                          {customerLoyalty?.wash_punches || 0}/{loyaltySettings.wash_punches_required}
-                          {(customerLoyalty?.pending_free_washes || 0) > 0 && (
-                            <span className="ml-1 text-success-600">+{customerLoyalty.pending_free_washes}🎁</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-600">☀️ Secados:</span>
-                        <span className="font-medium text-slate-800">
-                          {customerLoyalty?.dry_punches || 0}/{loyaltySettings.dry_punches_required}
-                          {(customerLoyalty?.pending_free_drys || 0) > 0 && (
-                            <span className="ml-1 text-success-600">+{customerLoyalty.pending_free_drys}🎁</span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-600">
+                      🌀 {customerLoyalty?.wash_punches || 0}/{loyaltySettings.wash_punches_required}
+                      {(customerLoyalty?.pending_free_washes || 0) > 0 && (
+                        <span className="text-success-600 font-bold">+{customerLoyalty.pending_free_washes}🎁</span>
+                      )}
+                    </span>
+                    <span className="text-slate-600">
+                      ☀️ {customerLoyalty?.dry_punches || 0}/{loyaltySettings.dry_punches_required}
+                      {(customerLoyalty?.pending_free_drys || 0) > 0 && (
+                        <span className="text-success-600 font-bold">+{customerLoyalty.pending_free_drys}🎁</span>
+                      )}
+                    </span>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
         )}
@@ -1061,10 +1331,31 @@ function TicketPanel() {
                 <span className="text-slate-700">{formatCurrency(calculations.taxAmount)}</span>
               </div>
               
+              {/* Free Services Applied */}
+              {freeServicesApplied.discountAmount > 0 && (
+                <div className="bg-emerald-50 rounded-lg p-2 my-1 border border-emerald-200">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-emerald-700 font-medium flex items-center gap-1">
+                      <Gift className="w-3.5 h-3.5" />
+                      Servicios Gratis
+                    </span>
+                    <span className="text-emerald-700 font-bold">-{formatCurrency(freeServicesApplied.discountAmount)}</span>
+                  </div>
+                  <div className="text-xs text-emerald-600 mt-1">
+                    {freeServicesApplied.freeWashes > 0 && (
+                      <span className="mr-2">🌀 {freeServicesApplied.freeWashes} lavado(s)</span>
+                    )}
+                    {freeServicesApplied.freeDrys > 0 && (
+                      <span>☀️ {freeServicesApplied.freeDrys} secado(s)</span>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               {/* Total */}
               <div className="flex justify-between text-lg font-bold pt-2 border-t border-slate-200">
                 <span className="text-slate-800">Total</span>
-                <span className="text-slate-800">{formatCurrency(calculations.total)}</span>
+                <span className="text-slate-800">{formatCurrency(adjustedTotal)}</span>
               </div>
             </div>
           </div>
@@ -1095,7 +1386,7 @@ function TicketPanel() {
               {formatDate(calculations.promisedDate)}
             </span>
             <span className="px-2 py-0.5 bg-white/20 rounded-md">
-              {formatCurrency(calculations.total)}
+              {formatCurrency(adjustedTotal)}
             </span>
           </div>
         </button>
@@ -1118,9 +1409,12 @@ function TicketPanel() {
       
       {paymentModalOpen && (
         <PaymentModal
-          total={calculations.total}
+          total={adjustedTotal}
           subtotal={calculations.subtotal}
           taxAmount={calculations.taxAmount}
+          customerLoyalty={customerLoyalty}
+          loyaltySettings={loyaltySettings}
+          freeServicesApplied={freeServicesApplied}
           onClose={() => setPaymentModalOpen(false)}
           onComplete={async (paymentInfo) => {
             setProcessing(true);
@@ -1134,14 +1428,16 @@ function TicketPanel() {
                 is_walk_in: !state.ticket.customer,
                 is_express: state.ticket.isExpress,
                 subtotal: calculations.subtotal,
-                discount_amount: calculations.discountAmount,
+                discount_amount: calculations.discountAmount + freeServicesApplied.discountAmount, // Include free services discount
                 delivery_charge: calculations.deliveryCharge,
                 tax_amount: calculations.taxAmount,
-                total: calculations.total,
+                total: adjustedTotal, // Use adjusted total
                 total_weight: calculations.totalWeight,
                 total_bags: calculations.totalBags,
                 total_pieces: calculations.totalPieces,
-                notes: state.ticket.notes,
+                notes: state.ticket.notes + (freeServicesApplied.discountAmount > 0 
+                  ? `\n[Servicios gratis aplicados: ${freeServicesApplied.freeWashes} lavado(s), ${freeServicesApplied.freeDrys} secado(s)]` 
+                  : ''),
                 promised_date: calculations.promisedDate.toISOString(),
                 items: state.ticket.items,
                 payments: paymentInfo.payments, // Now an array of payments
@@ -1151,12 +1447,44 @@ function TicketPanel() {
               
               const newOrder = await dbAddOrder(orderData);
               
-              // Add loyalty rewards if customer is registered
+              // Handle loyalty operations if customer is registered
               if (state.ticket.customer?.id) {
-                // Calculate Lavamático subtotal to exclude from points
+                // 1. Redeem free services if applied
+                if (freeServicesApplied.freeWashes > 0 || freeServicesApplied.freeDrys > 0) {
+                  try {
+                    await redeemFreeServices(
+                      state.ticket.customer.id,
+                      state.store?.id,
+                      freeServicesApplied.freeWashes,
+                      freeServicesApplied.freeDrys,
+                      newOrder?.id
+                    );
+                    console.log(`Free services redeemed: ${freeServicesApplied.freeWashes} washes, ${freeServicesApplied.freeDrys} drys`);
+                  } catch (freeErr) {
+                    console.error('Error redeeming free services (order still completed):', freeErr);
+                  }
+                }
+                
+                // 2. Redeem loyalty points if used as payment
+                const loyaltyPayment = paymentInfo.payments.find(p => p.method === 'loyalty_points');
+                if (loyaltyPayment) {
+                  try {
+                    await redeemLoyaltyPoints(
+                      state.ticket.customer.id,
+                      state.store?.id,
+                      loyaltyPayment.loyaltyPointsUsed,
+                      newOrder?.id
+                    );
+                    console.log(`Loyalty points used as payment: B/${loyaltyPayment.loyaltyPointsUsed}`);
+                  } catch (pointsErr) {
+                    console.error('Error redeeming loyalty points (order still completed):', pointsErr);
+                  }
+                }
+                
+                // 3. Calculate Lavamático subtotal to exclude from points earning
                 const lavamaticSubtotal = calculateLavamaticSubtotal(state.ticket.items, state.sections);
                 
-                // Add points if points program is enabled (excluding Lavamático)
+                // 4. Add points if points program is enabled (excluding Lavamático)
                 if (loyaltySettings?.points_enabled && calculations.subtotal > 0) {
                   try {
                     const loyaltyResult = await addLoyaltyPointsForOrder(
@@ -1174,7 +1502,7 @@ function TicketPanel() {
                   }
                 }
                 
-                // Add punch card punches if punch card is enabled (only Lavamático with Lavado/Secado)
+                // 5. Add punch card punches if punch card is enabled (only Lavamático with Lavado/Secado)
                 if (loyaltySettings?.punch_card_enabled) {
                   try {
                     const punchResult = await addLoyaltyPunches(

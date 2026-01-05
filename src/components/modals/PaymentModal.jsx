@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, Banknote, CreditCard, Smartphone, Building2, 
-  FileText, Clock, Gift, Check, ChevronDown, ChevronUp, Hash, Plus, Trash2 
+  FileText, Clock, Gift, Check, ChevronDown, ChevronUp, Hash, Plus, Trash2, Coins, Award
 } from 'lucide-react';
 
 const paymentMethods = [
@@ -15,7 +15,17 @@ const paymentMethods = [
   { id: 'gift_card', name: 'Tarjeta Regalo', icon: Gift },
 ];
 
-function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
+function PaymentModal({ 
+  total, 
+  subtotal, 
+  taxAmount, 
+  onClose, 
+  onComplete,
+  // Loyalty props
+  customerLoyalty = null,
+  loyaltySettings = null,
+  freeServicesApplied = null, // { freeWashes: 0, freeDrys: 0, discountAmount: 0 }
+}) {
   // Track multiple payments
   const [payments, setPayments] = useState([]);
   const [activeMethod, setActiveMethod] = useState(null);
@@ -32,9 +42,19 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
   // For other payments
   const [otherAmount, setOtherAmount] = useState('');
   
+  // For loyalty payment
+  const [loyaltyAmount, setLoyaltyAmount] = useState('');
+  
   const [processing, setProcessing] = useState(false);
   
   const formatCurrency = (amount) => `B/${Number(amount).toFixed(2)}`;
+  
+  // Calculate available loyalty points
+  const availableLoyaltyPoints = customerLoyalty?.points_balance || 0;
+  const minRedemption = loyaltySettings?.min_redemption_amount || 5;
+  const canUseLoyalty = loyaltySettings?.points_enabled && 
+                        availableLoyaltyPoints >= minRedemption &&
+                        !payments.some(p => p.method === 'loyalty_points'); // Only one loyalty payment allowed
   
   // Calculate totals (round to 2 decimals to avoid floating point issues)
   const totalPaid = Math.round(payments.reduce((sum, p) => sum + p.amount, 0) * 100) / 100;
@@ -51,6 +71,10 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
     } else if (methodId === 'card') {
       setCardAmount(remainingStr);
       setCardReference('');
+    } else if (methodId === 'loyalty_points') {
+      // Pre-fill with minimum of remaining or available points
+      const maxLoyalty = Math.min(remaining, availableLoyaltyPoints);
+      setLoyaltyAmount(maxLoyalty.toFixed(2));
     } else {
       setOtherAmount(remainingStr);
     }
@@ -94,6 +118,17 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
       };
       setCardAmount('');
       setCardReference('');
+    } else if (activeMethod === 'loyalty_points') {
+      const requestedAmount = parseFloat(loyaltyAmount) || 0;
+      const amount = Math.min(requestedAmount, remaining, availableLoyaltyPoints);
+      if (amount < minRedemption) return; // Must meet minimum
+      paymentData = {
+        method: 'loyalty_points',
+        methodName: 'Puntos de Lealtad',
+        amount,
+        loyaltyPointsUsed: amount,
+      };
+      setLoyaltyAmount('');
     } else {
       const amount = Math.min(parseFloat(otherAmount) || 0, remaining);
       if (amount <= 0) return;
@@ -131,6 +166,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
         totalPaid,
         change: overpaid,
         timestamp: new Date().toISOString(),
+        freeServicesApplied, // Pass through free services info
       });
     }, 500);
   };
@@ -142,6 +178,9 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
       return parseFloat(cashAmount) > 0;
     } else if (activeMethod === 'card') {
       return parseFloat(cardAmount) > 0 && cardReference.trim().length > 0;
+    } else if (activeMethod === 'loyalty_points') {
+      const amount = parseFloat(loyaltyAmount) || 0;
+      return amount >= minRedemption && amount <= availableLoyaltyPoints;
     } else {
       return parseFloat(otherAmount) > 0;
     }
@@ -190,6 +229,27 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
               </>
             )}
           </div>
+          
+          {/* Free Services Applied Banner */}
+          {freeServicesApplied && freeServicesApplied.discountAmount > 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4">
+              <div className="flex items-center gap-2 text-emerald-700">
+                <Award className="w-5 h-5" />
+                <span className="font-medium">¡Servicios Gratis Aplicados!</span>
+              </div>
+              <div className="text-sm text-emerald-600 mt-1">
+                {freeServicesApplied.freeWashes > 0 && (
+                  <span className="mr-3">🌀 {freeServicesApplied.freeWashes} lavado(s) gratis</span>
+                )}
+                {freeServicesApplied.freeDrys > 0 && (
+                  <span>☀️ {freeServicesApplied.freeDrys} secado(s) gratis</span>
+                )}
+              </div>
+              <div className="text-xs text-emerald-500 mt-1">
+                Descuento aplicado: -{formatCurrency(freeServicesApplied.discountAmount)}
+              </div>
+            </div>
+          )}
           
           {/* Added Payments List */}
           {payments.length > 0 && (
@@ -305,6 +365,41 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                       );
                     })}
                   </div>
+                  
+                  {/* Loyalty Points Payment Option */}
+                  {canUseLoyalty && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => handleMethodSelect('loyalty_points')}
+                        className={`w-full p-3 rounded-xl border-2 transition-all flex items-center justify-between ${
+                          activeMethod === 'loyalty_points'
+                            ? 'border-emerald-500 bg-emerald-50'
+                            : 'border-emerald-200 bg-emerald-50/50 hover:border-emerald-400'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center">
+                            <Coins className={`w-5 h-5 ${
+                              activeMethod === 'loyalty_points' ? 'text-emerald-600' : 'text-emerald-500'
+                            }`} />
+                          </div>
+                          <div className="text-left">
+                            <p className={`text-sm font-medium ${
+                              activeMethod === 'loyalty_points' ? 'text-emerald-700' : 'text-emerald-600'
+                            }`}>
+                              Usar Puntos de Lealtad
+                            </p>
+                            <p className="text-xs text-emerald-500">
+                              Disponible: B/{availableLoyaltyPoints.toFixed(2)}
+                            </p>
+                          </div>
+                        </div>
+                        <Award className={`w-5 h-5 ${
+                          activeMethod === 'loyalty_points' ? 'text-emerald-600' : 'text-emerald-400'
+                        }`} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -543,7 +638,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
               )}
               
               {/* Other Payment Methods Form */}
-              {activeMethod && !['cash', 'card'].includes(activeMethod) && (
+              {activeMethod && !['cash', 'card', 'loyalty_points'].includes(activeMethod) && (
                 <div className="bg-slate-50 rounded-xl p-4 animate-slide-up">
                   <p className="text-sm font-semibold text-slate-700 mb-3">
                     Pago con {paymentMethods.find(m => m.id === activeMethod)?.name}
@@ -605,6 +700,103 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                   >
                     <Plus className="w-4 h-4" />
                     Agregar Pago de {formatCurrency(parseFloat(otherAmount) || 0)}
+                  </button>
+                </div>
+              )}
+              
+              {/* Loyalty Points Payment Form */}
+              {activeMethod === 'loyalty_points' && (
+                <div className="bg-emerald-50 rounded-xl p-4 animate-slide-up border border-emerald-200">
+                  <p className="text-sm font-semibold text-emerald-800 mb-3 flex items-center gap-2">
+                    <Coins className="w-4 h-4" />
+                    Pago con Puntos de Lealtad
+                  </p>
+                  
+                  {/* Available Balance */}
+                  <div className="bg-white/60 rounded-lg p-3 mb-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-600">Saldo disponible</span>
+                      <span className="font-bold text-emerald-700">B/{availableLoyaltyPoints.toFixed(2)}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">Mínimo para redimir: B/{minRedemption.toFixed(2)}</p>
+                  </div>
+                  
+                  {/* Amount Buttons */}
+                  <div className="mb-3">
+                    <label className="text-xs text-slate-600 mb-2 block">Monto a aplicar</label>
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <button
+                        onClick={() => setLoyaltyAmount(Math.min(remaining, availableLoyaltyPoints).toFixed(2))}
+                        className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                          parseFloat(loyaltyAmount) === Math.min(remaining, availableLoyaltyPoints)
+                            ? 'bg-emerald-500 text-white border-emerald-500'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-500'
+                        }`}
+                      >
+                        Máximo (B/{Math.min(remaining, availableLoyaltyPoints).toFixed(2)})
+                      </button>
+                      <button
+                        onClick={() => setLoyaltyAmount(minRedemption.toFixed(2))}
+                        disabled={minRedemption > Math.min(remaining, availableLoyaltyPoints)}
+                        className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                          parseFloat(loyaltyAmount) === minRedemption
+                            ? 'bg-emerald-500 text-white border-emerald-500'
+                            : minRedemption > Math.min(remaining, availableLoyaltyPoints)
+                              ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-500'
+                        }`}
+                      >
+                        Mínimo (B/{minRedemption.toFixed(2)})
+                      </button>
+                      <button
+                        onClick={() => setLoyaltyAmount(Math.min(10, remaining, availableLoyaltyPoints).toFixed(2))}
+                        disabled={10 > Math.min(remaining, availableLoyaltyPoints) || 10 < minRedemption}
+                        className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                          parseFloat(loyaltyAmount) === 10
+                            ? 'bg-emerald-500 text-white border-emerald-500'
+                            : 10 > Math.min(remaining, availableLoyaltyPoints) || 10 < minRedemption
+                              ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-500'
+                        }`}
+                      >
+                        B/10
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 text-sm">B/</span>
+                      <input
+                        type="number"
+                        value={loyaltyAmount}
+                        onChange={(e) => {
+                          const val = Math.min(parseFloat(e.target.value) || 0, remaining, availableLoyaltyPoints);
+                          setLoyaltyAmount(val > 0 ? val.toFixed(2) : e.target.value);
+                        }}
+                        className="w-full pl-9 pr-3 py-2 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+                        placeholder={Math.min(remaining, availableLoyaltyPoints).toFixed(2)}
+                        max={Math.min(remaining, availableLoyaltyPoints)}
+                        min={minRedemption}
+                        step="0.01"
+                      />
+                    </div>
+                    {parseFloat(loyaltyAmount) > 0 && parseFloat(loyaltyAmount) < minRedemption && (
+                      <p className="text-xs text-amber-600 mt-1">
+                        ⚠️ El monto mínimo para redimir es B/{minRedemption.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                  
+                  {/* Add Payment Button */}
+                  <button
+                    onClick={addPayment}
+                    disabled={parseFloat(loyaltyAmount) < minRedemption || parseFloat(loyaltyAmount) > Math.min(remaining, availableLoyaltyPoints)}
+                    className={`w-full py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
+                      parseFloat(loyaltyAmount) >= minRedemption && parseFloat(loyaltyAmount) <= Math.min(remaining, availableLoyaltyPoints)
+                        ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Award className="w-4 h-4" />
+                    Aplicar B/{(parseFloat(loyaltyAmount) || 0).toFixed(2)} en Puntos
                   </button>
                 </div>
               )}
