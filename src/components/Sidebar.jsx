@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   X, Plus, ClipboardList, BarChart3, RefreshCw, 
-  Users, FileText, Package, Settings, LogOut, Clock
+  Users, FileText, Package, Settings, LogOut
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -47,7 +47,6 @@ function Sidebar({ isOpen, onClose }) {
         { path: '/machines', label: 'Máquinas / En Proceso', icon: RefreshCw },
         { path: '/customers', label: 'Clientes', icon: Users },
         { path: '/invoices', label: 'Facturas', icon: FileText },
-        { path: '/eod', label: 'Cierre del Día', icon: Clock },
       ],
     },
   ];

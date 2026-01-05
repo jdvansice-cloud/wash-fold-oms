@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Calendar, DollarSign, CreditCard, Banknote, Calculator,
   CheckCircle, AlertTriangle, Clock, ChevronDown, ChevronUp,
@@ -12,6 +13,7 @@ import { supabase } from '../lib/supabase';
 function EODPage() {
   const { state } = useApp();
   const { appUser } = useAuth();
+  const [searchParams] = useSearchParams();
   
   // Check if user is admin
   const isAdmin = appUser?.role === 'admin';
@@ -40,8 +42,8 @@ function EODPage() {
   // Notes
   const [notes, setNotes] = useState('');
   
-  // UI State
-  const [showHistory, setShowHistory] = useState(false);
+  // UI State - check query param for auto-opening history
+  const [showHistory, setShowHistory] = useState(() => searchParams.get('history') === '1');
   const [savingClosing, setSavingClosing] = useState(false);
   const [closingHistory, setClosingHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);

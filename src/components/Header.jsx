@@ -131,21 +131,29 @@ function Header() {
                   
                   {/* Menu Items */}
                   <div className="py-1">
-                    <button className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3">
+                    <Link 
+                      to="/eod"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                    >
                       <span className="text-lg">📊</span>
                       <div>
                         <p className="font-medium">Cierre del Día</p>
                         <p className="text-xs text-slate-500">Reconciliación y reporte</p>
                       </div>
-                    </button>
+                    </Link>
                     
-                    <button className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3">
+                    <Link 
+                      to="/eod?history=1"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                    >
                       <span className="text-lg">📋</span>
                       <div>
                         <p className="font-medium">Historial de Cierres</p>
                         <p className="text-xs text-slate-500">Ver reportes anteriores</p>
                       </div>
-                    </button>
+                    </Link>
                   </div>
                   
                   <div className="border-t border-slate-100 py-1">
