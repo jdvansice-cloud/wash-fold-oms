@@ -43,7 +43,8 @@ function Sidebar({ isOpen, onClose }) {
       items: [
         { path: '/', label: 'Nueva Orden', icon: Plus },
         { path: '/orders', label: 'Órdenes', icon: ClipboardList },
-        { path: '/analytics', label: 'Analíticas', icon: BarChart3, badge: '📊' },
+        { path: '/analytics', label: 'Dashboard', icon: BarChart3, badge: '📊' },
+        { path: '/reports', label: 'Reportes', icon: FileText },
         { path: '/machines', label: 'Máquinas / En Proceso', icon: RefreshCw },
         { path: '/customers', label: 'Clientes', icon: Users },
         { path: '/invoices', label: 'Facturas', icon: FileText },

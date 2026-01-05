@@ -211,8 +211,8 @@ function AnalyticsPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-display font-bold text-slate-800">Analíticas</h1>
-          <p className="text-sm text-slate-500">Dashboard de rendimiento del negocio</p>
+          <h1 className="text-2xl font-display font-bold text-slate-800">Dashboard</h1>
+          <p className="text-sm text-slate-500">Métricas y rendimiento del negocio</p>
         </div>
         
         {/* Export Button */}

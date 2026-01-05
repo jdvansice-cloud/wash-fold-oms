@@ -9,6 +9,7 @@ import OrdersPage from './pages/OrdersPage';
 import MachinesPage from './pages/MachinesPage';
 import CustomersPage from './pages/CustomersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import EODPage from './pages/EODPage';
 import LoginPage from './pages/LoginPage';
@@ -119,6 +120,7 @@ function AppContent() {
         <Route path="/machines" element={<MachinesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/eod" element={<EODPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
