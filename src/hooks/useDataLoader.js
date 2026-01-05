@@ -4,12 +4,12 @@ import { useApp } from '../context/AppContext';
 
 // Helper to add timeout to promises
 const withTimeout = (promise, ms, errorMsg = 'Request timeout') => {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => 
-      setTimeout(() => reject(new Error(errorMsg)), ms)
-    )
-  ]);
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(errorMsg)), ms);
+  });
+  
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
 };
 
 export function useDataLoader() {
@@ -42,44 +42,56 @@ export function useDataLoader() {
     }
 
     try {
-      // Get default store with company info (with 10s timeout)
-      const { data: storeData, error: storeError } = await withTimeout(
+      console.log('Loading store data...');
+      
+      // Get default store with company info (with 30s timeout)
+      const storeResult = await withTimeout(
         supabase
           .from('stores')
           .select('*, companies(*)')
           .eq('is_active', true)
           .limit(1)
           .single(),
-        10000,
-        'Timeout al conectar con Supabase'
+        30000,
+        'Timeout al conectar con Supabase (30s)'
       );
       
-      if (storeError || !storeData) {
+      const { data: storeData, error: storeError } = storeResult;
+      
+      if (storeError) {
+        console.error('Store error:', storeError);
         setError({
           type: 'data',
-          message: 'No se encontró una tienda activa',
-          details: storeError?.message || 'Ejecuta el script SQL de schema para crear los datos iniciales'
+          message: 'Error al cargar tienda',
+          details: storeError.message || 'No se encontró una tienda activa'
         });
         setIsLoading(false);
         return;
       }
       
+      if (!storeData) {
+        setError({
+          type: 'data',
+          message: 'No se encontró una tienda activa',
+          details: 'Ejecuta el script SQL de schema para crear los datos iniciales'
+        });
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('Store loaded:', storeData.name);
       const currentStoreId = storeData.id;
       setStoreId(currentStoreId);
 
       // Get default user (non-blocking)
       getDefaultUser().then(user => {
         if (user) actions.setUser(user);
-      }).catch(console.error);
+      }).catch(err => console.error('User load error:', err));
 
-      // Load all data in parallel (with 15s timeout)
-      const [
-        { data: sections, error: sectionsError },
-        { data: products, error: productsError },
-        { data: customers, error: customersError },
-        { data: orders, error: ordersError },
-        { data: paymentMethods, error: pmError },
-      ] = await withTimeout(
+      console.log('Loading app data...');
+      
+      // Load all data in parallel (with 30s timeout)
+      const results = await withTimeout(
         Promise.all([
           supabase.from('sections').select('*').eq('store_id', currentStoreId).order('display_order'),
           supabase.from('products').select('*').eq('store_id', currentStoreId).order('display_order'),
@@ -87,9 +99,17 @@ export function useDataLoader() {
           supabase.from('orders').select('*').eq('store_id', currentStoreId).order('created_at', { ascending: false }).limit(100),
           supabase.from('payment_methods').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('display_order'),
         ]),
-        15000,
-        'Timeout al cargar datos'
+        30000,
+        'Timeout al cargar datos (30s)'
       );
+      
+      const [
+        { data: sections, error: sectionsError },
+        { data: products, error: productsError },
+        { data: customers, error: customersError },
+        { data: orders, error: ordersError },
+        { data: paymentMethods, error: pmError },
+      ] = results;
 
       // Log errors but don't fail completely
       if (sectionsError) console.error('Sections error:', sectionsError);
