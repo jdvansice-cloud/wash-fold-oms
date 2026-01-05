@@ -204,7 +204,8 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
 };
 
 // Helper to add punch card punches - ONLY for Lavamático section with Lavado/Secado products
-const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId) => {
+// Excludes free services (they don't earn new punches)
+const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, freeServicesUsed = { freeWashes: 0, freeDrys: 0 }) => {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_ANON_KEY;
   
@@ -264,8 +265,22 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId) 
       }
     });
     
+    // 4. Subtract free services - they don't earn new punches
+    const freeWashesUsed = freeServicesUsed.freeWashes || 0;
+    const freeDrysUsed = freeServicesUsed.freeDrys || 0;
+    
+    if (freeWashesUsed > 0) {
+      washPunches = Math.max(0, washPunches - freeWashesUsed);
+      console.log(`Punch card: Excluding ${freeWashesUsed} free wash(es) from punch count`);
+    }
+    
+    if (freeDrysUsed > 0) {
+      dryPunches = Math.max(0, dryPunches - freeDrysUsed);
+      console.log(`Punch card: Excluding ${freeDrysUsed} free dry(s) from punch count`);
+    }
+    
     if (washPunches === 0 && dryPunches === 0) {
-      console.log('Punch card: No Lavado/Secado products found in Lavamático section');
+      console.log('Punch card: No paid Lavado/Secado products to earn punches');
       return null;
     }
     
@@ -1524,6 +1539,7 @@ function TicketPanel() {
                 }
                 
                 // 5. Add punch card punches if punch card is enabled (only Lavamático with Lavado/Secado)
+                // Free services don't earn new punches
                 if (loyaltySettings?.punch_card_enabled) {
                   try {
                     const punchResult = await addLoyaltyPunches(
@@ -1531,7 +1547,8 @@ function TicketPanel() {
                       state.store?.id,
                       state.ticket.items,
                       state.sections,
-                      newOrder?.id
+                      newOrder?.id,
+                      { freeWashes: freeServicesApplied.freeWashes, freeDrys: freeServicesApplied.freeDrys }
                     );
                     if (punchResult?.success) {
                       if (punchResult.free_washes_earned > 0 || punchResult.free_drys_earned > 0) {
