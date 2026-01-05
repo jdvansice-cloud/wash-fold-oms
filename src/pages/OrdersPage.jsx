@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift } from 'lucide-react';
+import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift, Award, Coins, Stamp } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useDataLoader } from '../hooks/useDataLoader';
@@ -535,6 +535,87 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
                     Notas
                   </p>
                   <p className="text-sm text-amber-800 whitespace-pre-wrap">{order.notes}</p>
+                </div>
+              )}
+              
+              {/* Loyalty Rewards Earned */}
+              {orderDetails.loyaltyTransactions && orderDetails.loyaltyTransactions.length > 0 && (
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
+                  <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Award className="w-4 h-4" />
+                    Recompensas de Lealtad
+                  </p>
+                  <div className="space-y-2">
+                    {/* Points earned */}
+                    {orderDetails.loyaltyTransactions
+                      .filter(t => t.transaction_type === 'points_earned')
+                      .map((t, idx) => (
+                        <div key={`points-${idx}`} className="flex items-center justify-between bg-white/60 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Coins className="w-5 h-5 text-emerald-500" />
+                            <span className="text-sm text-slate-700">Puntos Ganados</span>
+                          </div>
+                          <span className="font-bold text-emerald-600">+B/{(t.points_amount || 0).toFixed(2)}</span>
+                        </div>
+                      ))
+                    }
+                    
+                    {/* Wash punches */}
+                    {orderDetails.loyaltyTransactions
+                      .filter(t => t.transaction_type === 'punch_wash')
+                      .map((t, idx) => (
+                        <div key={`wash-${idx}`} className="flex items-center justify-between bg-white/60 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Stamp className="w-5 h-5 text-blue-500" />
+                            <span className="text-sm text-slate-700">Sellos de Lavado</span>
+                          </div>
+                          <span className="font-bold text-blue-600">+{t.punch_count || 0} 🌀</span>
+                        </div>
+                      ))
+                    }
+                    
+                    {/* Dry punches */}
+                    {orderDetails.loyaltyTransactions
+                      .filter(t => t.transaction_type === 'punch_dry')
+                      .map((t, idx) => (
+                        <div key={`dry-${idx}`} className="flex items-center justify-between bg-white/60 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Stamp className="w-5 h-5 text-orange-500" />
+                            <span className="text-sm text-slate-700">Sellos de Secado</span>
+                          </div>
+                          <span className="font-bold text-orange-600">+{t.punch_count || 0} ☀️</span>
+                        </div>
+                      ))
+                    }
+                    
+                    {/* Free wash earned */}
+                    {orderDetails.loyaltyTransactions
+                      .filter(t => t.transaction_type === 'free_wash_earned')
+                      .map((t, idx) => (
+                        <div key={`free-wash-${idx}`} className="flex items-center justify-between bg-emerald-100 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Gift className="w-5 h-5 text-emerald-600" />
+                            <span className="text-sm font-medium text-emerald-700">¡Lavado Gratis Ganado!</span>
+                          </div>
+                          <span className="font-bold text-emerald-600">🎁 ×{t.punch_count || 1}</span>
+                        </div>
+                      ))
+                    }
+                    
+                    {/* Free dry earned */}
+                    {orderDetails.loyaltyTransactions
+                      .filter(t => t.transaction_type === 'free_dry_earned')
+                      .map((t, idx) => (
+                        <div key={`free-dry-${idx}`} className="flex items-center justify-between bg-emerald-100 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <Gift className="w-5 h-5 text-emerald-600" />
+                            <span className="text-sm font-medium text-emerald-700">¡Secado Gratis Ganado!</span>
+                          </div>
+                          <span className="font-bold text-emerald-600">🎁 ×{t.punch_count || 1}</span>
+                        </div>
+                      ))
+                    }
+                  </div>
                 </div>
               )}
             </>

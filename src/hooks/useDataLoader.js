@@ -742,10 +742,27 @@ export function useDataLoader() {
 
       if (paymentsError) throw paymentsError;
 
+      // Get loyalty transactions for this order
+      let loyaltyTransactions = [];
+      try {
+        const { data: loyaltyData, error: loyaltyError } = await supabase
+          .from('loyalty_transactions')
+          .select('*')
+          .eq('order_id', orderId);
+        
+        if (!loyaltyError && loyaltyData) {
+          loyaltyTransactions = loyaltyData;
+        }
+      } catch (loyaltyErr) {
+        // Loyalty table might not exist yet, ignore error
+        console.log('Loyalty transactions not available:', loyaltyErr);
+      }
+
       return {
         ...order,
         items: items || [],
         payments: payments || [],
+        loyaltyTransactions: loyaltyTransactions,
       };
     } catch (err) {
       console.error('Error getting order details:', err);
