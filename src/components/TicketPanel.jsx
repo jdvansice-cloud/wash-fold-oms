@@ -2,12 +2,20 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, X, User, Zap, ChevronDown, ChevronUp, 
   Trash2, Tag, Truck, MessageSquare, AlertCircle,
-  Award, Coins, Stamp, Gift
+  Award, Coins, Stamp, Gift, Printer
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import CustomerSearchModal from './modals/CustomerSearchModal';
 import PaymentModal from './modals/PaymentModal';
+import { 
+  generateReceiptData, 
+  generateReceiptText, 
+  printReceipt, 
+  saveReceiptToStorage,
+  isPrinterConnected,
+  connectPrinter 
+} from '../utils/receiptPrinter';
 
 // Helper to fetch customer loyalty data
 const fetchCustomerLoyalty = async (customerId) => {
@@ -714,6 +722,10 @@ function TicketPanel() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [processing, setProcessing] = useState(false);
   
+  // Printer state
+  const [printerConnected, setPrinterConnected] = useState(false);
+  const [printingReceipt, setPrintingReceipt] = useState(false);
+  
   // Loyalty state
   const [customerLoyalty, setCustomerLoyalty] = useState(null);
   const [loyaltySettings, setLoyaltySettings] = useState(null);
@@ -1402,24 +1414,62 @@ function TicketPanel() {
           </div>
         )}
         
+        {/* Printer Connection Button */}
+        <button
+          onClick={async () => {
+            try {
+              if (printerConnected) {
+                // Already connected, could add disconnect here
+                console.log('Printer already connected');
+              } else {
+                await connectPrinter();
+                setPrinterConnected(true);
+              }
+            } catch (err) {
+              console.error('Printer connection error:', err);
+              alert('Error al conectar impresora: ' + err.message);
+            }
+          }}
+          className={`w-full py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all ${
+            printerConnected
+              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+              : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
+          }`}
+        >
+          <Printer className="w-4 h-4" />
+          {printerConnected ? 'Impresora conectada' : 'Conectar impresora'}
+          {printerConnected && (
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+          )}
+        </button>
+        
         {/* Process Button - Always Visible */}
         <button
           onClick={() => setPaymentModalOpen(true)}
-          disabled={!canProcess}
+          disabled={!canProcess || printingReceipt}
           className={`w-full py-4 rounded-xl font-semibold text-white transition-all ${
-            canProcess 
+            canProcess && !printingReceipt
               ? 'bg-success-500 hover:bg-success-600 shadow-lg hover:shadow-xl active:scale-[0.98]' 
               : 'bg-slate-300 cursor-not-allowed'
           }`}
         >
           <div className="flex items-center justify-center gap-3">
-            <span>Procesar</span>
-            <span className={canProcess ? "text-success-200" : "text-slate-400"}>
-              {formatDate(calculations.promisedDate)}
-            </span>
-            <span className="px-2 py-0.5 bg-white/20 rounded-md">
-              {formatCurrency(adjustedTotal)}
-            </span>
+            {printingReceipt ? (
+              <>
+                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Imprimiendo...</span>
+              </>
+            ) : (
+              <>
+                <span>Procesar</span>
+                <span className={canProcess ? "text-success-200" : "text-slate-400"}>
+                  {formatDate(calculations.promisedDate)}
+                </span>
+                <span className="px-2 py-0.5 bg-white/20 rounded-md">
+                  {formatCurrency(adjustedTotal)}
+                </span>
+              </>
+            )}
           </div>
         </button>
       </div>
@@ -1479,6 +1529,9 @@ function TicketPanel() {
               
               const newOrder = await dbAddOrder(orderData);
               
+              // Initialize loyalty info for receipt (will be populated if customer is registered)
+              let loyaltyInfoForReceipt = null;
+              
               // Handle loyalty operations if customer is registered
               if (state.ticket.customer?.id) {
                 // 1. Redeem free services if applied
@@ -1520,6 +1573,10 @@ function TicketPanel() {
                 // Loyalty points used as payment should not generate new points
                 const totalExclusions = lavamaticSubtotal + loyaltyPointsUsedAsPayment + freeServicesApplied.discountAmount;
                 
+                // Track loyalty results for receipt
+                let loyaltyResultForReceipt = null;
+                let punchResultForReceipt = null;
+                
                 // 4. Add points if points program is enabled (excluding Lavamático, loyalty payment, and free services)
                 if (loyaltySettings?.points_enabled && calculations.subtotal > 0) {
                   try {
@@ -1531,6 +1588,7 @@ function TicketPanel() {
                       totalExclusions // Pass total exclusions (Lavamático + loyalty points used + free services)
                     );
                     if (loyaltyResult?.success) {
+                      loyaltyResultForReceipt = loyaltyResult;
                       console.log(`Loyalty points added: B/${loyaltyResult.points_earned} earned, new balance: B/${loyaltyResult.balance_after}`);
                     }
                   } catch (loyaltyErr) {
@@ -1551,6 +1609,7 @@ function TicketPanel() {
                       { freeWashes: freeServicesApplied.freeWashes, freeDrys: freeServicesApplied.freeDrys }
                     );
                     if (punchResult?.success) {
+                      punchResultForReceipt = punchResult;
                       if (punchResult.free_washes_earned > 0 || punchResult.free_drys_earned > 0) {
                         // Could show a toast notification here
                         console.log(`🎉 Customer earned free services!`);
@@ -1559,6 +1618,94 @@ function TicketPanel() {
                   } catch (punchErr) {
                     console.error('Error adding punch card punches (order still completed):', punchErr);
                   }
+                }
+                
+                // Build loyalty info for receipt
+                loyaltyInfoForReceipt = {
+                  pointsEarned: loyaltyResultForReceipt?.points_earned || 0,
+                  pointsBalance: loyaltyResultForReceipt?.balance_after || (customerLoyalty?.points_balance - loyaltyPointsUsedAsPayment) || 0,
+                  pointsUsed: loyaltyPointsUsedAsPayment,
+                  washPunches: punchResultForReceipt?.wash_punches_added || 0,
+                  dryPunches: punchResultForReceipt?.dry_punches_added || 0,
+                  washPunchesTotal: punchResultForReceipt?.wash_punches_after || customerLoyalty?.wash_punches || 0,
+                  dryPunchesTotal: punchResultForReceipt?.dry_punches_after || customerLoyalty?.dry_punches || 0,
+                  punchesRequired: loyaltySettings?.punches_required || 10,
+                  freeWashesEarned: punchResultForReceipt?.free_washes_earned || 0,
+                  freeDrysEarned: punchResultForReceipt?.free_drys_earned || 0,
+                  freeWashesAvailable: punchResultForReceipt?.pending_free_washes_after || (customerLoyalty?.pending_free_washes - freeServicesApplied.freeWashes) || 0,
+                  freeDrysAvailable: punchResultForReceipt?.pending_free_drys_after || (customerLoyalty?.pending_free_drys - freeServicesApplied.freeDrys) || 0,
+                  freeServicesUsed: {
+                    washes: freeServicesApplied.freeWashes || 0,
+                    drys: freeServicesApplied.freeDrys || 0,
+                  },
+                };
+              }
+              
+              // === RECEIPT PRINTING AND SAVING ===
+              if (newOrder) {
+                try {
+                  setPrintingReceipt(true);
+                  
+                  // Generate receipt data with loyalty info
+                  const receiptData = generateReceiptData(
+                    newOrder,
+                    state.company,
+                    state.store,
+                    state.ticket.items,
+                    paymentInfo.payments,
+                    loyaltyInfoForReceipt
+                  );
+                  
+                  // Generate text version
+                  const receiptText = generateReceiptText(receiptData);
+                  
+                  // Save receipt to Supabase Storage (async, don't wait)
+                  saveReceiptToStorage(
+                    receiptText, 
+                    newOrder.order_number, 
+                    state.store?.id
+                  ).then(receiptPath => {
+                    if (receiptPath) {
+                      // Update order with receipt path (fire and forget)
+                      const url = import.meta.env.SUPABASE_URL;
+                      const key = import.meta.env.SUPABASE_ANON_KEY;
+                      if (url && key) {
+                        fetch(`${url}/rest/v1/orders?id=eq.${newOrder.id}`, {
+                          method: 'PATCH',
+                          headers: {
+                            'apikey': key,
+                            'Authorization': `Bearer ${key}`,
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({ receipt_path: receiptPath }),
+                        }).catch(e => console.log('Could not save receipt path:', e));
+                      }
+                    }
+                  }).catch(e => console.log('Receipt storage error (non-critical):', e));
+                  
+                  // Print receipt (if printer connected)
+                  if (isPrinterConnected()) {
+                    // Check if cash payment - open drawer
+                    const hasCashPayment = paymentInfo.payments.some(p => p.method === 'cash');
+                    await printReceipt(receiptData, hasCashPayment);
+                    console.log('Receipt printed successfully');
+                  } else {
+                    // Try to connect and print
+                    try {
+                      await connectPrinter();
+                      setPrinterConnected(true);
+                      const hasCashPayment = paymentInfo.payments.some(p => p.method === 'cash');
+                      await printReceipt(receiptData, hasCashPayment);
+                      console.log('Receipt printed successfully');
+                    } catch (printerErr) {
+                      console.log('Printer not available, skipping print:', printerErr.message);
+                      // Don't show error - printer might not be set up
+                    }
+                  }
+                } catch (receiptErr) {
+                  console.error('Receipt error (order still completed):', receiptErr);
+                } finally {
+                  setPrintingReceipt(false);
                 }
               }
               

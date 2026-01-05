@@ -5,11 +5,18 @@ import {
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
   GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
-  Award, Stamp, Coins, Info
+  Award, Stamp, Coins, Info, Printer
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
+import { 
+  connectPrinter, 
+  disconnectPrinter, 
+  isPrinterConnected, 
+  printTestPage,
+  openCashDrawer
+} from '../utils/receiptPrinter';
 
 function SettingsPage() {
   const { state } = useApp();
@@ -21,6 +28,7 @@ function SettingsPage() {
     { id: 'workflow', label: 'Flujo de Trabajo', icon: Clock, description: 'Tiempos de servicio' },
     { id: 'users', label: 'Usuarios', icon: Users, description: 'Gestión de usuarios' },
     { id: 'payments', label: 'Métodos de Pago', icon: CreditCard, description: 'Formas de pago' },
+    { id: 'printer', label: 'Impresora', icon: Printer, description: 'Impresora de recibos' },
     { id: 'notifications', label: 'Notificaciones', icon: Bell, description: 'Plantillas de email' },
     { id: 'products', label: 'Productos', icon: Package, description: 'Gestión de productos' },
     { id: 'promotions', label: 'Promociones', icon: Tag, description: 'Descuentos y ofertas' },
@@ -75,6 +83,7 @@ function SettingsPage() {
           {activeSection === 'workflow' && <WorkflowSettings />}
           {activeSection === 'users' && <UsersSettings />}
           {activeSection === 'payments' && <PaymentMethodsSettings />}
+          {activeSection === 'printer' && <PrinterSettings />}
           {activeSection === 'notifications' && <NotificationsSettings />}
           {activeSection === 'products' && <ProductsSettings />}
           {activeSection === 'promotions' && <PromotionsSettings />}
@@ -4921,6 +4930,192 @@ function LoyaltySettings() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Printer Settings Section
+function PrinterSettings() {
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const [message, setMessage] = useState(null);
+  
+  // Check connection status on mount
+  useEffect(() => {
+    setConnected(isPrinterConnected());
+  }, []);
+  
+  const handleConnect = async () => {
+    setConnecting(true);
+    setMessage(null);
+    try {
+      await connectPrinter();
+      setConnected(true);
+      setMessage({ type: 'success', text: 'Impresora conectada exitosamente' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    }
+    setConnecting(false);
+  };
+  
+  const handleDisconnect = async () => {
+    try {
+      await disconnectPrinter();
+      setConnected(false);
+      setMessage({ type: 'success', text: 'Impresora desconectada' });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    }
+  };
+  
+  const handleTestPrint = async () => {
+    setPrinting(true);
+    setMessage(null);
+    try {
+      await printTestPage();
+      setMessage({ type: 'success', text: 'Página de prueba impresa' });
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Error al imprimir: ' + err.message });
+    }
+    setPrinting(false);
+  };
+  
+  const handleOpenDrawer = async () => {
+    setMessage(null);
+    try {
+      await openCashDrawer();
+      setMessage({ type: 'success', text: 'Caja abierta' });
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Error al abrir caja: ' + err.message });
+    }
+  };
+  
+  return (
+    <div className="card p-6">
+      <h2 className="text-lg font-semibold text-slate-800 mb-6 flex items-center gap-2">
+        <Printer className="w-5 h-5 text-primary-500" />
+        Impresora de Recibos
+      </h2>
+      
+      {/* Browser Support Warning */}
+      {!navigator.usb && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+          <p className="text-sm text-amber-700 font-medium">
+            ⚠️ Tu navegador no soporta WebUSB
+          </p>
+          <p className="text-xs text-amber-600 mt-1">
+            Para conectar la impresora directamente, usa Google Chrome o Microsoft Edge.
+          </p>
+        </div>
+      )}
+      
+      {/* Connection Status */}
+      <div className="mb-6 p-4 bg-slate-50 rounded-xl">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+            <div>
+              <p className="font-medium text-slate-800">
+                {connected ? 'Impresora Conectada' : 'Sin Conexión'}
+              </p>
+              <p className="text-sm text-slate-500">
+                {connected ? 'Epson TM-T20III lista para imprimir' : 'Conecta tu impresora térmica'}
+              </p>
+            </div>
+          </div>
+          
+          {connected ? (
+            <button
+              onClick={handleDisconnect}
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+            >
+              Desconectar
+            </button>
+          ) : (
+            <button
+              onClick={handleConnect}
+              disabled={connecting || !navigator.usb}
+              className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {connecting ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Conectando...
+                </>
+              ) : (
+                'Conectar Impresora'
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+      
+      {/* Message */}
+      {message && (
+        <div className={`mb-6 p-3 rounded-lg ${
+          message.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+        }`}>
+          <p className="text-sm">{message.text}</p>
+        </div>
+      )}
+      
+      {/* Actions */}
+      {connected && (
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+            Acciones
+          </h3>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={handleTestPrint}
+              disabled={printing}
+              className="p-4 bg-slate-50 hover:bg-slate-100 rounded-xl text-left transition-colors disabled:opacity-50"
+            >
+              <Printer className="w-6 h-6 text-primary-500 mb-2" />
+              <p className="font-medium text-slate-800">Imprimir Prueba</p>
+              <p className="text-xs text-slate-500">Imprime una página de prueba</p>
+            </button>
+            
+            <button
+              onClick={handleOpenDrawer}
+              className="p-4 bg-slate-50 hover:bg-slate-100 rounded-xl text-left transition-colors"
+            >
+              <Package className="w-6 h-6 text-emerald-500 mb-2" />
+              <p className="font-medium text-slate-800">Abrir Caja</p>
+              <p className="text-xs text-slate-500">Abre el cajón de dinero</p>
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Setup Instructions */}
+      <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
+        <h3 className="text-sm font-semibold text-blue-800 mb-2">
+          Instrucciones de Configuración
+        </h3>
+        <ol className="text-sm text-blue-700 space-y-1 list-decimal list-inside">
+          <li>Conecta la impresora Epson TM-T20III por USB</li>
+          <li>Haz clic en "Conectar Impresora"</li>
+          <li>Selecciona tu impresora en el diálogo del navegador</li>
+          <li>Imprime una página de prueba para verificar</li>
+        </ol>
+        <p className="text-xs text-blue-600 mt-3">
+          Nota: Los recibos se guardan automáticamente en Supabase Storage y se imprimen al procesar cada venta.
+        </p>
+      </div>
+      
+      {/* Supported Printers */}
+      <div className="mt-4 text-xs text-slate-400">
+        <p className="font-medium mb-1">Impresoras Soportadas:</p>
+        <ul className="list-disc list-inside">
+          <li>Epson TM-T20III (recomendada)</li>
+          <li>Epson TM-T88 Series</li>
+          <li>Star Micronics TSP Series</li>
+          <li>Otras impresoras ESC/POS compatibles</li>
+        </ul>
       </div>
     </div>
   );
