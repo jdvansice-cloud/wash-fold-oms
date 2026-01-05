@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Plus, X, User, Zap, ChevronDown, ChevronUp, 
   Trash2, Tag, Truck, MessageSquare, AlertCircle,
-  Award, Coins, Stamp, Gift, Printer
+  Award, Coins, Stamp, Gift
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
@@ -13,8 +13,7 @@ import {
   generateReceiptText, 
   printReceipt, 
   saveReceiptToStorage,
-  isPrinterConnected,
-  connectPrinter 
+  isPrinterConnected
 } from '../utils/receiptPrinter';
 
 // Helper to fetch customer loyalty data
@@ -723,7 +722,6 @@ function TicketPanel() {
   const [processing, setProcessing] = useState(false);
   
   // Printer state
-  const [printerConnected, setPrinterConnected] = useState(false);
   const [printingReceipt, setPrintingReceipt] = useState(false);
   
   // Loyalty state
@@ -1414,35 +1412,6 @@ function TicketPanel() {
           </div>
         )}
         
-        {/* Printer Connection Button */}
-        <button
-          onClick={async () => {
-            try {
-              if (printerConnected) {
-                // Already connected, could add disconnect here
-                console.log('Printer already connected');
-              } else {
-                await connectPrinter();
-                setPrinterConnected(true);
-              }
-            } catch (err) {
-              console.error('Printer connection error:', err);
-              alert('Error al conectar impresora: ' + err.message);
-            }
-          }}
-          className={`w-full py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-all ${
-            printerConnected
-              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
-          }`}
-        >
-          <Printer className="w-4 h-4" />
-          {printerConnected ? 'Impresora conectada' : 'Conectar impresora'}
-          {printerConnected && (
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-          )}
-        </button>
-        
         {/* Process Button - Always Visible */}
         <button
           onClick={() => setPaymentModalOpen(true)}
@@ -1659,18 +1628,22 @@ function TicketPanel() {
                   // Generate text version
                   const receiptText = generateReceiptText(receiptData);
                   
-                  // Save receipt to Supabase Storage (async, don't wait)
-                  saveReceiptToStorage(
+                  // Save receipt to Supabase Storage
+                  console.log('Saving receipt for order:', newOrder.order_number, 'store:', state.store?.id);
+                  const receiptPath = await saveReceiptToStorage(
                     receiptText, 
                     newOrder.order_number, 
                     state.store?.id
-                  ).then(receiptPath => {
-                    if (receiptPath) {
-                      // Update order with receipt path (fire and forget)
-                      const url = import.meta.env.SUPABASE_URL;
-                      const key = import.meta.env.SUPABASE_ANON_KEY;
-                      if (url && key) {
-                        fetch(`${url}/rest/v1/orders?id=eq.${newOrder.id}`, {
+                  );
+                  
+                  if (receiptPath) {
+                    console.log('Receipt saved, updating order with path:', receiptPath);
+                    // Update order with receipt path
+                    const url = import.meta.env.SUPABASE_URL;
+                    const key = import.meta.env.SUPABASE_ANON_KEY;
+                    if (url && key) {
+                      try {
+                        await fetch(`${url}/rest/v1/orders?id=eq.${newOrder.id}`, {
                           method: 'PATCH',
                           headers: {
                             'apikey': key,
@@ -1678,29 +1651,25 @@ function TicketPanel() {
                             'Content-Type': 'application/json',
                           },
                           body: JSON.stringify({ receipt_path: receiptPath }),
-                        }).catch(e => console.log('Could not save receipt path:', e));
+                        });
+                        console.log('Order updated with receipt path');
+                      } catch (e) {
+                        console.error('Could not save receipt path to order:', e);
                       }
                     }
-                  }).catch(e => console.log('Receipt storage error (non-critical):', e));
+                  } else {
+                    console.warn('Receipt was not saved - check Supabase Storage bucket and policies');
+                  }
                   
-                  // Print receipt (if printer connected)
+                  // Print receipt (if printer connected in settings)
                   if (isPrinterConnected()) {
                     // Check if cash payment - open drawer
                     const hasCashPayment = paymentInfo.payments.some(p => p.method === 'cash');
                     await printReceipt(receiptData, hasCashPayment);
                     console.log('Receipt printed successfully');
                   } else {
-                    // Try to connect and print
-                    try {
-                      await connectPrinter();
-                      setPrinterConnected(true);
-                      const hasCashPayment = paymentInfo.payments.some(p => p.method === 'cash');
-                      await printReceipt(receiptData, hasCashPayment);
-                      console.log('Receipt printed successfully');
-                    } catch (printerErr) {
-                      console.log('Printer not available, skipping print:', printerErr.message);
-                      // Don't show error - printer might not be set up
-                    }
+                    // Printer not connected - just log, don't try to auto-connect
+                    console.log('Printer not connected. Connect in Settings > Impresora to enable printing.');
                   }
                 } catch (receiptErr) {
                   console.error('Receipt error (order still completed):', receiptErr);

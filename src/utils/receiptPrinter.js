@@ -843,16 +843,16 @@ export async function openCashDrawer() {
  */
 export async function saveReceiptToStorage(receiptText, orderNumber, storeId) {
   try {
-    const url = import.meta.env.SUPABASE_URL;
-    const key = import.meta.env.SUPABASE_ANON_KEY;
+    // Import supabase client dynamically to avoid circular dependencies
+    const { supabase, isConfigured } = await import('../lib/supabase.js');
     
-    if (!url || !key) {
+    if (!isConfigured) {
       console.warn('Supabase not configured for receipt storage');
       return null;
     }
     
     if (!storeId) {
-      console.warn('No storeId provided for receipt storage');
+      console.warn('No storeId provided for receipt storage, using "default"');
       storeId = 'default';
     }
     
@@ -865,37 +865,33 @@ export async function saveReceiptToStorage(receiptText, orderNumber, storeId) {
     
     console.log('Saving receipt to storage:', filename);
     
-    // Upload to Supabase Storage
-    const response = await fetch(`${url}/storage/v1/object/receipts/${filename}`, {
-      method: 'POST',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'text/plain',
-        'x-upsert': 'true',
-      },
-      body: receiptText,
-    });
+    // Convert text to blob
+    const blob = new Blob([receiptText], { type: 'text/plain' });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Receipt storage error:', response.status, errorText);
+    // Upload to Supabase Storage using the client
+    const { data, error } = await supabase.storage
+      .from('receipts')
+      .upload(filename, blob, {
+        contentType: 'text/plain',
+        upsert: true
+      });
+    
+    if (error) {
+      console.error('Receipt storage error:', error.message);
       
-      // Common error: bucket doesn't exist
-      if (response.status === 404 || errorText.includes('not found')) {
-        console.error('The "receipts" bucket may not exist. Run supabase-receipts-storage.sql to create it.');
+      // Common errors
+      if (error.message.includes('not found') || error.message.includes('does not exist')) {
+        console.error('The "receipts" bucket may not exist. Create it in Supabase Dashboard > Storage.');
       }
-      // Permission error
-      if (response.status === 403 || response.status === 401) {
-        console.error('Permission denied. Check RLS policies on the receipts bucket.');
+      if (error.message.includes('permission') || error.message.includes('policy')) {
+        console.error('Permission denied. Run supabase-receipts-storage.sql to set up RLS policies.');
       }
       
       return null;
     }
     
-    const result = await response.json();
-    console.log('Receipt saved successfully:', filename);
-    return filename;
+    console.log('Receipt saved successfully:', data?.path || filename);
+    return data?.path || filename;
   } catch (error) {
     console.error('Error saving receipt to storage:', error);
     return null;
