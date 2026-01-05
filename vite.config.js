@@ -5,6 +5,16 @@ export default defineConfig(({ mode }) => {
   // Load env file based on mode
   const env = loadEnv(mode, process.cwd(), '')
   
+  // Get Supabase vars - check both loadEnv result AND process.env (for Vercel)
+  const supabaseUrl = env.SUPABASE_URL || process.env.SUPABASE_URL || ''
+  const supabaseAnonKey = env.SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || ''
+  
+  console.log('Build environment:', {
+    mode,
+    hasSupabaseUrl: !!supabaseUrl,
+    hasSupabaseKey: !!supabaseAnonKey,
+  })
+  
   return {
     plugins: [react()],
     server: {
@@ -13,8 +23,8 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       // Expose specific env vars to the client without VITE_ prefix
-      'import.meta.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
-      'import.meta.env.SUPABASE_ANON_KEY': JSON.stringify(env.SUPABASE_ANON_KEY),
+      'import.meta.env.SUPABASE_URL': JSON.stringify(supabaseUrl),
+      'import.meta.env.SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
     }
   }
 })

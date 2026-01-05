@@ -2,14 +2,24 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isConfigured, getDefaultStoreId, getDefaultUser } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 
-// Helper to add timeout to promises
-const withTimeout = (promise, ms, errorMsg = 'Request timeout') => {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(errorMsg)), ms);
+// Simple timeout helper
+const withTimeout = (promise, ms, label = 'Query') => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      console.warn(`${label} timed out after ${ms}ms`);
+      resolve({ data: null, error: { message: `Timeout: ${label} excedió ${ms/1000}s` } });
+    }, ms);
+    
+    promise
+      .then(result => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch(err => {
+        clearTimeout(timer);
+        reject(err);
+      });
   });
-  
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
 };
 
 export function useDataLoader() {
@@ -30,8 +40,12 @@ export function useDataLoader() {
     setIsLoading(true);
     setError(null);
 
+    console.log('=== DATA LOADER START ===', new Date().toISOString());
+    console.log('Supabase configured:', isConfigured);
+
     // Check if Supabase is configured
     if (!isConfigured) {
+      console.log('Supabase NOT configured');
       setError({
         type: 'config',
         message: 'Supabase no está configurado',
@@ -42,34 +56,37 @@ export function useDataLoader() {
     }
 
     try {
-      console.log('Loading store data...');
+      console.log('1. Fetching store...');
+      const startTime = Date.now();
       
-      // Get default store with company info (with 30s timeout)
-      const storeResult = await withTimeout(
+      // Query store with 20 second timeout
+      const { data: storeData, error: storeError } = await withTimeout(
         supabase
           .from('stores')
           .select('*, companies(*)')
           .eq('is_active', true)
           .limit(1)
           .single(),
-        30000,
-        'Timeout al conectar con Supabase (30s)'
+        20000,
+        'Store query'
       );
       
-      const { data: storeData, error: storeError } = storeResult;
+      console.log('1. Store query completed in', Date.now() - startTime, 'ms');
+      console.log('1. Store result:', storeData ? 'OK' : 'NULL', storeError ? `Error: ${storeError.message}` : '');
       
       if (storeError) {
         console.error('Store error:', storeError);
         setError({
-          type: 'data',
+          type: 'connection',
           message: 'Error al cargar tienda',
-          details: storeError.message || 'No se encontró una tienda activa'
+          details: storeError.message
         });
         setIsLoading(false);
         return;
       }
       
       if (!storeData) {
+        console.log('No store data found');
         setError({
           type: 'data',
           message: 'No se encontró una tienda activa',
@@ -79,7 +96,7 @@ export function useDataLoader() {
         return;
       }
       
-      console.log('Store loaded:', storeData.name);
+      console.log('2. Store loaded:', storeData.name);
       const currentStoreId = storeData.id;
       setStoreId(currentStoreId);
 
@@ -88,28 +105,31 @@ export function useDataLoader() {
         if (user) actions.setUser(user);
       }).catch(err => console.error('User load error:', err));
 
-      console.log('Loading app data...');
+      console.log('3. Loading app data...');
+      const dataStartTime = Date.now();
       
-      // Load all data in parallel (with 30s timeout)
-      const results = await withTimeout(
-        Promise.all([
-          supabase.from('sections').select('*').eq('store_id', currentStoreId).order('display_order'),
-          supabase.from('products').select('*').eq('store_id', currentStoreId).order('display_order'),
-          supabase.from('customers').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('first_name'),
-          supabase.from('orders').select('*').eq('store_id', currentStoreId).order('created_at', { ascending: false }).limit(100),
-          supabase.from('payment_methods').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('display_order'),
-        ]),
-        30000,
-        'Timeout al cargar datos (30s)'
-      );
-      
+      // Load all data in parallel with 15s timeout per query
       const [
-        { data: sections, error: sectionsError },
-        { data: products, error: productsError },
-        { data: customers, error: customersError },
-        { data: orders, error: ordersError },
-        { data: paymentMethods, error: pmError },
-      ] = results;
+        sectionsResult,
+        productsResult,
+        customersResult,
+        ordersResult,
+        paymentMethodsResult,
+      ] = await Promise.all([
+        withTimeout(supabase.from('sections').select('*').eq('store_id', currentStoreId).order('display_order'), 15000, 'Sections'),
+        withTimeout(supabase.from('products').select('*').eq('store_id', currentStoreId).order('display_order'), 15000, 'Products'),
+        withTimeout(supabase.from('customers').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('first_name'), 15000, 'Customers'),
+        withTimeout(supabase.from('orders').select('*').eq('store_id', currentStoreId).order('created_at', { ascending: false }).limit(100), 15000, 'Orders'),
+        withTimeout(supabase.from('payment_methods').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('display_order'), 15000, 'PaymentMethods'),
+      ]);
+
+      console.log('3. Data queries completed in', Date.now() - dataStartTime, 'ms');
+
+      const { data: sections, error: sectionsError } = sectionsResult;
+      const { data: products, error: productsError } = productsResult;
+      const { data: customers, error: customersError } = customersResult;
+      const { data: orders, error: ordersError } = ordersResult;
+      const { data: paymentMethods, error: pmError } = paymentMethodsResult;
 
       // Log errors but don't fail completely
       if (sectionsError) console.error('Sections error:', sectionsError);
@@ -136,7 +156,7 @@ export function useDataLoader() {
         });
       }
       
-      console.log('Data loaded from Supabase:', {
+      console.log('=== DATA LOADER SUCCESS ===', {
         store: storeData.name,
         company: storeData.companies?.name,
         sections: sections?.length || 0,
@@ -144,10 +164,11 @@ export function useDataLoader() {
         customers: customers?.length || 0,
         orders: orders?.length || 0,
         paymentMethods: paymentMethods?.length || 0,
+        totalTime: Date.now() - startTime + 'ms'
       });
 
     } catch (err) {
-      console.error('Error loading data:', err);
+      console.error('=== DATA LOADER ERROR ===', err);
       setError({
         type: 'connection',
         message: 'Error de conexión',
@@ -156,6 +177,7 @@ export function useDataLoader() {
     }
 
     setIsLoading(false);
+    console.log('=== DATA LOADER END ===');
   };
 
   // Helper function to send notification emails
