@@ -192,7 +192,13 @@ function OrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredOrders.map((order) => (
+              {filteredOrders.map((order) => {
+                // Find original order number if this is a refund
+                const originalOrder = order.status === 'refund' && order.refund_for_order_id
+                  ? state.orders.find(o => o.id === order.refund_for_order_id)
+                  : null;
+                
+                return (
                 <tr 
                   key={order.id}
                   className={`hover:bg-slate-50 transition-colors cursor-pointer ${
@@ -212,6 +218,11 @@ function OrdersPage() {
                         <RotateCcw className="w-4 h-4 text-rose-500" />
                       )}
                     </div>
+                    {originalOrder && (
+                      <p className="text-xs text-rose-500 mt-0.5">
+                        Ref. Orden #{originalOrder.order_number}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-4">
                     <p className="font-medium text-slate-700">{order.customer_name}</p>
@@ -237,7 +248,7 @@ function OrdersPage() {
                     </button>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
@@ -259,6 +270,7 @@ function OrdersPage() {
           orderDetails={orderDetails}
           loadingDetails={loadingDetails}
           isAdmin={isAdmin}
+          allOrders={state.orders}
           onClose={() => {
             setSelectedOrder(null);
             setOrderDetails(null);
@@ -290,7 +302,7 @@ function OrdersPage() {
 }
 
 // Order Details Modal
-function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, onClose, onStatusChange, onRefund }) {
+function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOrders, onClose, onStatusChange, onRefund }) {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [processingRefund, setProcessingRefund] = useState(false);
@@ -302,6 +314,11 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, onClo
   const currentStatusIndex = statusOrder.indexOf(order.status);
   const nextStatus = currentStatusIndex >= 0 && currentStatusIndex < statusOrder.length - 1 
     ? statusOrder[currentStatusIndex + 1] 
+    : null;
+  
+  // Find original order if this is a refund
+  const originalOrder = order.status === 'refund' && order.refund_for_order_id && allOrders
+    ? allOrders.find(o => o.id === order.refund_for_order_id)
     : null;
   
   // Check if order can be refunded
@@ -334,6 +351,11 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, onClo
               )}
             </div>
             <p className="text-sm text-slate-500">{order.customer_name}</p>
+            {originalOrder && (
+              <p className="text-sm text-rose-500 font-medium">
+                Reembolso de Orden #{originalOrder.order_number}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}

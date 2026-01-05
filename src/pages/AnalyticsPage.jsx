@@ -507,29 +507,45 @@ function AnalyticsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {kpis.filteredOrders.slice(0, 10).map((order) => (
-              <tr key={order.id} className="hover:bg-slate-50">
+            {kpis.filteredOrders.slice(0, 10).map((order) => {
+              // Find original order number if this is a refund
+              const originalOrder = order.status === 'refund' && order.refund_for_order_id
+                ? state.orders.find(o => o.id === order.refund_for_order_id)
+                : null;
+              
+              return (
+              <tr key={order.id} className={`hover:bg-slate-50 ${order.status === 'refund' ? 'bg-rose-50' : ''}`}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-slate-800">#{order.order_number}</span>
+                    <span className={`font-medium ${order.total < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
+                      #{order.order_number}
+                    </span>
                     {order.is_express && (
                       <span className="badge bg-warning-100 text-warning-700 text-xs">Express</span>
                     )}
+                    {order.status === 'refund' && (
+                      <RotateCcw className="w-3 h-3 text-rose-500" />
+                    )}
                   </div>
+                  {originalOrder && (
+                    <p className="text-xs text-rose-500 mt-0.5">
+                      Ref. Orden #{originalOrder.order_number}
+                    </p>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-slate-600">{order.customer_name}</td>
                 <td className="px-4 py-3 text-sm text-slate-500">{formatDate(order.created_at)}</td>
                 <td className="px-4 py-3 text-right text-slate-600">
                   {order.total_weight?.toFixed(2) || '0.00'} kg
                 </td>
-                <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                <td className={`px-4 py-3 text-right font-semibold ${order.total < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
                   {formatCurrency(order.total || 0)}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <StatusBadge status={order.status} />
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
         
