@@ -3,6 +3,78 @@ import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
 
+// Raw fetch helper for user lookup
+const fetchAppUser = async (authId, email) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key) return null;
+  
+  try {
+    // First try by auth_id
+    if (authId) {
+      console.log('Fetching app user for auth_id:', authId);
+      const response = await fetch(`${url}/rest/v1/users?auth_id=eq.${authId}&select=*`, {
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('App user lookup by auth_id result:', data);
+        
+        if (data && data.length > 0) {
+          return data[0];
+        }
+      }
+    }
+    
+    // Fallback: try by email
+    if (email) {
+      console.log('Fallback: Fetching app user for email:', email);
+      const response = await fetch(`${url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=*`, {
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('App user lookup by email result:', data);
+        
+        if (data && data.length > 0) {
+          // Update the user's auth_id if it's missing
+          const foundUser = data[0];
+          if (!foundUser.auth_id && authId) {
+            console.log('Updating user auth_id...');
+            await fetch(`${url}/rest/v1/users?id=eq.${foundUser.id}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': key,
+                'Authorization': `Bearer ${key}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=representation'
+              },
+              body: JSON.stringify({ auth_id: authId })
+            });
+            foundUser.auth_id = authId;
+          }
+          return foundUser;
+        }
+      }
+    }
+    
+    console.log('No app user found for auth_id:', authId, 'or email:', email);
+    return null;
+  } catch (err) {
+    console.error('Error fetching app user:', err);
+    return null;
+  }
+};
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(null);
@@ -31,18 +103,11 @@ export function AuthProvider({ children }) {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('auth_id', session.user.id)
-            .maybeSingle();
-
-          if (!error && mounted) {
-            setAppUser(data || null);
-          }
-        } catch (err) {
-          console.error('Error loading app user:', err);
+        // Use raw fetch to get app user (try auth_id first, then email)
+        const userData = await fetchAppUser(session.user.id, session.user.email);
+        if (mounted) {
+          console.log('Setting appUser:', userData);
+          setAppUser(userData);
         }
       } else {
         setAppUser(null);
