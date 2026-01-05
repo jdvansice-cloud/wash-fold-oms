@@ -72,19 +72,19 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
     let paymentData = null;
     
     if (activeMethod === 'cash') {
-      const amount = parseFloat(cashAmount) || 0;
+      const amount = Math.min(parseFloat(cashAmount) || 0, remaining);
       if (amount <= 0) return;
       paymentData = {
         method: 'cash',
         methodName: 'Efectivo',
         amount,
         cashTendered: parseFloat(cashTendered) || amount,
-        changeGiven: cashChange,
+        changeGiven: Math.max(0, (parseFloat(cashTendered) || amount) - amount),
       };
       setCashAmount('');
       setCashTendered('');
     } else if (activeMethod === 'card') {
-      const amount = parseFloat(cardAmount) || 0;
+      const amount = Math.min(parseFloat(cardAmount) || 0, remaining);
       if (amount <= 0 || !cardReference.trim()) return;
       paymentData = {
         method: 'card',
@@ -95,7 +95,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
       setCardAmount('');
       setCardReference('');
     } else {
-      const amount = parseFloat(otherAmount) || 0;
+      const amount = Math.min(parseFloat(otherAmount) || 0, remaining);
       if (amount <= 0) return;
       const methodInfo = paymentMethods.find(m => m.id === activeMethod);
       paymentData = {
@@ -109,6 +109,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
     if (paymentData) {
       setPayments([...payments, paymentData]);
       setActiveMethod(null);
+      setShowAllMethods(true);
     }
   };
   
@@ -314,9 +315,37 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                     Pago en Efectivo
                   </p>
                   
-                  {/* Amount to pay with cash */}
+                  {/* Quick Amount Buttons */}
                   <div className="mb-3">
-                    <label className="text-xs text-slate-500 mb-1 block">Monto a pagar con efectivo</label>
+                    <label className="text-xs text-slate-500 mb-2 block">Monto a pagar con efectivo</label>
+                    <div className="grid grid-cols-4 gap-2 mb-2">
+                      <button
+                        onClick={() => setCashAmount(remaining.toFixed(2))}
+                        className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                          parseFloat(cashAmount) === remaining
+                            ? 'bg-primary-500 text-white border-primary-500'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500'
+                        }`}
+                      >
+                        Todo ({formatCurrency(remaining)})
+                      </button>
+                      {[5, 10, 20].map((amount) => (
+                        <button
+                          key={amount}
+                          onClick={() => setCashAmount(Math.min(amount, remaining).toFixed(2))}
+                          disabled={amount > remaining}
+                          className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                            parseFloat(cashAmount) === amount
+                              ? 'bg-primary-500 text-white border-primary-500'
+                              : amount > remaining
+                                ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500'
+                          }`}
+                        >
+                          B/{amount}
+                        </button>
+                      ))}
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
                       <input
@@ -325,66 +354,78 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                         onChange={(e) => setCashAmount(e.target.value)}
                         className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         placeholder={remaining.toFixed(2)}
+                        max={remaining}
                       />
                     </div>
                   </div>
                   
-                  {/* Denomination Buttons */}
-                  <div className="grid grid-cols-3 gap-2 mb-3">
-                    {[1, 2, 5, 10, 20, 50].map((amount) => (
-                      <button
-                        key={amount}
-                        onClick={() => handleCashDenomination(amount)}
-                        className="py-2 px-3 bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-colors font-medium text-slate-700 text-sm"
-                      >
-                        B/{amount}
-                      </button>
-                    ))}
-                  </div>
-                  
-                  {/* Cash tendered and change */}
-                  <div className="space-y-2 bg-white rounded-lg p-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-600">Efectivo recibido</span>
-                      <input
-                        type="number"
-                        value={cashTendered}
-                        onChange={(e) => setCashTendered(e.target.value)}
-                        className="w-24 text-right px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    {cashTendered && parseFloat(cashTendered) >= parseFloat(cashAmount || 0) && (
-                      <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                        <span className="text-sm font-semibold text-slate-700">Cambio</span>
-                        <span className="text-xl font-bold text-success-600">
-                          {formatCurrency(cashChange)}
-                        </span>
+                  {/* Change Calculator */}
+                  {parseFloat(cashAmount) > 0 && (
+                    <div className="bg-white rounded-lg p-3 border border-slate-200">
+                      <p className="text-xs text-slate-500 mb-2 font-medium">Calculadora de Cambio</p>
+                      
+                      {/* Denomination Buttons for tendered */}
+                      <div className="grid grid-cols-6 gap-1 mb-3">
+                        {[1, 2, 5, 10, 20, 50].map((amount) => (
+                          <button
+                            key={amount}
+                            onClick={() => handleCashDenomination(amount)}
+                            className="py-2 bg-slate-50 border border-slate-200 rounded text-xs font-medium text-slate-700 hover:border-primary-500 hover:bg-primary-50 transition-colors"
+                          >
+                            +{amount}
+                          </button>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                  
-                  {cashTendered && (
-                    <button
-                      onClick={() => setCashTendered('')}
-                      className="mt-2 text-xs text-slate-500 hover:text-slate-700"
-                    >
-                      Limpiar
-                    </button>
+                      
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-600">Monto a cobrar</span>
+                          <span className="font-medium text-slate-800">{formatCurrency(parseFloat(cashAmount) || 0)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-slate-600">Efectivo recibido</span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={cashTendered}
+                              onChange={(e) => setCashTendered(e.target.value)}
+                              className="w-20 text-right px-2 py-1 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-primary-500"
+                              placeholder="0.00"
+                            />
+                            {cashTendered && (
+                              <button
+                                onClick={() => setCashTendered('')}
+                                className="text-xs text-slate-400 hover:text-slate-600"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {parseFloat(cashTendered) >= parseFloat(cashAmount) && (
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                            <span className="text-sm font-semibold text-slate-700">Cambio</span>
+                            <span className="text-lg font-bold text-success-600">
+                              {formatCurrency(cashChange)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   )}
                   
                   {/* Add Payment Button */}
                   <button
                     onClick={addPayment}
-                    disabled={!parseFloat(cashAmount)}
+                    disabled={!parseFloat(cashAmount) || parseFloat(cashAmount) > remaining}
                     className={`w-full mt-3 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
-                      parseFloat(cashAmount) > 0
+                      parseFloat(cashAmount) > 0 && parseFloat(cashAmount) <= remaining
                         ? 'bg-primary-500 text-white hover:bg-primary-600'
                         : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     }`}
                   >
                     <Plus className="w-4 h-4" />
-                    Agregar Pago
+                    Agregar Pago de {formatCurrency(parseFloat(cashAmount) || 0)}
                   </button>
                 </div>
               )}
@@ -397,9 +438,37 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                     Pago con Tarjeta (POS Bancario)
                   </p>
                   
-                  {/* Amount */}
+                  {/* Quick Amount Buttons */}
                   <div className="mb-3">
-                    <label className="text-xs text-slate-600 mb-1 block">Monto a pagar con tarjeta</label>
+                    <label className="text-xs text-slate-600 mb-2 block">Monto a pagar con tarjeta</label>
+                    <div className="grid grid-cols-4 gap-2 mb-2">
+                      <button
+                        onClick={() => setCardAmount(remaining.toFixed(2))}
+                        className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                          parseFloat(cardAmount) === remaining
+                            ? 'bg-primary-500 text-white border-primary-500'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500'
+                        }`}
+                      >
+                        Todo ({formatCurrency(remaining)})
+                      </button>
+                      {[10, 20, 50].map((amount) => (
+                        <button
+                          key={amount}
+                          onClick={() => setCardAmount(Math.min(amount, remaining).toFixed(2))}
+                          disabled={amount > remaining}
+                          className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                            parseFloat(cardAmount) === amount
+                              ? 'bg-primary-500 text-white border-primary-500'
+                              : amount > remaining
+                                ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500'
+                          }`}
+                        >
+                          B/{amount}
+                        </button>
+                      ))}
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
                       <input
@@ -408,6 +477,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                         onChange={(e) => setCardAmount(e.target.value)}
                         className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
                         placeholder={remaining.toFixed(2)}
+                        max={remaining}
                       />
                     </div>
                   </div>
@@ -459,15 +529,15 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                   {/* Add Payment Button */}
                   <button
                     onClick={addPayment}
-                    disabled={!parseFloat(cardAmount) || !cardReference.trim()}
+                    disabled={!parseFloat(cardAmount) || !cardReference.trim() || parseFloat(cardAmount) > remaining}
                     className={`w-full py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
-                      parseFloat(cardAmount) > 0 && cardReference.trim()
+                      parseFloat(cardAmount) > 0 && cardReference.trim() && parseFloat(cardAmount) <= remaining
                         ? 'bg-primary-500 text-white hover:bg-primary-600'
                         : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     }`}
                   >
                     <Plus className="w-4 h-4" />
-                    Agregar Pago
+                    Agregar Pago de {formatCurrency(parseFloat(cardAmount) || 0)}
                   </button>
                 </div>
               )}
@@ -479,8 +549,37 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                     Pago con {paymentMethods.find(m => m.id === activeMethod)?.name}
                   </p>
                   
+                  {/* Quick Amount Buttons */}
                   <div className="mb-3">
-                    <label className="text-xs text-slate-500 mb-1 block">Monto</label>
+                    <label className="text-xs text-slate-500 mb-2 block">Monto</label>
+                    <div className="grid grid-cols-4 gap-2 mb-2">
+                      <button
+                        onClick={() => setOtherAmount(remaining.toFixed(2))}
+                        className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                          parseFloat(otherAmount) === remaining
+                            ? 'bg-primary-500 text-white border-primary-500'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500'
+                        }`}
+                      >
+                        Todo ({formatCurrency(remaining)})
+                      </button>
+                      {[10, 20, 50].map((amount) => (
+                        <button
+                          key={amount}
+                          onClick={() => setOtherAmount(Math.min(amount, remaining).toFixed(2))}
+                          disabled={amount > remaining}
+                          className={`py-2 px-2 border rounded-lg text-xs font-medium transition-colors ${
+                            parseFloat(otherAmount) === amount
+                              ? 'bg-primary-500 text-white border-primary-500'
+                              : amount > remaining
+                                ? 'bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-primary-500'
+                          }`}
+                        >
+                          B/{amount}
+                        </button>
+                      ))}
+                    </div>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
                       <input
@@ -489,6 +588,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                         onChange={(e) => setOtherAmount(e.target.value)}
                         className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                         placeholder={remaining.toFixed(2)}
+                        max={remaining}
                       />
                     </div>
                   </div>
@@ -496,15 +596,15 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
                   {/* Add Payment Button */}
                   <button
                     onClick={addPayment}
-                    disabled={!parseFloat(otherAmount)}
+                    disabled={!parseFloat(otherAmount) || parseFloat(otherAmount) > remaining}
                     className={`w-full py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
-                      parseFloat(otherAmount) > 0
+                      parseFloat(otherAmount) > 0 && parseFloat(otherAmount) <= remaining
                         ? 'bg-primary-500 text-white hover:bg-primary-600'
                         : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                     }`}
                   >
                     <Plus className="w-4 h-4" />
-                    Agregar Pago
+                    Agregar Pago de {formatCurrency(parseFloat(otherAmount) || 0)}
                   </button>
                 </div>
               )}
