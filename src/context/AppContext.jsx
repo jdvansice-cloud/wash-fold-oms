@@ -32,6 +32,8 @@ const initialState = {
     deliveryProduct: null,
     manualDiscount: null,
     promotionCode: null,
+    promotion: null,
+    freeDelivery: false,
   },
   
   // UI State
@@ -70,6 +72,7 @@ const actionTypes = {
   SET_DELIVERY: 'SET_DELIVERY',
   SET_MANUAL_DISCOUNT: 'SET_MANUAL_DISCOUNT',
   SET_PROMOTION: 'SET_PROMOTION',
+  SET_FREE_DELIVERY: 'SET_FREE_DELIVERY',
   
   // UI actions
   SET_ACTIVE_SECTION: 'SET_ACTIVE_SECTION',
@@ -262,7 +265,17 @@ function appReducer(state, action) {
     case actionTypes.SET_PROMOTION:
       return {
         ...state,
-        ticket: { ...state.ticket, promotionCode: action.payload },
+        ticket: { 
+          ...state.ticket, 
+          promotionCode: action.payload?.code || action.payload,
+          promotion: action.payload,
+        },
+      };
+
+    case actionTypes.SET_FREE_DELIVERY:
+      return {
+        ...state,
+        ticket: { ...state.ticket, freeDelivery: action.payload },
       };
       
     // UI actions
@@ -425,51 +438,105 @@ export function AppProvider({ children }) {
   
   // Ticket calculations
   const ticketCalculations = useCallback(() => {
-    const { items, isExpress, manualDiscount, deliveryProduct } = state.ticket;
+    const { items, isExpress, manualDiscount, deliveryProduct, promotion, freeDelivery } = state.ticket;
     const { itbms_rate } = state.settings;
     
-    let subtotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+    // Separate regular items from delivery items (in case delivery is in items)
+    const productItems = items.filter(item => item.product.product_type !== 'delivery');
+    const deliveryItems = items.filter(item => item.product.product_type === 'delivery');
     
-    // Apply manual discount
-    let discountAmount = 0;
+    // Products subtotal (without ITBMS)
+    const productsTotal = productItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    
+    // Delivery from items or deliveryProduct
+    let deliveryTotal = deliveryItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    if (deliveryProduct && deliveryItems.length === 0) {
+      deliveryTotal = deliveryProduct.price;
+    }
+    
+    // Calculate product discounts (manual + promotion)
+    let productDiscountAmount = 0;
+    let productDiscountLabel = '';
+    
     if (manualDiscount) {
       if (manualDiscount.type === 'percentage') {
-        discountAmount = subtotal * (manualDiscount.value / 100);
+        productDiscountAmount = productsTotal * (manualDiscount.value / 100);
+        productDiscountLabel = `Descuento ${manualDiscount.value}%`;
       } else {
-        discountAmount = manualDiscount.value;
+        productDiscountAmount = Math.min(manualDiscount.value, productsTotal);
+        productDiscountLabel = 'Descuento';
       }
     }
     
-    const afterDiscount = subtotal - discountAmount;
+    // Promotion discount (applied to products, not delivery)
+    let promotionDiscountAmount = 0;
+    if (promotion) {
+      if (promotion.discount_type === 'percentage') {
+        promotionDiscountAmount = productsTotal * (promotion.discount_value / 100);
+      } else {
+        promotionDiscountAmount = Math.min(promotion.discount_value, productsTotal);
+      }
+    }
     
-    // Delivery charge
-    const deliveryCharge = deliveryProduct ? deliveryProduct.price : 0;
+    // Total product discount
+    const totalProductDiscount = productDiscountAmount + promotionDiscountAmount;
     
-    // Tax calculation (on subtotal after discount + delivery)
-    const taxableAmount = afterDiscount + deliveryCharge;
+    // Free delivery discount (only affects delivery)
+    const deliveryDiscountAmount = freeDelivery ? deliveryTotal : 0;
+    
+    // Subtotals after discounts
+    const productsAfterDiscount = productsTotal - totalProductDiscount;
+    const deliveryAfterDiscount = deliveryTotal - deliveryDiscountAmount;
+    
+    // Subtotal (products + delivery after discounts, before tax)
+    const subtotal = productsAfterDiscount + deliveryAfterDiscount;
+    
+    // Calculate tax only on taxable items
+    const taxableProductsAmount = productItems
+      .filter(item => item.product.is_taxable !== false)
+      .reduce((sum, item) => sum + item.lineTotal, 0);
+    
+    // Apply discount proportionally to taxable amount
+    const taxableDiscountRatio = productsTotal > 0 ? totalProductDiscount / productsTotal : 0;
+    const taxableProductsAfterDiscount = taxableProductsAmount * (1 - taxableDiscountRatio);
+    
+    // Delivery is typically taxable
+    const taxableDelivery = deliveryAfterDiscount;
+    
+    // Total taxable amount
+    const taxableAmount = taxableProductsAfterDiscount + taxableDelivery;
     const taxAmount = taxableAmount * (itbms_rate / 100);
     
     // Total
-    const total = afterDiscount + deliveryCharge + taxAmount;
+    const total = subtotal + taxAmount;
     
-    // Weight and bags
-    const totalWeight = items.reduce((sum, item) => sum + (item.totalWeight || 0), 0);
-    const totalBags = items.reduce((sum, item) => sum + (item.bags || 0), 0);
-    const totalPieces = items.reduce((sum, item) => sum + (item.pieces || item.quantity || 0), 0);
+    // Weight and bags (only from product items)
+    const totalWeight = productItems.reduce((sum, item) => sum + (item.totalWeight || 0), 0);
+    const totalBags = productItems.reduce((sum, item) => sum + (item.bags || 0), 0);
+    const totalPieces = productItems.reduce((sum, item) => sum + (item.pieces || item.quantity || 0), 0);
     
     // Promised date
     const promisedDate = calculatePromisedDate(isExpress);
     
     return {
+      productsTotal,
+      deliveryTotal,
+      productDiscountAmount: totalProductDiscount,
+      promotionDiscountAmount,
+      manualDiscountAmount: productDiscountAmount,
+      deliveryDiscountAmount,
       subtotal,
-      discountAmount,
-      deliveryCharge,
       taxAmount,
       total,
       totalWeight,
       totalBags,
       totalPieces,
       promisedDate,
+      productItems,
+      deliveryItems,
+      // Legacy compatibility
+      discountAmount: totalProductDiscount,
+      deliveryCharge: deliveryTotal,
     };
   }, [state.ticket, state.settings]);
   
@@ -487,7 +554,8 @@ export function AppProvider({ children }) {
     setNotes: (notes) => dispatch({ type: actionTypes.SET_NOTES, payload: notes }),
     setDelivery: (product) => dispatch({ type: actionTypes.SET_DELIVERY, payload: product }),
     setManualDiscount: (discount) => dispatch({ type: actionTypes.SET_MANUAL_DISCOUNT, payload: discount }),
-    setPromotion: (code) => dispatch({ type: actionTypes.SET_PROMOTION, payload: code }),
+    setPromotion: (promotion) => dispatch({ type: actionTypes.SET_PROMOTION, payload: promotion }),
+    setFreeDelivery: (isFree) => dispatch({ type: actionTypes.SET_FREE_DELIVERY, payload: isFree }),
     
     // UI
     setActiveSection: (sectionId) => dispatch({ type: actionTypes.SET_ACTIVE_SECTION, payload: sectionId }),
