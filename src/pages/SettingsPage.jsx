@@ -4,7 +4,8 @@ import {
   Gift, Tag, Package, Clock, Percent, Save,
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
-  GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2
+  GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
+  Award, Stamp, Coins, Info
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
@@ -24,6 +25,7 @@ function SettingsPage() {
     { id: 'products', label: 'Productos', icon: Package, description: 'Gestión de productos' },
     { id: 'promotions', label: 'Promociones', icon: Tag, description: 'Descuentos y ofertas' },
     { id: 'giftcards', label: 'Tarjetas Regalo', icon: Gift, description: 'Gift cards' },
+    { id: 'loyalty', label: 'Lealtad', icon: Award, description: 'Programas de fidelización' },
   ];
 
   return (
@@ -77,6 +79,7 @@ function SettingsPage() {
           {activeSection === 'products' && <ProductsSettings />}
           {activeSection === 'promotions' && <PromotionsSettings />}
           {activeSection === 'giftcards' && <GiftCardsSettings />}
+          {activeSection === 'loyalty' && <LoyaltySettings />}
         </div>
       </div>
     </div>
@@ -4332,6 +4335,592 @@ function GiftCardsSettings() {
         <Gift className="w-16 h-16 mx-auto mb-4 opacity-50" />
         <p className="font-medium">Próximamente</p>
         <p className="text-sm mt-1">La gestión de gift cards estará disponible pronto</p>
+      </div>
+    </div>
+  );
+}
+
+// Loyalty Settings Section
+function LoyaltySettings() {
+  const { state } = useApp();
+  const [activeTab, setActiveTab] = useState('punchcard');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [settingsId, setSettingsId] = useState(null);
+  
+  // Punch Card Settings
+  const [punchCardSettings, setPunchCardSettings] = useState({
+    enabled: false,
+    wash_punches_required: 9,
+    dry_punches_required: 9,
+    expiry_days: 365,
+  });
+  
+  // Points Program Settings
+  const [pointsSettings, setPointsSettings] = useState({
+    enabled: false,
+    points_per_dollar: 0.05, // 5% back = $0.05 per $1
+    min_redemption_amount: 5.00,
+    expiry_days: 365,
+  });
+
+  // Raw fetch helper
+  const supabaseFetch = async (table, options = {}) => {
+    const url = import.meta.env.SUPABASE_URL;
+    const key = import.meta.env.SUPABASE_ANON_KEY;
+    
+    if (!url || !key) return { data: null, error: { message: 'Missing config' } };
+    
+    try {
+      const params = new URLSearchParams();
+      params.append('select', options.select || '*');
+      
+      if (options.eq) {
+        Object.entries(options.eq).forEach(([col, val]) => {
+          params.append(col, `eq.${val}`);
+        });
+      }
+      
+      if (options.limit) params.append('limit', options.limit);
+      
+      const response = await fetch(`${url}/rest/v1/${table}?${params.toString()}`, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+      });
+      
+      if (!response.ok) return { data: null, error: { message: `HTTP ${response.status}` } };
+      
+      const data = await response.json();
+      return { data: options.single && data.length > 0 ? data[0] : data, error: null };
+    } catch (err) {
+      return { data: null, error: { message: err.message } };
+    }
+  };
+
+  // Load settings
+  useEffect(() => {
+    loadSettings();
+  }, []);
+  
+  const loadSettings = async () => {
+    setLoading(true);
+    try {
+      const storeId = state.store?.id;
+      if (!storeId) {
+        setLoading(false);
+        return;
+      }
+      
+      const { data, error } = await supabaseFetch('loyalty_settings', {
+        eq: { store_id: storeId },
+        limit: 1,
+        single: true
+      });
+      
+      if (data) {
+        setSettingsId(data.id);
+        setPunchCardSettings({
+          enabled: data.punch_card_enabled || false,
+          wash_punches_required: data.wash_punches_required || 9,
+          dry_punches_required: data.dry_punches_required || 9,
+          expiry_days: data.punch_card_expiry_days || 365,
+        });
+        setPointsSettings({
+          enabled: data.points_enabled || false,
+          points_per_dollar: data.points_per_dollar || 0.05,
+          min_redemption_amount: data.min_redemption_amount || 5.00,
+          expiry_days: data.points_expiry_days || 365,
+        });
+      }
+    } catch (err) {
+      console.error('Error loading loyalty settings:', err);
+    }
+    setLoading(false);
+  };
+  
+  const saveSettings = async () => {
+    setSaving(true);
+    setSaveSuccess(false);
+    
+    try {
+      const url = import.meta.env.SUPABASE_URL;
+      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const storeId = state.store?.id;
+      
+      const settingsData = {
+        store_id: storeId,
+        punch_card_enabled: punchCardSettings.enabled,
+        wash_punches_required: punchCardSettings.wash_punches_required,
+        dry_punches_required: punchCardSettings.dry_punches_required,
+        punch_card_expiry_days: punchCardSettings.expiry_days,
+        points_enabled: pointsSettings.enabled,
+        points_per_dollar: pointsSettings.points_per_dollar,
+        min_redemption_amount: pointsSettings.min_redemption_amount,
+        points_expiry_days: pointsSettings.expiry_days,
+        updated_at: new Date().toISOString(),
+      };
+      
+      let response;
+      if (settingsId) {
+        // Update existing
+        response = await fetch(`${url}/rest/v1/loyalty_settings?id=eq.${settingsId}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(settingsData)
+        });
+      } else {
+        // Insert new
+        response = await fetch(`${url}/rest/v1/loyalty_settings`, {
+          method: 'POST',
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify(settingsData)
+        });
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          setSettingsId(data[0].id);
+        }
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        console.error('Save error:', await response.text());
+      }
+    } catch (err) {
+      console.error('Error saving loyalty settings:', err);
+    }
+    
+    setSaving(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="card p-6">
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-800">Programas de Lealtad</h2>
+            <p className="text-sm text-slate-500">Configura recompensas para tus clientes frecuentes</p>
+          </div>
+          <button 
+            onClick={saveSettings}
+            disabled={saving}
+            className="btn-primary"
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : saveSuccess ? (
+              <Check className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {saving ? 'Guardando...' : saveSuccess ? 'Guardado' : 'Guardar Cambios'}
+          </button>
+        </div>
+        
+        {/* Tabs */}
+        <div className="flex gap-2 border-b border-slate-200 mb-6">
+          <button
+            onClick={() => setActiveTab('punchcard')}
+            className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
+              activeTab === 'punchcard'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Stamp className="w-4 h-4" />
+            <span className="font-medium">Tarjeta de Sellos</span>
+            {punchCardSettings.enabled && (
+              <span className="px-2 py-0.5 bg-success-100 text-success-700 text-xs rounded-full">Activo</span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('points')}
+            className={`flex items-center gap-2 px-4 py-3 border-b-2 transition-colors ${
+              activeTab === 'points'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <Coins className="w-4 h-4" />
+            <span className="font-medium">Programa de Puntos</span>
+            {pointsSettings.enabled && (
+              <span className="px-2 py-0.5 bg-success-100 text-success-700 text-xs rounded-full">Activo</span>
+            )}
+          </button>
+        </div>
+        
+        {/* Punch Card Tab */}
+        {activeTab === 'punchcard' && (
+          <div className="space-y-6">
+            {/* Info Box */}
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
+              <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-amber-800 font-medium">Tarjeta de Sellos - Lavamático</p>
+                <p className="text-sm text-amber-700 mt-1">
+                  Los clientes acumulan sellos por cada uso de lavadoras y secadoras en el área de autoservicio (Lavamático). 
+                  Al completar la cantidad requerida de sellos, reciben un uso gratis.
+                </p>
+              </div>
+            </div>
+            
+            {/* Enable Toggle */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+              <div>
+                <p className="font-medium text-slate-800">Activar Tarjeta de Sellos</p>
+                <p className="text-sm text-slate-500">Permite a los clientes acumular sellos por uso de máquinas</p>
+              </div>
+              <button
+                onClick={() => setPunchCardSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  punchCardSettings.enabled ? 'bg-primary-500' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    punchCardSettings.enabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            
+            {punchCardSettings.enabled && (
+              <>
+                {/* Wash Punches */}
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Sellos para Lavado Gratis
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={punchCardSettings.wash_punches_required}
+                        onChange={(e) => setPunchCardSettings(prev => ({ 
+                          ...prev, 
+                          wash_punches_required: parseInt(e.target.value) || 9 
+                        }))}
+                        className="input-field pl-10"
+                      />
+                      <Stamp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Cada {punchCardSettings.wash_punches_required} lavados = 1 gratis (el #{punchCardSettings.wash_punches_required + 1})
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Sellos para Secado Gratis
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={punchCardSettings.dry_punches_required}
+                        onChange={(e) => setPunchCardSettings(prev => ({ 
+                          ...prev, 
+                          dry_punches_required: parseInt(e.target.value) || 9 
+                        }))}
+                        className="input-field pl-10"
+                      />
+                      <Stamp className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Cada {punchCardSettings.dry_punches_required} secados = 1 gratis (el #{punchCardSettings.dry_punches_required + 1})
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Expiry */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Vencimiento de Sellos (días)
+                  </label>
+                  <div className="relative max-w-xs">
+                    <input
+                      type="number"
+                      min="0"
+                      max="730"
+                      value={punchCardSettings.expiry_days}
+                      onChange={(e) => setPunchCardSettings(prev => ({ 
+                        ...prev, 
+                        expiry_days: parseInt(e.target.value) || 365 
+                      }))}
+                      className="input-field pl-10"
+                    />
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Los sellos vencen después de {punchCardSettings.expiry_days} días sin actividad. Usa 0 para nunca vencer.
+                  </p>
+                </div>
+                
+                {/* Preview Card */}
+                <div className="border border-slate-200 rounded-xl p-6 bg-gradient-to-br from-primary-50 to-white">
+                  <p className="text-sm font-medium text-slate-600 mb-4">Vista Previa - Tarjeta del Cliente</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Wash Card */}
+                    <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                          <span className="text-lg">🌀</span>
+                        </div>
+                        <span className="font-medium text-slate-800">Lavados</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from({ length: punchCardSettings.wash_punches_required + 1 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${
+                              i < 3 
+                                ? 'bg-primary-500 text-white' 
+                                : i === punchCardSettings.wash_punches_required
+                                  ? 'bg-success-100 text-success-700 border-2 border-success-300'
+                                  : 'bg-slate-100 text-slate-400'
+                            }`}
+                          >
+                            {i === punchCardSettings.wash_punches_required ? '🎁' : i + 1}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">3 de {punchCardSettings.wash_punches_required} para gratis</p>
+                    </div>
+                    
+                    {/* Dry Card */}
+                    <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                          <span className="text-lg">☀️</span>
+                        </div>
+                        <span className="font-medium text-slate-800">Secados</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Array.from({ length: punchCardSettings.dry_punches_required + 1 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium ${
+                              i < 5 
+                                ? 'bg-orange-500 text-white' 
+                                : i === punchCardSettings.dry_punches_required
+                                  ? 'bg-success-100 text-success-700 border-2 border-success-300'
+                                  : 'bg-slate-100 text-slate-400'
+                            }`}
+                          >
+                            {i === punchCardSettings.dry_punches_required ? '🎁' : i + 1}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">5 de {punchCardSettings.dry_punches_required} para gratis</p>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        
+        {/* Points Tab */}
+        {activeTab === 'points' && (
+          <div className="space-y-6">
+            {/* Info Box */}
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex gap-3">
+              <Info className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-emerald-800 font-medium">Programa de Puntos - Cashback</p>
+                <p className="text-sm text-emerald-700 mt-1">
+                  Los clientes acumulan dinero en su cuenta basado en sus compras (antes de ITBMS). 
+                  El saldo puede ser usado como forma de pago una vez alcanzado el mínimo para redención.
+                </p>
+              </div>
+            </div>
+            
+            {/* Enable Toggle */}
+            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
+              <div>
+                <p className="font-medium text-slate-800">Activar Programa de Puntos</p>
+                <p className="text-sm text-slate-500">Los clientes acumulan saldo con cada compra</p>
+              </div>
+              <button
+                onClick={() => setPointsSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  pointsSettings.enabled ? 'bg-primary-500' : 'bg-slate-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    pointsSettings.enabled ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+            
+            {pointsSettings.enabled && (
+              <>
+                {/* Conversion Rate */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Tasa de Conversión (Cashback)
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 bg-slate-100 px-4 py-3 rounded-lg">
+                      <span className="text-slate-600">Por cada</span>
+                      <span className="font-bold text-slate-800">B/1.00</span>
+                      <span className="text-slate-600">gastado</span>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-400" />
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-600">Gana</span>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">B/</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          max="1"
+                          value={pointsSettings.points_per_dollar}
+                          onChange={(e) => setPointsSettings(prev => ({ 
+                            ...prev, 
+                            points_per_dollar: parseFloat(e.target.value) || 0.05 
+                          }))}
+                          className="input-field w-24 pl-9 text-center font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-sm text-slate-500 mt-2">
+                    Esto equivale a un <span className="font-semibold text-emerald-600">{(pointsSettings.points_per_dollar * 100).toFixed(0)}%</span> de cashback. 
+                    Ejemplo: Una compra de B/50.00 genera B/{(50 * pointsSettings.points_per_dollar).toFixed(2)} en puntos.
+                  </p>
+                </div>
+                
+                {/* Minimum Redemption */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Mínimo para Redención
+                  </label>
+                  <div className="relative max-w-xs">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">B/</span>
+                    <input
+                      type="number"
+                      step="0.50"
+                      min="0"
+                      max="100"
+                      value={pointsSettings.min_redemption_amount}
+                      onChange={(e) => setPointsSettings(prev => ({ 
+                        ...prev, 
+                        min_redemption_amount: parseFloat(e.target.value) || 5.00 
+                      }))}
+                      className="input-field pl-9"
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    El cliente necesita al menos B/{pointsSettings.min_redemption_amount.toFixed(2)} acumulados para poder usar su saldo. 
+                    Usa 0 para permitir redención de cualquier cantidad.
+                  </p>
+                </div>
+                
+                {/* Expiry */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Vencimiento de Puntos (días)
+                  </label>
+                  <div className="relative max-w-xs">
+                    <input
+                      type="number"
+                      min="0"
+                      max="730"
+                      value={pointsSettings.expiry_days}
+                      onChange={(e) => setPointsSettings(prev => ({ 
+                        ...prev, 
+                        expiry_days: parseInt(e.target.value) || 365 
+                      }))}
+                      className="input-field pl-10"
+                    />
+                    <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Los puntos vencen después de {pointsSettings.expiry_days} días sin actividad. Usa 0 para nunca vencer.
+                  </p>
+                </div>
+                
+                {/* Example Calculation */}
+                <div className="border border-slate-200 rounded-xl p-6 bg-gradient-to-br from-emerald-50 to-white">
+                  <p className="text-sm font-medium text-slate-600 mb-4">Ejemplo de Acumulación</p>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-100">
+                      <span className="text-slate-600">Compra (antes de ITBMS)</span>
+                      <span className="font-semibold text-slate-800">B/25.00</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-100">
+                      <span className="text-slate-600">Tasa de conversión</span>
+                      <span className="font-semibold text-slate-800">{(pointsSettings.points_per_dollar * 100).toFixed(0)}%</span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-emerald-100 rounded-lg border border-emerald-200">
+                      <span className="text-emerald-700 font-medium">Puntos ganados</span>
+                      <span className="font-bold text-emerald-800">B/{(25 * pointsSettings.points_per_dollar).toFixed(2)}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <p className="text-sm text-slate-600">
+                      Para alcanzar el mínimo de redención (B/{pointsSettings.min_redemption_amount.toFixed(2)}), 
+                      el cliente debe gastar aproximadamente <span className="font-semibold">B/{(pointsSettings.min_redemption_amount / pointsSettings.points_per_dollar).toFixed(2)}</span> en compras.
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Preview Customer Balance */}
+                <div className="border border-slate-200 rounded-xl p-6">
+                  <p className="text-sm font-medium text-slate-600 mb-4">Vista Previa - Saldo del Cliente</p>
+                  <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl text-white">
+                    <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                      <Coins className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm opacity-90">Saldo de Puntos</p>
+                      <p className="text-2xl font-bold">B/12.50</p>
+                    </div>
+                    {12.50 >= pointsSettings.min_redemption_amount ? (
+                      <div className="px-3 py-1 bg-white/20 rounded-full text-sm">
+                        ✓ Disponible para usar
+                      </div>
+                    ) : (
+                      <div className="px-3 py-1 bg-white/20 rounded-full text-sm">
+                        Faltan B/{(pointsSettings.min_redemption_amount - 12.50).toFixed(2)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
