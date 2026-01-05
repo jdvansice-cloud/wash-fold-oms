@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, Banknote, CreditCard, Smartphone, Building2, 
-  FileText, Clock, Gift, Check, ChevronDown, ChevronUp 
+  FileText, Clock, Gift, Check, ChevronDown, ChevronUp, Hash 
 } from 'lucide-react';
 
 const paymentMethods = [
@@ -15,9 +15,10 @@ const paymentMethods = [
   { id: 'gift_card', name: 'Tarjeta Regalo', icon: Gift },
 ];
 
-function PaymentModal({ total, onClose, onComplete }) {
+function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
   const [selectedMethod, setSelectedMethod] = useState(null);
   const [cashAmount, setCashAmount] = useState('');
+  const [cardReference, setCardReference] = useState('');
   const [processing, setProcessing] = useState(false);
   const [showOtherMethods, setShowOtherMethods] = useState(true);
   
@@ -27,11 +28,12 @@ function PaymentModal({ total, onClose, onComplete }) {
     setSelectedMethod(methodId);
     if (methodId !== 'cash') {
       setCashAmount('');
-      setShowOtherMethods(true);
-    } else {
-      // Collapse other methods when cash is selected
-      setShowOtherMethods(false);
     }
+    if (methodId !== 'card') {
+      setCardReference('');
+    }
+    // Collapse other methods when cash or card is selected
+    setShowOtherMethods(methodId !== 'cash' && methodId !== 'card');
   };
   
   const handleCashDenomination = (amount) => {
@@ -43,8 +45,11 @@ function PaymentModal({ total, onClose, onComplete }) {
     ? Math.max(0, parseFloat(cashAmount) - total)
     : 0;
   
+  // Validation based on payment method
   const canProcess = selectedMethod && (
-    selectedMethod !== 'cash' || parseFloat(cashAmount) >= total
+    (selectedMethod === 'cash' && parseFloat(cashAmount) >= total) ||
+    (selectedMethod === 'card' && cardReference.trim().length > 0) ||
+    (!['cash', 'card'].includes(selectedMethod))
   );
   
   const handleProcess = () => {
@@ -59,6 +64,7 @@ function PaymentModal({ total, onClose, onComplete }) {
         amount: total,
         cashTendered: selectedMethod === 'cash' ? parseFloat(cashAmount) : null,
         changeGiven: selectedMethod === 'cash' ? changeAmount : null,
+        reference: selectedMethod === 'card' ? cardReference : null,
         timestamp: new Date().toISOString(),
       });
     }, 500);
@@ -120,7 +126,7 @@ function PaymentModal({ total, onClose, onComplete }) {
           </div>
           
           {/* Other Methods - Collapsible */}
-          {selectedMethod !== 'cash' && (
+          {selectedMethod !== 'cash' && selectedMethod !== 'card' && (
             <div className="mb-4">
               <button
                 onClick={() => setShowOtherMethods(!showOtherMethods)}
@@ -155,6 +161,55 @@ function PaymentModal({ total, onClose, onComplete }) {
                   })}
                 </div>
               )}
+            </div>
+          )}
+          
+          {/* Card Payment - Bank POS Info */}
+          {selectedMethod === 'card' && (
+            <div className="bg-blue-50 rounded-xl p-4 animate-slide-up border border-blue-200">
+              <p className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                <CreditCard className="w-4 h-4" />
+                Procesamiento Manual en POS Bancario
+              </p>
+              
+              {/* Amounts for POS Entry */}
+              <div className="space-y-2 mb-4 bg-white rounded-lg p-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">Subtotal</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(subtotal || (total / 1.07))}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-600">ITBMS (7%)</span>
+                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(taxAmount || (total - (total / 1.07)))}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
+                  <span className="font-semibold text-slate-700">Total</span>
+                  <span className="font-mono font-bold text-lg text-primary-600">{formatCurrency(total)}</span>
+                </div>
+              </div>
+              
+              {/* Reference Number Input */}
+              <div>
+                <label className="text-xs text-slate-600 mb-1 block">
+                  Número de Confirmación / Referencia *
+                </label>
+                <div className="relative">
+                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={cardReference}
+                    onChange={(e) => setCardReference(e.target.value)}
+                    className={`w-full pl-10 pr-3 py-3 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                      cardReference ? 'border-success-400 bg-success-50' : 'border-slate-200'
+                    }`}
+                    placeholder="Ej: 123456"
+                    autoFocus
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Ingrese el número de confirmación del POS bancario
+                </p>
+              </div>
             </div>
           )}
           

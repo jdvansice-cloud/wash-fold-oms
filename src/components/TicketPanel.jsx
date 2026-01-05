@@ -15,6 +15,7 @@ function TicketPanel() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [discountExpanded, setDiscountExpanded] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [processing, setProcessing] = useState(false);
   
   const calculations = ticketCalculations();
@@ -263,7 +264,7 @@ function TicketPanel() {
       
       {/* Footer */}
       <div className="border-t border-slate-100 p-4 space-y-3">
-        {/* Pieces & Bags Counter */}
+        {/* Pieces & Bags Counter - Always Visible */}
         <div className="flex gap-3">
           <div className="flex-1 bg-slate-50 rounded-lg px-3 py-2">
             <span className="text-xs text-slate-500">Piezas</span>
@@ -275,214 +276,240 @@ function TicketPanel() {
           </div>
         </div>
         
-        {/* Notes Section */}
+        {/* Toggle Details Button */}
         <button
-          onClick={() => setNotesExpanded(!notesExpanded)}
-          className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+          onClick={() => setDetailsExpanded(!detailsExpanded)}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors text-sm text-slate-600"
         >
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-slate-400" />
-            <span className="text-sm text-slate-600">Notas</span>
-          </div>
-          {notesExpanded ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
+          {detailsExpanded ? (
+            <>
+              <ChevronUp className="w-4 h-4" />
+              Ocultar Detalles
+            </>
           ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
+            <>
+              <ChevronDown className="w-4 h-4" />
+              Ver Detalles (Notas, Descuentos, Totales)
+            </>
           )}
         </button>
         
-        {notesExpanded && (
-          <textarea
-            value={ticket.notes}
-            onChange={(e) => actions.setNotes(e.target.value)}
-            placeholder="Agregar notas al pedido..."
-            className="w-full px-3 py-2 bg-slate-50 border-0 rounded-lg text-sm resize-none focus:ring-2 focus:ring-primary-500"
-            rows={2}
-          />
-        )}
-        
-        {/* Discount Section */}
-        <button
-          onClick={() => setDiscountExpanded(!discountExpanded)}
-          className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <Tag className="w-4 h-4 text-slate-400" />
-            <span className="text-sm text-slate-600">Descuento</span>
-            {ticket.manualDiscount && (
-              <span className="badge bg-warning-100 text-warning-700">
-                -{ticket.manualDiscount.type === 'percentage' 
-                  ? `${ticket.manualDiscount.value}%` 
-                  : formatCurrency(ticket.manualDiscount.value)}
-              </span>
+        {/* Collapsible Details Section */}
+        {detailsExpanded && (
+          <div className="space-y-3 animate-slide-up">
+            {/* Notes Section */}
+            <button
+              onClick={() => setNotesExpanded(!notesExpanded)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-600">Notas</span>
+                {ticket.notes && (
+                  <span className="w-2 h-2 bg-primary-500 rounded-full"></span>
+                )}
+              </div>
+              {notesExpanded ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+            
+            {notesExpanded && (
+              <textarea
+                value={ticket.notes}
+                onChange={(e) => actions.setNotes(e.target.value)}
+                placeholder="Agregar notas al pedido..."
+                className="w-full px-3 py-2 bg-slate-50 border-0 rounded-lg text-sm resize-none focus:ring-2 focus:ring-primary-500"
+                rows={2}
+              />
             )}
-          </div>
-          {discountExpanded ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          )}
-        </button>
-        
-        {discountExpanded && (
-          <div className="p-3 bg-slate-50 rounded-lg space-y-3">
-            <div className="flex gap-3">
-              {/* Percentage Input */}
-              <div className="flex-1">
-                <label className="text-xs text-slate-500 mb-1 block">Porcentaje</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    placeholder="0"
-                    value={ticket.manualDiscount?.type === 'percentage' ? ticket.manualDiscount.value : ''}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value);
-                      if (value > 0 && value <= 100) {
-                        actions.setManualDiscount({ type: 'percentage', value });
-                      } else if (!e.target.value) {
-                        actions.setManualDiscount(null);
-                      }
-                    }}
-                    className={`w-full px-3 py-2 pr-8 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
-                      ticket.manualDiscount?.type === 'percentage' 
-                        ? 'border-warning-400 bg-warning-50' 
-                        : 'border-slate-200'
-                    }`}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+            
+            {/* Discount Section */}
+            <button
+              onClick={() => setDiscountExpanded(!discountExpanded)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Tag className="w-4 h-4 text-slate-400" />
+                <span className="text-sm text-slate-600">Descuento</span>
+                {ticket.manualDiscount && (
+                  <span className="badge bg-warning-100 text-warning-700">
+                    -{ticket.manualDiscount.type === 'percentage' 
+                      ? `${ticket.manualDiscount.value}%` 
+                      : formatCurrency(ticket.manualDiscount.value)}
+                  </span>
+                )}
+              </div>
+              {discountExpanded ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+            
+            {discountExpanded && (
+              <div className="p-3 bg-slate-50 rounded-lg space-y-3">
+                <div className="flex gap-3">
+                  {/* Percentage Input */}
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-500 mb-1 block">Porcentaje</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        placeholder="0"
+                        value={ticket.manualDiscount?.type === 'percentage' ? ticket.manualDiscount.value : ''}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (value > 0 && value <= 100) {
+                            actions.setManualDiscount({ type: 'percentage', value });
+                          } else if (!e.target.value) {
+                            actions.setManualDiscount(null);
+                          }
+                        }}
+                        className={`w-full px-3 py-2 pr-8 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                          ticket.manualDiscount?.type === 'percentage' 
+                            ? 'border-warning-400 bg-warning-50' 
+                            : 'border-slate-200'
+                        }`}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+                    </div>
+                  </div>
+                  
+                  {/* Amount Input */}
+                  <div className="flex-1">
+                    <label className="text-xs text-slate-500 mb-1 block">Monto Fijo</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={ticket.manualDiscount?.type === 'amount' ? ticket.manualDiscount.value : ''}
+                        onChange={(e) => {
+                          const value = parseFloat(e.target.value);
+                          if (value > 0) {
+                            actions.setManualDiscount({ type: 'amount', value });
+                          } else if (!e.target.value) {
+                            actions.setManualDiscount(null);
+                          }
+                        }}
+                        className={`w-full px-3 py-2 pl-9 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
+                          ticket.manualDiscount?.type === 'amount' 
+                            ? 'border-warning-400 bg-warning-50' 
+                            : 'border-slate-200'
+                        }`}
+                      />
+                    </div>
+                  </div>
                 </div>
+                
+                {ticket.manualDiscount && (
+                  <button
+                    onClick={() => actions.setManualDiscount(null)}
+                    className="w-full text-xs text-error-600 hover:text-error-700 hover:underline py-1"
+                  >
+                    Quitar descuento
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Free Delivery Toggle (only show if there are delivery items) */}
+            {calculations.deliveryTotal > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg">
+                <span className="text-sm text-slate-600">Entrega Gratis</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={ticket.freeDelivery}
+                    onChange={(e) => actions.setFreeDelivery(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className={`w-9 h-5 rounded-full transition-colors ${
+                    ticket.freeDelivery ? 'bg-success-500' : 'bg-slate-300'
+                  }`}>
+                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                      ticket.freeDelivery ? 'translate-x-4' : ''
+                    }`} />
+                  </div>
+                </label>
+              </div>
+            )}
+            
+            {/* Totals Breakdown */}
+            <div className="space-y-1.5 p-3 bg-slate-50 rounded-lg">
+              {/* Products Total (without ITBMS) */}
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Productos</span>
+                <span className="text-slate-700">{formatCurrency(calculations.productsTotal)}</span>
               </div>
               
-              {/* Amount Input */}
-              <div className="flex-1">
-                <label className="text-xs text-slate-500 mb-1 block">Monto Fijo</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={ticket.manualDiscount?.type === 'amount' ? ticket.manualDiscount.value : ''}
-                    onChange={(e) => {
-                      const value = parseFloat(e.target.value);
-                      if (value > 0) {
-                        actions.setManualDiscount({ type: 'amount', value });
-                      } else if (!e.target.value) {
-                        actions.setManualDiscount(null);
-                      }
-                    }}
-                    className={`w-full px-3 py-2 pl-9 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
-                      ticket.manualDiscount?.type === 'amount' 
-                        ? 'border-warning-400 bg-warning-50' 
-                        : 'border-slate-200'
-                    }`}
-                  />
+              {/* Delivery Total (without ITBMS) */}
+              {calculations.deliveryTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Entrega</span>
+                  <span className={ticket.freeDelivery ? 'line-through text-slate-400' : 'text-slate-700'}>
+                    {formatCurrency(calculations.deliveryTotal)}
+                  </span>
                 </div>
+              )}
+              
+              {/* Product Discount */}
+              {calculations.productDiscountAmount > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-warning-600">
+                    Descuento {ticket.promotion ? `(${ticket.promotion.code})` : ''}
+                  </span>
+                  <span className="text-warning-600">-{formatCurrency(calculations.productDiscountAmount)}</span>
+                </div>
+              )}
+              
+              {/* Free Delivery Discount */}
+              {ticket.freeDelivery && calculations.deliveryTotal > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-success-600">Entrega Gratis</span>
+                  <span className="text-success-600">-{formatCurrency(calculations.deliveryTotal)}</span>
+                </div>
+              )}
+              
+              {/* Subtotal line */}
+              <div className="flex justify-between text-sm pt-1 border-t border-dashed border-slate-200">
+                <span className="text-slate-600 font-medium">Subtotal</span>
+                <span className="text-slate-700 font-medium">{formatCurrency(calculations.subtotal)}</span>
+              </div>
+              
+              {/* ITBMS */}
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">ITBMS ({state.settings.itbms_rate || 7}%)</span>
+                <span className="text-slate-700">{formatCurrency(calculations.taxAmount)}</span>
+              </div>
+              
+              {/* Total */}
+              <div className="flex justify-between text-lg font-bold pt-2 border-t border-slate-200">
+                <span className="text-slate-800">Total</span>
+                <span className="text-slate-800">{formatCurrency(calculations.total)}</span>
               </div>
             </div>
-            
-            {ticket.manualDiscount && (
-              <button
-                onClick={() => actions.setManualDiscount(null)}
-                className="w-full text-xs text-error-600 hover:text-error-700 hover:underline py-1"
-              >
-                Quitar descuento
-              </button>
-            )}
           </div>
         )}
-
-        {/* Free Delivery Toggle (only show if there are delivery items) */}
-        {calculations.deliveryTotal > 0 && (
-          <div className="flex items-center justify-between py-2 border-t border-slate-100">
-            <span className="text-sm text-slate-600">Entrega Gratis</span>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={ticket.freeDelivery}
-                onChange={(e) => actions.setFreeDelivery(e.target.checked)}
-                className="sr-only"
-              />
-              <div className={`w-9 h-5 rounded-full transition-colors ${
-                ticket.freeDelivery ? 'bg-success-500' : 'bg-slate-300'
-              }`}>
-                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                  ticket.freeDelivery ? 'translate-x-4' : ''
-                }`} />
-              </div>
-            </label>
-          </div>
-        )}
-        
-        {/* Totals Breakdown */}
-        <div className="space-y-1.5 py-2 border-t border-slate-100">
-          {/* Products Total (without ITBMS) */}
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500">Productos</span>
-            <span className="text-slate-700">{formatCurrency(calculations.productsTotal)}</span>
-          </div>
-          
-          {/* Delivery Total (without ITBMS) */}
-          {calculations.deliveryTotal > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Entrega</span>
-              <span className={ticket.freeDelivery ? 'line-through text-slate-400' : 'text-slate-700'}>
-                {formatCurrency(calculations.deliveryTotal)}
-              </span>
-            </div>
-          )}
-          
-          {/* Product Discount */}
-          {calculations.productDiscountAmount > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-warning-600">
-                Descuento {ticket.promotion ? `(${ticket.promotion.code})` : ''}
-              </span>
-              <span className="text-warning-600">-{formatCurrency(calculations.productDiscountAmount)}</span>
-            </div>
-          )}
-          
-          {/* Free Delivery Discount */}
-          {ticket.freeDelivery && calculations.deliveryTotal > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-success-600">Entrega Gratis</span>
-              <span className="text-success-600">-{formatCurrency(calculations.deliveryTotal)}</span>
-            </div>
-          )}
-          
-          {/* Subtotal line */}
-          <div className="flex justify-between text-sm pt-1 border-t border-dashed border-slate-200">
-            <span className="text-slate-600 font-medium">Subtotal</span>
-            <span className="text-slate-700 font-medium">{formatCurrency(calculations.subtotal)}</span>
-          </div>
-          
-          {/* ITBMS */}
-          <div className="flex justify-between text-sm">
-            <span className="text-slate-500">ITBMS ({state.settings.itbms_rate || 7}%)</span>
-            <span className="text-slate-700">{formatCurrency(calculations.taxAmount)}</span>
-          </div>
-          
-          {/* Total */}
-          <div className="flex justify-between text-lg font-bold pt-2 border-t border-slate-200">
-            <span className="text-slate-800">Total</span>
-            <span className="text-slate-800">{formatCurrency(calculations.total)}</span>
-          </div>
-        </div>
         
         {/* Customer Required Warning */}
         {ticket.items.length > 0 && !ticket.customerConfirmed && (
-          <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
+          <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
             <p className="text-sm text-amber-700 font-medium">
               Selecciona un cliente para procesar
             </p>
           </div>
         )}
         
-        {/* Process Button */}
+        {/* Process Button - Always Visible */}
         <button
           onClick={() => setPaymentModalOpen(true)}
           disabled={!canProcess}
@@ -522,6 +549,8 @@ function TicketPanel() {
       {paymentModalOpen && (
         <PaymentModal
           total={calculations.total}
+          subtotal={calculations.subtotal}
+          taxAmount={calculations.taxAmount}
           onClose={() => setPaymentModalOpen(false)}
           onComplete={async (paymentInfo) => {
             setProcessing(true);
