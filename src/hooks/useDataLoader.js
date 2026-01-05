@@ -1,14 +1,28 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isConfigured, getDefaultStoreId, getDefaultUser } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
+
+// Helper to add timeout to promises
+const withTimeout = (promise, ms, errorMsg = 'Request timeout') => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error(errorMsg)), ms)
+    )
+  ]);
+};
 
 export function useDataLoader() {
   const { actions } = useApp();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [storeId, setStoreId] = useState(null);
+  const loadedRef = useRef(false);
 
   useEffect(() => {
+    // Prevent double loading in strict mode
+    if (loadedRef.current) return;
+    loadedRef.current = true;
     loadData();
   }, []);
 
@@ -21,70 +35,77 @@ export function useDataLoader() {
       setError({
         type: 'config',
         message: 'Supabase no está configurado',
-        details: 'Configura las variables de entorno SUPABASE_URL y SUPABASE_ANON_KEY'
+        details: 'Configura las variables de entorno SUPABASE_URL y SUPABASE_ANON_KEY en Vercel'
       });
       setIsLoading(false);
       return;
     }
 
     try {
-      // Get default store with company info
-      const { data: storeData, error: storeError } = await supabase
-        .from('stores')
-        .select('*, companies(*)')
-        .eq('is_active', true)
-        .limit(1)
-        .single();
+      // Get default store with company info (with 10s timeout)
+      const { data: storeData, error: storeError } = await withTimeout(
+        supabase
+          .from('stores')
+          .select('*, companies(*)')
+          .eq('is_active', true)
+          .limit(1)
+          .single(),
+        10000,
+        'Timeout al conectar con Supabase'
+      );
       
       if (storeError || !storeData) {
         setError({
           type: 'data',
           message: 'No se encontró una tienda activa',
-          details: 'Ejecuta el script SQL de schema para crear los datos iniciales'
+          details: storeError?.message || 'Ejecuta el script SQL de schema para crear los datos iniciales'
         });
         setIsLoading(false);
         return;
       }
       
-      const storeId = storeData.id;
-      setStoreId(storeId);
+      const currentStoreId = storeData.id;
+      setStoreId(currentStoreId);
 
-      // Get default user
-      const user = await getDefaultUser();
-      if (user) {
-        actions.setUser(user);
-      }
+      // Get default user (non-blocking)
+      getDefaultUser().then(user => {
+        if (user) actions.setUser(user);
+      }).catch(console.error);
 
-      // Load all data in parallel
+      // Load all data in parallel (with 15s timeout)
       const [
         { data: sections, error: sectionsError },
         { data: products, error: productsError },
         { data: customers, error: customersError },
         { data: orders, error: ordersError },
         { data: paymentMethods, error: pmError },
-      ] = await Promise.all([
-        supabase.from('sections').select('*').eq('store_id', storeId).order('display_order'),
-        supabase.from('products').select('*').eq('store_id', storeId).order('display_order'),
-        supabase.from('customers').select('*').eq('store_id', storeId).eq('is_active', true).order('first_name'),
-        supabase.from('orders').select('*').eq('store_id', storeId).order('created_at', { ascending: false }).limit(100),
-        supabase.from('payment_methods').select('*').eq('store_id', storeId).eq('is_active', true).order('display_order'),
-      ]);
+      ] = await withTimeout(
+        Promise.all([
+          supabase.from('sections').select('*').eq('store_id', currentStoreId).order('display_order'),
+          supabase.from('products').select('*').eq('store_id', currentStoreId).order('display_order'),
+          supabase.from('customers').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('first_name'),
+          supabase.from('orders').select('*').eq('store_id', currentStoreId).order('created_at', { ascending: false }).limit(100),
+          supabase.from('payment_methods').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('display_order'),
+        ]),
+        15000,
+        'Timeout al cargar datos'
+      );
 
-      // Check for errors
-      if (sectionsError) throw new Error(`Sections: ${sectionsError.message}`);
-      if (productsError) throw new Error(`Products: ${productsError.message}`);
-      if (customersError) throw new Error(`Customers: ${customersError.message}`);
-      if (ordersError) throw new Error(`Orders: ${ordersError.message}`);
-      if (pmError) throw new Error(`Payment Methods: ${pmError.message}`);
+      // Log errors but don't fail completely
+      if (sectionsError) console.error('Sections error:', sectionsError);
+      if (productsError) console.error('Products error:', productsError);
+      if (customersError) console.error('Customers error:', customersError);
+      if (ordersError) console.error('Orders error:', ordersError);
+      if (pmError) console.error('Payment Methods error:', pmError);
 
-      // Set data in context
+      // Set data in context (use empty arrays if errors)
       actions.setSections(sections || []);
       actions.setProducts(products || []);
       actions.setCustomers(customers || []);
       actions.setOrders(orders || []);
       actions.setPaymentMethods(paymentMethods || []);
       actions.setStore(storeData);
-      actions.setCompany(storeData.companies); // Set company from joined data
+      actions.setCompany(storeData.companies);
       
       // Set settings from company data
       if (storeData.companies) {
@@ -98,11 +119,11 @@ export function useDataLoader() {
       console.log('Data loaded from Supabase:', {
         store: storeData.name,
         company: storeData.companies?.name,
-        sections: sections?.length,
-        products: products?.length,
-        customers: customers?.length,
-        orders: orders?.length,
-        paymentMethods: paymentMethods?.length,
+        sections: sections?.length || 0,
+        products: products?.length || 0,
+        customers: customers?.length || 0,
+        orders: orders?.length || 0,
+        paymentMethods: paymentMethods?.length || 0,
       });
 
     } catch (err) {
@@ -768,7 +789,10 @@ export function useDataLoader() {
     isLoading,
     error,
     storeId,
-    reload: loadData,
+    reload: () => {
+      loadedRef.current = false;
+      loadData();
+    },
     addOrder,
     updateOrderStatus,
     getOrderDetails,

@@ -13,41 +13,32 @@ BEGIN
     END LOOP;
 END $$;
 
--- Disable RLS on ALL tables
-ALTER TABLE stores DISABLE ROW LEVEL SECURITY;
-ALTER TABLE companies DISABLE ROW LEVEL SECURITY;
-ALTER TABLE sections DISABLE ROW LEVEL SECURITY;
-ALTER TABLE products DISABLE ROW LEVEL SECURITY;
-ALTER TABLE customers DISABLE ROW LEVEL SECURITY;
-ALTER TABLE orders DISABLE ROW LEVEL SECURITY;
-ALTER TABLE order_items DISABLE ROW LEVEL SECURITY;
-ALTER TABLE payments DISABLE ROW LEVEL SECURITY;
-ALTER TABLE payment_methods DISABLE ROW LEVEL SECURITY;
-ALTER TABLE users DISABLE ROW LEVEL SECURITY;
-ALTER TABLE invoices DISABLE ROW LEVEL SECURITY;
-ALTER TABLE promotions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE gift_cards DISABLE ROW LEVEL SECURITY;
-ALTER TABLE gift_card_transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE machines DISABLE ROW LEVEL SECURITY;
-ALTER TABLE refunds DISABLE ROW LEVEL SECURITY;
-ALTER TABLE stock_movements DISABLE ROW LEVEL SECURITY;
-ALTER TABLE eod_closings DISABLE ROW LEVEL SECURITY;
+-- Disable RLS on ALL tables (add new tables as needed)
+ALTER TABLE IF EXISTS stores DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS companies DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS sections DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS customers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS order_items DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS payments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS payment_methods DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS invoices DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS promotions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS gift_cards DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS gift_card_transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS machines DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS refunds DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS stock_movements DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS eod_closings DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS notification_settings DISABLE ROW LEVEL SECURITY;
 
 -- Grant full access to anon and authenticated roles
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-
--- =============================================
--- Check for triggers on stores table that might block updates
--- =============================================
-SELECT 
-  trigger_name,
-  event_manipulation,
-  action_statement
-FROM information_schema.triggers 
-WHERE event_object_table = 'stores';
 
 -- =============================================
 -- Verify RLS is disabled
@@ -58,19 +49,3 @@ SELECT
 FROM pg_tables 
 WHERE schemaname = 'public'
 ORDER BY tablename;
-
--- =============================================
--- TEST: Update geolocation directly
--- Run this to verify geolocation updates work
--- =============================================
-UPDATE stores 
-SET geolocation = '{"lat": 9.06145, "lng": -79.42173}'::jsonb,
-    updated_at = NOW()
-WHERE name LIKE '%Tocumen%'
-RETURNING id, name, geolocation;
-
--- If the above works, try updating with different geolocation:
--- UPDATE stores 
--- SET geolocation = '{"lat": 9.1, "lng": -79.5}'::jsonb
--- WHERE name LIKE '%Tocumen%'
--- RETURNING id, name, geolocation;
