@@ -157,7 +157,7 @@ export function useDataLoader() {
         supabaseFetch('sections', { eq: { store_id: currentStoreId }, order: 'display_order' }),
         supabaseFetch('products', { eq: { store_id: currentStoreId }, order: 'display_order' }),
         supabaseFetch('customers', { eq: { store_id: currentStoreId, is_active: true }, order: 'first_name' }),
-        supabaseFetch('orders', { eq: { store_id: currentStoreId }, order: 'created_at', ascending: false, limit: 100 }),
+        supabaseFetch('orders', { eq: { store_id: currentStoreId }, order: 'created_at', ascending: false, limit: 500 }),
         supabaseFetch('payment_methods', { eq: { store_id: currentStoreId, is_active: true }, order: 'display_order' }),
       ]);
 
@@ -1028,6 +1028,101 @@ export function useDataLoader() {
     });
   };
 
+  // Search orders in database (for finding historical orders)
+  const searchOrders = async (query, limit = 50) => {
+    if (!storeId || !query || query.length < 2) return [];
+    
+    try {
+      const url = import.meta.env.SUPABASE_URL;
+      const key = import.meta.env.SUPABASE_ANON_KEY;
+      
+      // Search by order number, legacy order number, or customer name
+      const searchQuery = query.toLowerCase();
+      
+      // Build the query - search legacy_order_number, order_number, or customer_name
+      let fetchUrl = `${url}/rest/v1/orders?store_id=eq.${storeId}&order=created_at.desc&limit=${limit}`;
+      
+      // Use OR filter for multiple fields
+      if (searchQuery.startsWith('cc')) {
+        // Search legacy order numbers
+        fetchUrl += `&legacy_order_number=ilike.*${searchQuery}*`;
+      } else if (/^\d+$/.test(searchQuery)) {
+        // Search by order number
+        fetchUrl += `&or=(order_number.eq.${searchQuery},legacy_order_number.ilike.*${searchQuery}*)`;
+      } else {
+        // Search by customer name
+        fetchUrl += `&customer_name=ilike.*${searchQuery}*`;
+      }
+      
+      const response = await fetch(fetchUrl, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      return [];
+    } catch (err) {
+      console.error('Error searching orders:', err);
+      return [];
+    }
+  };
+
+  // Load more orders (pagination)
+  const loadMoreOrders = async (offset = 0, limit = 500) => {
+    if (!storeId) return [];
+    
+    try {
+      const url = import.meta.env.SUPABASE_URL;
+      const key = import.meta.env.SUPABASE_ANON_KEY;
+      
+      const fetchUrl = `${url}/rest/v1/orders?store_id=eq.${storeId}&order=created_at.desc&limit=${limit}&offset=${offset}`;
+      
+      const response = await fetch(fetchUrl, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+      });
+      
+      if (response.ok) {
+        const orders = await response.json();
+        // Merge with existing orders in state
+        actions.setOrders(prevOrders => {
+          const existingIds = new Set(prevOrders.map(o => o.id));
+          const newOrders = orders.filter(o => !existingIds.has(o.id));
+          return [...prevOrders, ...newOrders];
+        });
+        return orders;
+      }
+      return [];
+    } catch (err) {
+      console.error('Error loading more orders:', err);
+      return [];
+    }
+  };
+
+  // Load orders for a specific customer (for customer history)
+  const loadCustomerOrders = async (customerId, limit = 100) => {
+    if (!storeId || !customerId) return [];
+    
+    try {
+      const url = import.meta.env.SUPABASE_URL;
+      const key = import.meta.env.SUPABASE_ANON_KEY;
+      
+      const fetchUrl = `${url}/rest/v1/orders?store_id=eq.${storeId}&customer_id=eq.${customerId}&order=created_at.desc&limit=${limit}`;
+      
+      const response = await fetch(fetchUrl, {
+        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      return [];
+    } catch (err) {
+      console.error('Error loading customer orders:', err);
+      return [];
+    }
+  };
+
   return {
     isLoading,
     error,
@@ -1051,6 +1146,10 @@ export function useDataLoader() {
     addSection,
     updateSection,
     deleteSection,
+    // Order search and pagination
+    searchOrders,
+    loadMoreOrders,
+    loadCustomerOrders,
   };
 }
 

@@ -1,10 +1,22 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift, Award, Coins, Stamp } from 'lucide-react';
+import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift, Award, Coins, Stamp, Calendar } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
+
+// Helper to get date X days ago in YYYY-MM-DD format
+const getDateDaysAgo = (days) => {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toISOString().split('T')[0];
+};
+
+// Helper to get today's date in YYYY-MM-DD format
+const getTodayDate = () => {
+  return new Date().toISOString().split('T')[0];
+};
 
 // Payment method icons map
 const paymentIcons = {
@@ -40,12 +52,20 @@ const getOrderDisplayNumber = (order) => {
 function OrdersPage() {
   const { state, actions } = useApp();
   const { isAdmin } = useAuth();
-  const { updateOrderStatus: dbUpdateOrderStatus, getOrderDetails, createRefund, reload } = useDataLoader();
+  const { updateOrderStatus: dbUpdateOrderStatus, getOrderDetails, createRefund, reload, searchOrders, loadMoreOrders } = useDataLoader();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orderDetails, setOrderDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [searchResults, setSearchResults] = useState(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreOrders, setHasMoreOrders] = useState(true);
+  
+  // Date range filter - default to last 7 days
+  const [startDate, setStartDate] = useState(getDateDaysAgo(7));
+  const [endDate, setEndDate] = useState(getTodayDate());
   
   // Get status from URL or default to 'all'
   const statusFilter = searchParams.get('status') || 'all';
@@ -57,6 +77,35 @@ function OrdersPage() {
     } else {
       setSearchParams({ status: newStatus });
     }
+    setSearchResults(null); // Clear search when changing filter
+  };
+  
+  // Database search with debounce
+  useEffect(() => {
+    if (!searchQuery || searchQuery.length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      const results = await searchOrders(searchQuery, 100);
+      setSearchResults(results);
+      setIsSearching(false);
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchOrders]);
+  
+  // Load more orders
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    const currentCount = state.orders.length;
+    const newOrders = await loadMoreOrders(currentCount, 500);
+    if (newOrders.length < 500) {
+      setHasMoreOrders(false);
+    }
+    setLoadingMore(false);
   };
   
   // Get page title based on filter
@@ -73,13 +122,25 @@ function OrdersPage() {
     }
   };
   
-  const filteredOrders = useMemo(() => {
-    return state.orders.filter(order => {
+  // Use search results if searching, otherwise filter local state
+  const ordersToDisplay = useMemo(() => {
+    const sourceOrders = searchResults || state.orders;
+    
+    return sourceOrders.filter(order => {
       // Status filter
       if (statusFilter !== 'all' && order.status !== statusFilter) return false;
       
-      // Search filter
-      if (searchQuery) {
+      // Date range filter (only when not searching)
+      if (!searchResults && startDate && endDate) {
+        const orderDate = new Date(order.created_at).toISOString().split('T')[0];
+        if (orderDate < startDate || orderDate > endDate) return false;
+      }
+      
+      // If using search results, don't filter again by query
+      if (searchResults) return true;
+      
+      // Local search filter (for when not doing DB search)
+      if (searchQuery && searchQuery.length >= 2) {
         const query = searchQuery.toLowerCase();
         const orderNum = order.legacy_order_number || order.order_number.toString();
         const matchesNumber = orderNum.toLowerCase().includes(query);
@@ -89,7 +150,7 @@ function OrdersPage() {
       
       return true;
     });
-  }, [state.orders, statusFilter, searchQuery]);
+  }, [state.orders, searchResults, statusFilter, searchQuery, startDate, endDate]);
   
   const formatCurrency = (amount) => `B/${(amount || 0).toFixed(2)}`;
   
@@ -132,12 +193,27 @@ function OrdersPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-800">{getPageTitle()}</h1>
-          <p className="text-sm text-slate-500">{filteredOrders.length} órdenes encontradas</p>
+          <p className="text-sm text-slate-500">
+            {isSearching ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></span>
+                Buscando en base de datos...
+              </span>
+            ) : searchResults ? (
+              `${ordersToDisplay.length} resultados encontrados`
+            ) : (
+              <>
+                {ordersToDisplay.length} órdenes
+                {startDate && endDate && ` • ${new Date(startDate + 'T12:00:00').toLocaleDateString('es-PA', { day: 'numeric', month: 'short' })} - ${new Date(endDate + 'T12:00:00').toLocaleDateString('es-PA', { day: 'numeric', month: 'short' })}`}
+                {!startDate && !endDate && ` • Todas las fechas`}
+              </>
+            )}
+          </p>
         </div>
       </div>
       
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+      <div className="flex flex-col lg:flex-row gap-4 mb-6">
         {/* Search */}
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -145,9 +221,93 @@ function OrdersPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por # orden o cliente..."
+            placeholder="Buscar por # orden, CC### o cliente..."
             className="input pl-10"
           />
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setSearchResults(null);
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        
+        {/* Date Range Filter */}
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <Calendar className="w-5 h-5 text-slate-400 hidden sm:block" />
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="input w-auto text-sm"
+          />
+          <span className="text-slate-400">a</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="input w-auto text-sm"
+          />
+          {/* Quick date presets */}
+          <div className="flex gap-1">
+            <button
+              onClick={() => {
+                setStartDate(getTodayDate());
+                setEndDate(getTodayDate());
+              }}
+              className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                startDate === getTodayDate() && endDate === getTodayDate()
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Hoy
+            </button>
+            <button
+              onClick={() => {
+                setStartDate(getDateDaysAgo(7));
+                setEndDate(getTodayDate());
+              }}
+              className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                startDate === getDateDaysAgo(7) && endDate === getTodayDate()
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              7 días
+            </button>
+            <button
+              onClick={() => {
+                setStartDate(getDateDaysAgo(30));
+                setEndDate(getTodayDate());
+              }}
+              className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                startDate === getDateDaysAgo(30) && endDate === getTodayDate()
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              30 días
+            </button>
+            <button
+              onClick={() => {
+                setStartDate('');
+                setEndDate('');
+              }}
+              className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+                !startDate && !endDate
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Todo
+            </button>
+          </div>
         </div>
         
         {/* Status Filter */}
@@ -201,7 +361,7 @@ function OrdersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredOrders.map((order) => {
+              {ordersToDisplay.map((order) => {
                 // Find original order number if this is a refund
                 const originalOrder = order.status === 'refund' && order.refund_for_order_id
                   ? state.orders.find(o => o.id === order.refund_for_order_id)
@@ -265,8 +425,33 @@ function OrdersPage() {
           </table>
         </div>
         
+        {/* Load More Button */}
+        {!searchResults && hasMoreOrders && ordersToDisplay.length > 0 && (
+          <div className="text-center py-4 border-t border-slate-100">
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="btn-secondary inline-flex items-center gap-2"
+            >
+              {loadingMore ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></span>
+                  Cargando más órdenes...
+                </>
+              ) : (
+                <>
+                  Cargar más órdenes históricas
+                </>
+              )}
+            </button>
+            <p className="text-xs text-slate-400 mt-2">
+              {state.orders.length} órdenes cargadas • Busca por "CC" + número para órdenes de CleanCloud
+            </p>
+          </div>
+        )}
+        
         {/* Empty State */}
-        {filteredOrders.length === 0 && (
+        {ordersToDisplay.length === 0 && (
           <div className="text-center py-12 text-slate-400">
             <Search className="w-12 h-12 mx-auto mb-3 opacity-50" />
             <p className="text-sm font-medium">No se encontraron órdenes</p>
