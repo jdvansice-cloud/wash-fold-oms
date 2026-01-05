@@ -175,11 +175,13 @@ function formatDate(dateStr) {
  * Pad string to fixed width
  */
 function padRight(str, width) {
-  return str.substring(0, width).padEnd(width);
+  const s = String(str || '');
+  return s.substring(0, width).padEnd(width);
 }
 
 function padLeft(str, width) {
-  return str.substring(0, width).padStart(width);
+  const s = String(str || '');
+  return s.substring(0, width).padStart(width);
 }
 
 /**
@@ -202,13 +204,13 @@ export function generateReceiptData(order, company, store, items, payments, loya
     promisedDate: order.promised_date ? formatDate(order.promised_date) : null,
     
     // Items
-    items: items.map(item => ({
-      name: item.product_name || item.name,
+    items: (items || []).map(item => ({
+      name: item.product_name || item.name || 'Producto',
       quantity: item.quantity || 1,
       weight: item.total_weight || 0,
-      unitPrice: item.unit_price || item.price,
-      total: item.line_total || (item.quantity * item.price),
-      isWeight: item.total_weight > 0,
+      unitPrice: item.unit_price || item.price || 0,
+      total: item.line_total || ((item.quantity || 1) * (item.price || 0)),
+      isWeight: (item.total_weight || 0) > 0,
     })),
     
     // Totals
@@ -219,14 +221,14 @@ export function generateReceiptData(order, company, store, items, payments, loya
     total: order.total || 0,
     
     // Payments
-    payments: payments.map(p => ({
-      method: p.method,
-      methodName: getPaymentMethodName(p.method),
-      amount: p.amount,
-      reference: p.reference,
+    payments: (payments || []).map(p => ({
+      method: p.method || 'cash',
+      methodName: getPaymentMethodName(p.method || 'cash'),
+      amount: p.amount || 0,
+      reference: p.reference || '',
     })),
-    totalPaid: payments.reduce((sum, p) => sum + p.amount, 0),
-    change: Math.max(0, payments.reduce((sum, p) => sum + p.amount, 0) - (order.total || 0)),
+    totalPaid: (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0),
+    change: Math.max(0, (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0) - (order.total || 0)),
     
     // Additional info
     notes: order.notes,
@@ -278,33 +280,59 @@ export function generateReceiptText(receiptData) {
   const DIVIDER = '='.repeat(LINE_WIDTH);
   const THIN_DIVIDER = '-'.repeat(LINE_WIDTH);
   
+  // Ensure receiptData has all required fields with defaults
+  const data = {
+    storeName: receiptData?.storeName || '',
+    companyName: receiptData?.companyName || 'American Laundry',
+    companyRuc: receiptData?.companyRuc || '',
+    storeAddress: receiptData?.storeAddress || '',
+    storePhone: receiptData?.storePhone || '',
+    orderNumber: receiptData?.orderNumber || '#0',
+    date: receiptData?.date || '',
+    customerName: receiptData?.customerName || 'Walk-in',
+    isExpress: receiptData?.isExpress || false,
+    promisedDate: receiptData?.promisedDate || null,
+    items: receiptData?.items || [],
+    subtotal: receiptData?.subtotal || 0,
+    discount: receiptData?.discount || 0,
+    delivery: receiptData?.delivery || 0,
+    tax: receiptData?.tax || 0,
+    total: receiptData?.total || 0,
+    payments: receiptData?.payments || [],
+    change: receiptData?.change || 0,
+    notes: receiptData?.notes || '',
+    totalWeight: receiptData?.totalWeight || 0,
+    totalBags: receiptData?.totalBags || 0,
+    loyalty: receiptData?.loyalty || null,
+  };
+  
   let text = '';
   
   // Header - Store name first, then company, then RUC
-  if (receiptData.storeName) {
-    text += centerText(receiptData.storeName.toUpperCase(), LINE_WIDTH) + '\n';
+  if (data.storeName) {
+    text += centerText(data.storeName.toUpperCase(), LINE_WIDTH) + '\n';
   }
-  text += centerText(receiptData.companyName, LINE_WIDTH) + '\n';
-  if (receiptData.companyRuc) {
-    text += centerText(receiptData.companyRuc, LINE_WIDTH) + '\n';
+  text += centerText(data.companyName, LINE_WIDTH) + '\n';
+  if (data.companyRuc) {
+    text += centerText(data.companyRuc, LINE_WIDTH) + '\n';
   }
-  if (receiptData.storeAddress) {
-    text += centerText(receiptData.storeAddress, LINE_WIDTH) + '\n';
+  if (data.storeAddress) {
+    text += centerText(data.storeAddress, LINE_WIDTH) + '\n';
   }
-  if (receiptData.storePhone) {
-    text += centerText(`Tel: ${receiptData.storePhone}`, LINE_WIDTH) + '\n';
+  if (data.storePhone) {
+    text += centerText(`Tel: ${data.storePhone}`, LINE_WIDTH) + '\n';
   }
   
   text += DIVIDER + '\n';
   
   // Order info
-  text += `Orden: ${receiptData.orderNumber}`;
-  if (receiptData.isExpress) text += ' [EXPRESS]';
+  text += `Orden: ${data.orderNumber}`;
+  if (data.isExpress) text += ' [EXPRESS]';
   text += '\n';
-  text += `Fecha: ${receiptData.date}\n`;
-  text += `Cliente: ${receiptData.customerName}\n`;
-  if (receiptData.promisedDate) {
-    text += `Listo para: ${receiptData.promisedDate}\n`;
+  text += `Fecha: ${data.date}\n`;
+  text += `Cliente: ${data.customerName}\n`;
+  if (data.promisedDate) {
+    text += `Listo para: ${data.promisedDate}\n`;
   }
   
   text += THIN_DIVIDER + '\n';
@@ -314,106 +342,107 @@ export function generateReceiptText(receiptData) {
   text += THIN_DIVIDER + '\n';
   
   // Items
-  for (const item of receiptData.items) {
+  for (const item of data.items) {
     const qtyStr = item.isWeight 
-      ? `${item.weight.toFixed(2)}kg` 
-      : `${item.quantity}x`;
-    const totalStr = formatCurrency(item.total);
+      ? `${(item.weight || 0).toFixed(2)}kg` 
+      : `${item.quantity || 1}x`;
+    const totalStr = formatCurrency(item.total || 0);
     
-    text += padRight(qtyStr, 6) + padRight(item.name, 22) + padLeft(totalStr, 14) + '\n';
+    text += padRight(qtyStr, 6) + padRight(item.name || 'Producto', 22) + padLeft(totalStr, 14) + '\n';
   }
   
   text += THIN_DIVIDER + '\n';
   
   // Totals
-  if (receiptData.totalWeight > 0) {
-    text += alignLeftRight('Peso Total:', `${receiptData.totalWeight.toFixed(2)} kg`, LINE_WIDTH) + '\n';
+  if (data.totalWeight > 0) {
+    text += alignLeftRight('Peso Total:', `${data.totalWeight.toFixed(2)} kg`, LINE_WIDTH) + '\n';
   }
-  if (receiptData.totalBags > 0) {
-    text += alignLeftRight('Bolsas:', receiptData.totalBags.toString(), LINE_WIDTH) + '\n';
-  }
-  
-  text += alignLeftRight('Subtotal:', formatCurrency(receiptData.subtotal), LINE_WIDTH) + '\n';
-  
-  if (receiptData.discount > 0) {
-    text += alignLeftRight('Descuento:', `-${formatCurrency(receiptData.discount)}`, LINE_WIDTH) + '\n';
-  }
-  if (receiptData.delivery > 0) {
-    text += alignLeftRight('Delivery:', formatCurrency(receiptData.delivery), LINE_WIDTH) + '\n';
+  if (data.totalBags > 0) {
+    text += alignLeftRight('Bolsas:', data.totalBags.toString(), LINE_WIDTH) + '\n';
   }
   
-  text += alignLeftRight('ITBMS:', formatCurrency(receiptData.tax), LINE_WIDTH) + '\n';
+  text += alignLeftRight('Subtotal:', formatCurrency(data.subtotal), LINE_WIDTH) + '\n';
+  
+  if (data.discount > 0) {
+    text += alignLeftRight('Descuento:', `-${formatCurrency(data.discount)}`, LINE_WIDTH) + '\n';
+  }
+  if (data.delivery > 0) {
+    text += alignLeftRight('Delivery:', formatCurrency(data.delivery), LINE_WIDTH) + '\n';
+  }
+  
+  text += alignLeftRight('ITBMS:', formatCurrency(data.tax), LINE_WIDTH) + '\n';
   text += THIN_DIVIDER + '\n';
-  text += alignLeftRight('TOTAL:', formatCurrency(receiptData.total), LINE_WIDTH) + '\n';
+  text += alignLeftRight('TOTAL:', formatCurrency(data.total), LINE_WIDTH) + '\n';
   
   text += DIVIDER + '\n';
   
   // Payments
   text += centerText('FORMA DE PAGO', LINE_WIDTH) + '\n';
-  for (const payment of receiptData.payments) {
-    let paymentLine = payment.methodName;
+  for (const payment of data.payments) {
+    let paymentLine = payment.methodName || payment.method || 'Pago';
     if (payment.reference) paymentLine += ` (${payment.reference})`;
-    text += alignLeftRight(paymentLine, formatCurrency(payment.amount), LINE_WIDTH) + '\n';
+    text += alignLeftRight(paymentLine, formatCurrency(payment.amount || 0), LINE_WIDTH) + '\n';
   }
   
-  if (receiptData.change > 0) {
-    text += alignLeftRight('Cambio:', formatCurrency(receiptData.change), LINE_WIDTH) + '\n';
+  if (data.change > 0) {
+    text += alignLeftRight('Cambio:', formatCurrency(data.change), LINE_WIDTH) + '\n';
   }
   
   text += DIVIDER + '\n';
   
   // Notes
-  if (receiptData.notes) {
-    text += 'Notas: ' + receiptData.notes + '\n';
+  if (data.notes) {
+    text += 'Notas: ' + data.notes + '\n';
     text += THIN_DIVIDER + '\n';
   }
   
   // Loyalty Section
-  if (receiptData.loyalty) {
-    const loyalty = receiptData.loyalty;
-    const hasLoyaltyInfo = loyalty.pointsEarned > 0 || loyalty.pointsUsed > 0 || 
-                           loyalty.washPunches > 0 || loyalty.dryPunches > 0 ||
-                           loyalty.freeWashesEarned > 0 || loyalty.freeDrysEarned > 0 ||
-                           loyalty.freeServicesUsed.washes > 0 || loyalty.freeServicesUsed.drys > 0;
+  if (data.loyalty) {
+    const loyalty = data.loyalty;
+    const freeServicesUsed = loyalty.freeServicesUsed || { washes: 0, drys: 0 };
+    const hasLoyaltyInfo = (loyalty.pointsEarned || 0) > 0 || (loyalty.pointsUsed || 0) > 0 || 
+                           (loyalty.washPunches || 0) > 0 || (loyalty.dryPunches || 0) > 0 ||
+                           (loyalty.freeWashesEarned || 0) > 0 || (loyalty.freeDrysEarned || 0) > 0 ||
+                           (freeServicesUsed.washes || 0) > 0 || (freeServicesUsed.drys || 0) > 0;
     
     if (hasLoyaltyInfo) {
       text += centerText('*** PROGRAMA DE LEALTAD ***', LINE_WIDTH) + '\n';
       text += THIN_DIVIDER + '\n';
       
       // Free services used in this order
-      if (loyalty.freeServicesUsed.washes > 0 || loyalty.freeServicesUsed.drys > 0) {
+      if ((freeServicesUsed.washes || 0) > 0 || (freeServicesUsed.drys || 0) > 0) {
         text += centerText('SERVICIOS GRATIS APLICADOS', LINE_WIDTH) + '\n';
-        if (loyalty.freeServicesUsed.washes > 0) {
-          text += alignLeftRight('  Lavados gratis:', loyalty.freeServicesUsed.washes.toString(), LINE_WIDTH) + '\n';
+        if (freeServicesUsed.washes > 0) {
+          text += alignLeftRight('  Lavados gratis:', freeServicesUsed.washes.toString(), LINE_WIDTH) + '\n';
         }
-        if (loyalty.freeServicesUsed.drys > 0) {
-          text += alignLeftRight('  Secados gratis:', loyalty.freeServicesUsed.drys.toString(), LINE_WIDTH) + '\n';
+        if (freeServicesUsed.drys > 0) {
+          text += alignLeftRight('  Secados gratis:', freeServicesUsed.drys.toString(), LINE_WIDTH) + '\n';
         }
         text += '\n';
       }
       
       // Points section
-      if (loyalty.pointsEarned > 0 || loyalty.pointsUsed > 0 || loyalty.pointsBalance > 0) {
+      if ((loyalty.pointsEarned || 0) > 0 || (loyalty.pointsUsed || 0) > 0 || (loyalty.pointsBalance || 0) > 0) {
         text += centerText('PUNTOS CASHBACK', LINE_WIDTH) + '\n';
-        if (loyalty.pointsUsed > 0) {
-          text += alignLeftRight('  Puntos usados:', `-B/${loyalty.pointsUsed.toFixed(2)}`, LINE_WIDTH) + '\n';
+        if ((loyalty.pointsUsed || 0) > 0) {
+          text += alignLeftRight('  Puntos usados:', `-B/${(loyalty.pointsUsed || 0).toFixed(2)}`, LINE_WIDTH) + '\n';
         }
-        if (loyalty.pointsEarned > 0) {
-          text += alignLeftRight('  Puntos ganados:', `+B/${loyalty.pointsEarned.toFixed(2)}`, LINE_WIDTH) + '\n';
+        if ((loyalty.pointsEarned || 0) > 0) {
+          text += alignLeftRight('  Puntos ganados:', `+B/${(loyalty.pointsEarned || 0).toFixed(2)}`, LINE_WIDTH) + '\n';
         }
-        text += alignLeftRight('  Saldo actual:', `B/${loyalty.pointsBalance.toFixed(2)}`, LINE_WIDTH) + '\n';
+        text += alignLeftRight('  Saldo actual:', `B/${(loyalty.pointsBalance || 0).toFixed(2)}`, LINE_WIDTH) + '\n';
         text += '\n';
       }
       
       // Punch card section
-      if (loyalty.washPunches > 0 || loyalty.dryPunches > 0 || 
-          loyalty.freeWashesEarned > 0 || loyalty.freeDrysEarned > 0) {
+      if ((loyalty.washPunches || 0) > 0 || (loyalty.dryPunches || 0) > 0 || 
+          (loyalty.freeWashesEarned || 0) > 0 || (loyalty.freeDrysEarned || 0) > 0) {
         text += centerText('TARJETA DE SELLOS', LINE_WIDTH) + '\n';
         
         // Wash punches
-        if (loyalty.washPunches > 0 || loyalty.washPunchesTotal > 0) {
-          const washProgress = `${loyalty.washPunchesTotal}/${loyalty.punchesRequired}`;
-          if (loyalty.washPunches > 0) {
+        if ((loyalty.washPunches || 0) > 0 || (loyalty.washPunchesTotal || 0) > 0) {
+          const washProgress = `${loyalty.washPunchesTotal || 0}/${loyalty.punchesRequired || 10}`;
+          if ((loyalty.washPunches || 0) > 0) {
             text += alignLeftRight(`  Lavados (+${loyalty.washPunches}):`, washProgress, LINE_WIDTH) + '\n';
           } else {
             text += alignLeftRight('  Lavados:', washProgress, LINE_WIDTH) + '\n';
@@ -421,9 +450,9 @@ export function generateReceiptText(receiptData) {
         }
         
         // Dry punches
-        if (loyalty.dryPunches > 0 || loyalty.dryPunchesTotal > 0) {
-          const dryProgress = `${loyalty.dryPunchesTotal}/${loyalty.punchesRequired}`;
-          if (loyalty.dryPunches > 0) {
+        if ((loyalty.dryPunches || 0) > 0 || (loyalty.dryPunchesTotal || 0) > 0) {
+          const dryProgress = `${loyalty.dryPunchesTotal || 0}/${loyalty.punchesRequired || 10}`;
+          if ((loyalty.dryPunches || 0) > 0) {
             text += alignLeftRight(`  Secados (+${loyalty.dryPunches}):`, dryProgress, LINE_WIDTH) + '\n';
           } else {
             text += alignLeftRight('  Secados:', dryProgress, LINE_WIDTH) + '\n';
@@ -431,22 +460,22 @@ export function generateReceiptText(receiptData) {
         }
         
         // Free services earned this order
-        if (loyalty.freeWashesEarned > 0) {
+        if ((loyalty.freeWashesEarned || 0) > 0) {
           text += centerText(`*** GANASTE ${loyalty.freeWashesEarned} LAVADO(S) GRATIS! ***`, LINE_WIDTH) + '\n';
         }
-        if (loyalty.freeDrysEarned > 0) {
+        if ((loyalty.freeDrysEarned || 0) > 0) {
           text += centerText(`*** GANASTE ${loyalty.freeDrysEarned} SECADO(S) GRATIS! ***`, LINE_WIDTH) + '\n';
         }
         
         // Available free services
-        if (loyalty.freeWashesAvailable > 0 || loyalty.freeDrysAvailable > 0) {
+        if ((loyalty.freeWashesAvailable || 0) > 0 || (loyalty.freeDrysAvailable || 0) > 0) {
           text += '\n';
           text += centerText('Servicios gratis disponibles:', LINE_WIDTH) + '\n';
-          if (loyalty.freeWashesAvailable > 0) {
-            text += alignLeftRight('  Lavados:', loyalty.freeWashesAvailable.toString(), LINE_WIDTH) + '\n';
+          if ((loyalty.freeWashesAvailable || 0) > 0) {
+            text += alignLeftRight('  Lavados:', (loyalty.freeWashesAvailable || 0).toString(), LINE_WIDTH) + '\n';
           }
-          if (loyalty.freeDrysAvailable > 0) {
-            text += alignLeftRight('  Secados:', loyalty.freeDrysAvailable.toString(), LINE_WIDTH) + '\n';
+          if ((loyalty.freeDrysAvailable || 0) > 0) {
+            text += alignLeftRight('  Secados:', (loyalty.freeDrysAvailable || 0).toString(), LINE_WIDTH) + '\n';
           }
         }
       }
@@ -466,17 +495,20 @@ export function generateReceiptText(receiptData) {
 
 // Helper functions for text formatting
 function centerText(text, width) {
-  if (text.length >= width) return text.substring(0, width);
-  const padding = Math.floor((width - text.length) / 2);
-  return ' '.repeat(padding) + text + ' '.repeat(width - padding - text.length);
+  const t = String(text || '');
+  if (t.length >= width) return t.substring(0, width);
+  const padding = Math.floor((width - t.length) / 2);
+  return ' '.repeat(padding) + t + ' '.repeat(width - padding - t.length);
 }
 
 function alignLeftRight(left, right, width) {
-  const leftLen = left.length;
-  const rightLen = right.length;
+  const l = String(left || '');
+  const r = String(right || '');
+  const leftLen = l.length;
+  const rightLen = r.length;
   const spaces = width - leftLen - rightLen;
-  if (spaces <= 0) return left.substring(0, width - rightLen - 1) + ' ' + right;
-  return left + ' '.repeat(spaces) + right;
+  if (spaces <= 0) return l.substring(0, width - rightLen - 1) + ' ' + r;
+  return l + ' '.repeat(spaces) + r;
 }
 
 /**
