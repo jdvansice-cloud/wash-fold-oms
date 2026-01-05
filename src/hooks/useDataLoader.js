@@ -1,25 +1,67 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase, isConfigured, getDefaultStoreId, getDefaultUser } from '../lib/supabase';
+import { supabase, isConfigured, getDefaultUser } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 
-// Simple timeout helper
-const withTimeout = (promise, ms, label = 'Query') => {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      console.warn(`${label} timed out after ${ms}ms`);
-      resolve({ data: null, error: { message: `Timeout: ${label} excedió ${ms/1000}s` } });
-    }, ms);
+// Raw fetch helper for Supabase REST API
+const supabaseFetch = async (table, options = {}) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key) {
+    return { data: null, error: { message: 'Missing Supabase config' } };
+  }
+  
+  try {
+    // Build query string
+    const params = new URLSearchParams();
+    params.append('select', options.select || '*');
     
-    promise
-      .then(result => {
-        clearTimeout(timer);
-        resolve(result);
-      })
-      .catch(err => {
-        clearTimeout(timer);
-        reject(err);
+    if (options.eq) {
+      Object.entries(options.eq).forEach(([col, val]) => {
+        params.append(col, `eq.${val}`);
       });
-  });
+    }
+    
+    if (options.order) {
+      const dir = options.ascending === false ? 'desc' : 'asc';
+      params.append('order', `${options.order}.${dir}`);
+    }
+    
+    if (options.limit) {
+      params.append('limit', options.limit);
+    }
+    
+    const fetchUrl = `${url}/rest/v1/${table}?${params.toString()}`;
+    
+    const response = await fetch(fetchUrl, {
+      method: 'GET',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      return { data: null, error: { message: `HTTP ${response.status}: ${text}` } };
+    }
+    
+    const data = await response.json();
+    
+    // Handle single option
+    if (options.single) {
+      if (data.length === 0) {
+        return { data: null, error: { message: 'No rows found' } };
+      }
+      return { data: data[0], error: null };
+    }
+    
+    return { data, error: null };
+  } catch (err) {
+    console.error(`Fetch error for ${table}:`, err);
+    return { data: null, error: { message: err.message } };
+  }
 };
 
 export function useDataLoader() {
@@ -40,7 +82,7 @@ export function useDataLoader() {
     setIsLoading(true);
     setError(null);
 
-    console.log('=== DATA LOADER START ===', new Date().toISOString());
+    console.log('=== DATA LOADER START (raw fetch) ===', new Date().toISOString());
     console.log('Supabase configured:', isConfigured);
 
     // Check if Supabase is configured
@@ -56,41 +98,23 @@ export function useDataLoader() {
     }
 
     try {
-      console.log('1. Fetching store...');
       const startTime = Date.now();
       
-      // Query store with 20 second timeout
-      const { data: storeData, error: storeError } = await withTimeout(
-        supabase
-          .from('stores')
-          .select('*, companies(*)')
-          .eq('is_active', true)
-          .limit(1)
-          .single(),
-        20000,
-        'Store query'
-      );
-      
+      // Fetch store
+      console.log('1. Fetching store...');
+      const { data: storeData, error: storeError } = await supabaseFetch('stores', {
+        eq: { is_active: true },
+        limit: 1,
+        single: true
+      });
       console.log('1. Store query completed in', Date.now() - startTime, 'ms');
-      console.log('1. Store result:', storeData ? 'OK' : 'NULL', storeError ? `Error: ${storeError.message}` : '');
       
-      if (storeError) {
+      if (storeError || !storeData) {
         console.error('Store error:', storeError);
-        setError({
-          type: 'connection',
-          message: 'Error al cargar tienda',
-          details: storeError.message
-        });
-        setIsLoading(false);
-        return;
-      }
-      
-      if (!storeData) {
-        console.log('No store data found');
         setError({
           type: 'data',
           message: 'No se encontró una tienda activa',
-          details: 'Ejecuta el script SQL de schema para crear los datos iniciales'
+          details: storeError?.message || 'Ejecuta el script SQL de schema'
         });
         setIsLoading(false);
         return;
@@ -100,7 +124,21 @@ export function useDataLoader() {
       const currentStoreId = storeData.id;
       setStoreId(currentStoreId);
 
-      // Get default user (non-blocking)
+      // Fetch company if needed
+      let companyData = null;
+      if (storeData.company_id) {
+        console.log('2b. Fetching company...');
+        const { data: company } = await supabaseFetch('companies', {
+          eq: { id: storeData.company_id },
+          single: true
+        });
+        if (company) {
+          companyData = company;
+          console.log('2b. Company loaded:', company.name);
+        }
+      }
+
+      // Get default user (non-blocking, uses Supabase client which works for simple queries)
       getDefaultUser().then(user => {
         if (user) actions.setUser(user);
       }).catch(err => console.error('User load error:', err));
@@ -108,7 +146,7 @@ export function useDataLoader() {
       console.log('3. Loading app data...');
       const dataStartTime = Date.now();
       
-      // Load all data in parallel with 15s timeout per query
+      // Load all data in parallel using raw fetch
       const [
         sectionsResult,
         productsResult,
@@ -116,11 +154,11 @@ export function useDataLoader() {
         ordersResult,
         paymentMethodsResult,
       ] = await Promise.all([
-        withTimeout(supabase.from('sections').select('*').eq('store_id', currentStoreId).order('display_order'), 15000, 'Sections'),
-        withTimeout(supabase.from('products').select('*').eq('store_id', currentStoreId).order('display_order'), 15000, 'Products'),
-        withTimeout(supabase.from('customers').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('first_name'), 15000, 'Customers'),
-        withTimeout(supabase.from('orders').select('*').eq('store_id', currentStoreId).order('created_at', { ascending: false }).limit(100), 15000, 'Orders'),
-        withTimeout(supabase.from('payment_methods').select('*').eq('store_id', currentStoreId).eq('is_active', true).order('display_order'), 15000, 'PaymentMethods'),
+        supabaseFetch('sections', { eq: { store_id: currentStoreId }, order: 'display_order' }),
+        supabaseFetch('products', { eq: { store_id: currentStoreId }, order: 'display_order' }),
+        supabaseFetch('customers', { eq: { store_id: currentStoreId, is_active: true }, order: 'first_name' }),
+        supabaseFetch('orders', { eq: { store_id: currentStoreId }, order: 'created_at', ascending: false, limit: 100 }),
+        supabaseFetch('payment_methods', { eq: { store_id: currentStoreId, is_active: true }, order: 'display_order' }),
       ]);
 
       console.log('3. Data queries completed in', Date.now() - dataStartTime, 'ms');
@@ -145,20 +183,20 @@ export function useDataLoader() {
       actions.setOrders(orders || []);
       actions.setPaymentMethods(paymentMethods || []);
       actions.setStore(storeData);
-      actions.setCompany(storeData.companies);
+      actions.setCompany(companyData);
       
       // Set settings from company data
-      if (storeData.companies) {
+      if (companyData) {
         actions.setSettings({
-          itbms_rate: storeData.companies.itbms_rate || 7,
-          default_completion_days: storeData.companies.default_completion_days || 1,
-          express_completion_days: storeData.companies.express_completion_days || 0,
+          itbms_rate: companyData.itbms_rate || 7,
+          default_completion_days: companyData.default_completion_days || 1,
+          express_completion_days: companyData.express_completion_days || 0,
         });
       }
       
       console.log('=== DATA LOADER SUCCESS ===', {
         store: storeData.name,
-        company: storeData.companies?.name,
+        company: companyData?.name,
         sections: sections?.length || 0,
         products: products?.length || 0,
         customers: customers?.length || 0,
