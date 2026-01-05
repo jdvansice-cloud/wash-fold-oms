@@ -353,6 +353,7 @@ function appReducer(state, action) {
       };
       
     // Order actions
+    case actionTypes.ADD_ORDER:
       return {
         ...state,
         orders: [action.payload, ...state.orders],

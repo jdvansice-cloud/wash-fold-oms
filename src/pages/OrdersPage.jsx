@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 
@@ -30,7 +31,8 @@ const paymentMethodNames = {
 
 function OrdersPage() {
   const { state, actions } = useApp();
-  const { updateOrderStatus: dbUpdateOrderStatus, getOrderDetails, createRefund } = useDataLoader();
+  const { isAdmin } = useAuth();
+  const { updateOrderStatus: dbUpdateOrderStatus, getOrderDetails, createRefund, reload } = useDataLoader();
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -256,7 +258,7 @@ function OrdersPage() {
           order={selectedOrder}
           orderDetails={orderDetails}
           loadingDetails={loadingDetails}
-          isAdmin={state.user?.role === 'admin'}
+          isAdmin={isAdmin}
           onClose={() => {
             setSelectedOrder(null);
             setOrderDetails(null);
@@ -274,6 +276,8 @@ function OrdersPage() {
               const refundOrder = await createRefund(orderDetails, reason);
               setSelectedOrder(null);
               setOrderDetails(null);
+              // Reload orders to show updated data
+              await reload();
               alert(`Reembolso creado: Orden #${refundOrder.order_number}`);
             } catch (err) {
               alert('Error al crear reembolso: ' + err.message);

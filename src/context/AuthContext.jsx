@@ -10,19 +10,45 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let mounted = true;
+    
+    // Timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn('Auth loading timeout - forcing completion');
+        setLoading(false);
+      }
+    }, 5000);
+
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (!mounted) return;
+      
+      if (error) {
+        console.error('Error getting session:', error);
+        setLoading(false);
+        return;
+      }
+      
       setSession(session);
       setUser(session?.user ?? null);
+      
       if (session?.user) {
-        loadAppUser(session.user.id);
+        loadAppUser(session.user.id).finally(() => {
+          if (mounted) setLoading(false);
+        });
       } else {
         setLoading(false);
       }
+    }).catch(err => {
+      console.error('Session check failed:', err);
+      if (mounted) setLoading(false);
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+      
       console.log('Auth event:', event);
       setSession(session);
       setUser(session?.user ?? null);
@@ -31,11 +57,15 @@ export function AuthProvider({ children }) {
         await loadAppUser(session.user.id);
       } else {
         setAppUser(null);
-        setLoading(false);
       }
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const loadAppUser = async (authId) => {
@@ -44,16 +74,15 @@ export function AuthProvider({ children }) {
         .from('users')
         .select('*')
         .eq('auth_id', authId)
-        .single();
+        .maybeSingle(); // Use maybeSingle instead of single to avoid error on no match
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         console.error('Error loading app user:', error);
       }
       setAppUser(data || null);
     } catch (err) {
       console.error('Error loading app user:', err);
-    } finally {
-      setLoading(false);
+      setAppUser(null);
     }
   };
 
