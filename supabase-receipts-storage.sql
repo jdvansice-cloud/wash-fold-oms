@@ -16,22 +16,31 @@ ON CONFLICT (id) DO UPDATE SET
   file_size_limit = EXCLUDED.file_size_limit,
   allowed_mime_types = EXCLUDED.allowed_mime_types;
 
--- 2. Create RLS policies for the receipts bucket
+-- 2. Drop existing policies if they exist (to avoid conflicts)
+DROP POLICY IF EXISTS "Authenticated users can upload receipts" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can read receipts" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can update receipts" ON storage.objects;
+DROP POLICY IF EXISTS "Service role can manage receipts" ON storage.objects;
+DROP POLICY IF EXISTS "Allow receipt uploads" ON storage.objects;
+DROP POLICY IF EXISTS "Allow receipt reads" ON storage.objects;
+
+-- 3. Create RLS policies for the receipts bucket
+-- These policies allow both authenticated users and service role to manage receipts
 
 -- Policy: Allow authenticated users to upload receipts
-CREATE POLICY "Authenticated users can upload receipts"
+CREATE POLICY "Allow receipt uploads"
 ON storage.objects
 FOR INSERT
-TO authenticated
+TO authenticated, anon
 WITH CHECK (
   bucket_id = 'receipts'
 );
 
 -- Policy: Allow authenticated users to read receipts
-CREATE POLICY "Authenticated users can read receipts"
+CREATE POLICY "Allow receipt reads"
 ON storage.objects
 FOR SELECT
-TO authenticated
+TO authenticated, anon
 USING (
   bucket_id = 'receipts'
 );
@@ -40,12 +49,12 @@ USING (
 CREATE POLICY "Authenticated users can update receipts"
 ON storage.objects
 FOR UPDATE
-TO authenticated
+TO authenticated, anon
 USING (
   bucket_id = 'receipts'
 );
 
--- 3. Optional: Create a function to clean up old receipts (> 2 years)
+-- 4. Optional: Create a function to clean up old receipts (> 2 years)
 CREATE OR REPLACE FUNCTION cleanup_old_receipts()
 RETURNS void AS $$
 DECLARE
@@ -61,24 +70,28 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 4. Add receipt_path column to orders table to store receipt reference
+-- 5. Add receipt_path column to orders table to store receipt reference
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS receipt_path VARCHAR(500);
 
--- 5. Create index for receipt lookups
+-- 6. Create index for receipt lookups
 CREATE INDEX IF NOT EXISTS idx_orders_receipt_path ON orders(receipt_path) WHERE receipt_path IS NOT NULL;
 
 COMMENT ON COLUMN orders.receipt_path IS 'Path to the receipt file in Supabase Storage/receipts bucket';
 
 -- ==============================================
--- Verification Queries
+-- Verification Queries (run these to check setup)
 -- ==============================================
 
 -- Check bucket exists:
--- SELECT * FROM storage.buckets WHERE id = 'receipts';
+SELECT * FROM storage.buckets WHERE id = 'receipts';
 
 -- Check policies:
--- SELECT * FROM pg_policies WHERE tablename = 'objects' AND policyname LIKE '%receipts%';
+SELECT policyname, permissive, roles, cmd, qual 
+FROM pg_policies 
+WHERE tablename = 'objects' 
+AND (policyname LIKE '%receipt%' OR policyname LIKE '%Receipt%');
 
 -- Check column added:
--- SELECT column_name, data_type FROM information_schema.columns 
--- WHERE table_name = 'orders' AND column_name = 'receipt_path';
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'orders' AND column_name = 'receipt_path';

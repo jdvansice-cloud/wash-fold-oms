@@ -847,7 +847,13 @@ export async function saveReceiptToStorage(receiptText, orderNumber, storeId) {
     const key = import.meta.env.SUPABASE_ANON_KEY;
     
     if (!url || !key) {
-      throw new Error('Supabase not configured');
+      console.warn('Supabase not configured for receipt storage');
+      return null;
+    }
+    
+    if (!storeId) {
+      console.warn('No storeId provided for receipt storage');
+      storeId = 'default';
     }
     
     // Generate filename with date and order number
@@ -856,6 +862,8 @@ export async function saveReceiptToStorage(receiptText, orderNumber, storeId) {
     const timestamp = date.getTime();
     const safeOrderNumber = String(orderNumber).replace(/[^a-zA-Z0-9]/g, '');
     const filename = `${storeId}/${dateStr}/${safeOrderNumber}-${timestamp}.txt`;
+    
+    console.log('Saving receipt to storage:', filename);
     
     // Upload to Supabase Storage
     const response = await fetch(`${url}/storage/v1/object/receipts/${filename}`, {
@@ -870,18 +878,26 @@ export async function saveReceiptToStorage(receiptText, orderNumber, storeId) {
     });
     
     if (!response.ok) {
-      const error = await response.text();
-      console.error('Error saving receipt to storage:', error);
-      // Don't throw - receipt saving is not critical
+      const errorText = await response.text();
+      console.error('Receipt storage error:', response.status, errorText);
+      
+      // Common error: bucket doesn't exist
+      if (response.status === 404 || errorText.includes('not found')) {
+        console.error('The "receipts" bucket may not exist. Run supabase-receipts-storage.sql to create it.');
+      }
+      // Permission error
+      if (response.status === 403 || response.status === 401) {
+        console.error('Permission denied. Check RLS policies on the receipts bucket.');
+      }
+      
       return null;
     }
     
     const result = await response.json();
-    console.log('Receipt saved to storage:', filename);
+    console.log('Receipt saved successfully:', filename);
     return filename;
   } catch (error) {
     console.error('Error saving receipt to storage:', error);
-    // Don't throw - this is a non-critical operation
     return null;
   }
 }
