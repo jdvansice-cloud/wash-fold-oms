@@ -57,17 +57,20 @@ const fetchLoyaltySettings = async (storeId) => {
   }
 };
 
-// Helper to add loyalty points after order (excluding Lavamático section)
-const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, lavamaticSubtotal = 0) => {
+// Helper to add loyalty points after order (excluding Lavamático, loyalty payments, and free services)
+const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, totalExclusions = 0) => {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_ANON_KEY;
   
-  // Exclude Lavamático subtotal from points calculation
-  const eligibleSubtotal = subtotal - lavamaticSubtotal;
+  // Exclude ineligible amounts from points calculation
+  const eligibleSubtotal = subtotal - totalExclusions;
   
   if (!url || !key || !customerId || !storeId || eligibleSubtotal <= 0) {
-    if (lavamaticSubtotal > 0) {
-      console.log(`Loyalty: Excluding B/${lavamaticSubtotal.toFixed(2)} from Lavamático (not eligible for points)`);
+    if (totalExclusions > 0) {
+      console.log(`Loyalty: Excluding B/${totalExclusions.toFixed(2)} from points (Lavamático/loyalty payment/free services)`);
+    }
+    if (eligibleSubtotal <= 0) {
+      console.log('Loyalty: No eligible amount for earning points');
     }
     return null;
   }
@@ -92,8 +95,8 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
     
     if (pointsEarned <= 0) return null;
     
-    if (lavamaticSubtotal > 0) {
-      console.log(`Loyalty: Calculating points on B/${eligibleSubtotal.toFixed(2)} (excluded B/${lavamaticSubtotal.toFixed(2)} from Lavamático)`);
+    if (totalExclusions > 0) {
+      console.log(`Loyalty: Calculating points on B/${eligibleSubtotal.toFixed(2)} (excluded B/${totalExclusions.toFixed(2)})`);
     }
     
     // 2. Get or create customer loyalty record
@@ -1467,6 +1470,8 @@ function TicketPanel() {
                 
                 // 2. Redeem loyalty points if used as payment
                 const loyaltyPayment = paymentInfo.payments.find(p => p.method === 'loyalty_points');
+                const loyaltyPointsUsedAsPayment = loyaltyPayment?.loyaltyPointsUsed || 0;
+                
                 if (loyaltyPayment) {
                   try {
                     await redeemLoyaltyPoints(
@@ -1481,10 +1486,12 @@ function TicketPanel() {
                   }
                 }
                 
-                // 3. Calculate Lavamático subtotal to exclude from points earning
+                // 3. Calculate exclusions from points earning
                 const lavamaticSubtotal = calculateLavamaticSubtotal(state.ticket.items, state.sections);
+                // Loyalty points used as payment should not generate new points
+                const totalExclusions = lavamaticSubtotal + loyaltyPointsUsedAsPayment + freeServicesApplied.discountAmount;
                 
-                // 4. Add points if points program is enabled (excluding Lavamático)
+                // 4. Add points if points program is enabled (excluding Lavamático, loyalty payment, and free services)
                 if (loyaltySettings?.points_enabled && calculations.subtotal > 0) {
                   try {
                     const loyaltyResult = await addLoyaltyPointsForOrder(
@@ -1492,7 +1499,7 @@ function TicketPanel() {
                       state.store?.id,
                       calculations.subtotal,
                       newOrder?.id,
-                      lavamaticSubtotal // Pass Lavamático subtotal to exclude
+                      totalExclusions // Pass total exclusions (Lavamático + loyalty points used + free services)
                     );
                     if (loyaltyResult?.success) {
                       console.log(`Loyalty points added: B/${loyaltyResult.points_earned} earned, new balance: B/${loyaltyResult.balance_after}`);
