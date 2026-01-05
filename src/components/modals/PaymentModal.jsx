@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, Banknote, CreditCard, Smartphone, Building2, 
-  FileText, Clock, Gift, Check, ChevronDown, ChevronUp, Hash 
+  FileText, Clock, Gift, Check, ChevronDown, ChevronUp, Hash, Plus, Trash2 
 } from 'lucide-react';
 
 const paymentMethods = [
@@ -16,65 +16,141 @@ const paymentMethods = [
 ];
 
 function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
-  const [selectedMethod, setSelectedMethod] = useState(null);
-  const [cashAmount, setCashAmount] = useState('');
-  const [cardReference, setCardReference] = useState('');
-  const [processing, setProcessing] = useState(false);
-  const [showOtherMethods, setShowOtherMethods] = useState(true);
+  // Track multiple payments
+  const [payments, setPayments] = useState([]);
+  const [activeMethod, setActiveMethod] = useState(null);
+  const [showAllMethods, setShowAllMethods] = useState(true);
   
-  const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
+  // For cash payment
+  const [cashAmount, setCashAmount] = useState('');
+  const [cashTendered, setCashTendered] = useState('');
+  
+  // For card payment
+  const [cardAmount, setCardAmount] = useState('');
+  const [cardReference, setCardReference] = useState('');
+  
+  // For other payments
+  const [otherAmount, setOtherAmount] = useState('');
+  
+  const [processing, setProcessing] = useState(false);
+  
+  const formatCurrency = (amount) => `B/${Number(amount).toFixed(2)}`;
+  
+  // Calculate totals
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const remaining = Math.max(0, total - totalPaid);
+  const overpaid = Math.max(0, totalPaid - total);
   
   const handleMethodSelect = (methodId) => {
-    setSelectedMethod(methodId);
-    if (methodId !== 'cash') {
-      setCashAmount('');
-    }
-    if (methodId !== 'card') {
+    setActiveMethod(methodId);
+    // Pre-fill with remaining amount
+    const remainingStr = remaining.toFixed(2);
+    if (methodId === 'cash') {
+      setCashAmount(remainingStr);
+      setCashTendered('');
+    } else if (methodId === 'card') {
+      setCardAmount(remainingStr);
       setCardReference('');
+    } else {
+      setOtherAmount(remainingStr);
     }
-    // Collapse other methods when cash or card is selected
-    setShowOtherMethods(methodId !== 'cash' && methodId !== 'card');
   };
   
   const handleCashDenomination = (amount) => {
-    const currentAmount = parseFloat(cashAmount) || 0;
-    setCashAmount((currentAmount + amount).toFixed(2));
+    const currentAmount = parseFloat(cashTendered) || 0;
+    setCashTendered((currentAmount + amount).toFixed(2));
   };
   
-  const changeAmount = selectedMethod === 'cash' && cashAmount
-    ? Math.max(0, parseFloat(cashAmount) - total)
+  const cashChange = cashTendered && cashAmount
+    ? Math.max(0, parseFloat(cashTendered) - parseFloat(cashAmount))
     : 0;
   
-  // Validation based on payment method
-  const canProcess = selectedMethod && (
-    (selectedMethod === 'cash' && parseFloat(cashAmount) >= total) ||
-    (selectedMethod === 'card' && cardReference.trim().length > 0) ||
-    (!['cash', 'card'].includes(selectedMethod))
-  );
+  // Add a payment to the list
+  const addPayment = () => {
+    if (!activeMethod) return;
+    
+    let paymentData = null;
+    
+    if (activeMethod === 'cash') {
+      const amount = parseFloat(cashAmount) || 0;
+      if (amount <= 0) return;
+      paymentData = {
+        method: 'cash',
+        methodName: 'Efectivo',
+        amount,
+        cashTendered: parseFloat(cashTendered) || amount,
+        changeGiven: cashChange,
+      };
+      setCashAmount('');
+      setCashTendered('');
+    } else if (activeMethod === 'card') {
+      const amount = parseFloat(cardAmount) || 0;
+      if (amount <= 0 || !cardReference.trim()) return;
+      paymentData = {
+        method: 'card',
+        methodName: 'Tarjeta',
+        amount,
+        reference: cardReference.trim(),
+      };
+      setCardAmount('');
+      setCardReference('');
+    } else {
+      const amount = parseFloat(otherAmount) || 0;
+      if (amount <= 0) return;
+      const methodInfo = paymentMethods.find(m => m.id === activeMethod);
+      paymentData = {
+        method: activeMethod,
+        methodName: methodInfo?.name || activeMethod,
+        amount,
+      };
+      setOtherAmount('');
+    }
+    
+    if (paymentData) {
+      setPayments([...payments, paymentData]);
+      setActiveMethod(null);
+    }
+  };
+  
+  const removePayment = (index) => {
+    setPayments(payments.filter((_, i) => i !== index));
+  };
+  
+  // Can process when total is covered
+  const canProcess = totalPaid >= total;
   
   const handleProcess = () => {
     if (!canProcess) return;
     
     setProcessing(true);
     
-    // Simulate processing delay
     setTimeout(() => {
       onComplete({
-        method: selectedMethod,
-        amount: total,
-        cashTendered: selectedMethod === 'cash' ? parseFloat(cashAmount) : null,
-        changeGiven: selectedMethod === 'cash' ? changeAmount : null,
-        reference: selectedMethod === 'card' ? cardReference : null,
+        payments,
+        totalPaid,
+        change: overpaid,
         timestamp: new Date().toISOString(),
       });
     }, 500);
+  };
+  
+  // Check if active payment can be added
+  const canAddPayment = () => {
+    if (!activeMethod) return false;
+    if (activeMethod === 'cash') {
+      return parseFloat(cashAmount) > 0;
+    } else if (activeMethod === 'card') {
+      return parseFloat(cardAmount) > 0 && cardReference.trim().length > 0;
+    } else {
+      return parseFloat(otherAmount) > 0;
+    }
   };
   
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 pb-4 animate-fade-in" onClick={onClose}>
       <div className="absolute inset-0 bg-black/50" />
       <div 
-        className="relative bg-white rounded-2xl shadow-elevated w-full max-w-md max-h-[calc(100vh-5rem)] flex flex-col animate-scale-in"
+        className="relative bg-white rounded-2xl shadow-elevated w-full max-w-lg max-h-[calc(100vh-5rem)] flex flex-col animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -90,187 +166,349 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
         
         {/* Scrollable Content */}
         <div className="p-4 overflow-y-auto flex-1">
-          {/* Total Display - Always visible */}
-          <div className="text-center mb-4">
-            <p className="text-sm text-slate-500 mb-1">Total a Pagar</p>
-            <p className="text-4xl font-bold text-slate-800">{formatCurrency(total)}</p>
-          </div>
-          
-          {/* Primary Payment Methods - Always show */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {paymentMethods.filter(m => m.primary).map((method) => {
-              const Icon = method.icon;
-              const isSelected = selectedMethod === method.id;
-              
-              return (
-                <button
-                  key={method.id}
-                  onClick={() => handleMethodSelect(method.id)}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    isSelected
-                      ? 'border-primary-500 bg-primary-50'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <Icon className={`w-8 h-8 mx-auto mb-2 ${
-                    isSelected ? 'text-primary-500' : 'text-slate-400'
-                  }`} />
-                  <p className={`text-sm font-medium ${
-                    isSelected ? 'text-primary-600' : 'text-slate-600'
-                  }`}>
-                    {method.name}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-          
-          {/* Other Methods - Collapsible */}
-          {selectedMethod !== 'cash' && selectedMethod !== 'card' && (
-            <div className="mb-4">
-              <button
-                onClick={() => setShowOtherMethods(!showOtherMethods)}
-                className="flex items-center justify-between w-full text-sm text-slate-500 mb-2"
-              >
-                <span>Otros métodos de pago</span>
-                {showOtherMethods ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-              
-              {showOtherMethods && (
-                <div className="grid grid-cols-3 gap-2 animate-slide-up">
-                  {paymentMethods.filter(m => !m.primary).map((method) => {
-                    const isSelected = selectedMethod === method.id;
-                    
-                    return (
-                      <button
-                        key={method.id}
-                        onClick={() => handleMethodSelect(method.id)}
-                        className={`p-3 rounded-xl border text-center transition-all ${
-                          isSelected
-                            ? 'border-primary-500 bg-primary-50'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <p className={`text-xs font-medium ${
-                          isSelected ? 'text-primary-600' : 'text-slate-600'
-                        }`}>
-                          {method.name}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+          {/* Amount Summary */}
+          <div className="bg-slate-50 rounded-xl p-4 mb-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm text-slate-600">Total a Pagar</span>
+              <span className="text-2xl font-bold text-slate-800">{formatCurrency(total)}</span>
             </div>
-          )}
-          
-          {/* Card Payment - Bank POS Info */}
-          {selectedMethod === 'card' && (
-            <div className="bg-blue-50 rounded-xl p-4 animate-slide-up border border-blue-200">
-              <p className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
-                <CreditCard className="w-4 h-4" />
-                Procesamiento Manual en POS Bancario
-              </p>
-              
-              {/* Amounts for POS Entry */}
-              <div className="space-y-2 mb-4 bg-white rounded-lg p-3">
+            {payments.length > 0 && (
+              <>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">Subtotal</span>
-                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(subtotal || (total / 1.07))}</span>
+                  <span className="text-slate-500">Pagado</span>
+                  <span className="text-success-600 font-medium">{formatCurrency(totalPaid)}</span>
                 </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-600">ITBMS (7%)</span>
-                  <span className="font-mono font-semibold text-slate-800">{formatCurrency(taxAmount || (total - (total / 1.07)))}</span>
-                </div>
-                <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
-                  <span className="font-semibold text-slate-700">Total</span>
-                  <span className="font-mono font-bold text-lg text-primary-600">{formatCurrency(total)}</span>
-                </div>
-              </div>
-              
-              {/* Reference Number Input */}
-              <div>
-                <label className="text-xs text-slate-600 mb-1 block">
-                  Número de Confirmación / Referencia *
-                </label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    type="text"
-                    value={cardReference}
-                    onChange={(e) => setCardReference(e.target.value)}
-                    className={`w-full pl-10 pr-3 py-3 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500 ${
-                      cardReference ? 'border-success-400 bg-success-50' : 'border-slate-200'
-                    }`}
-                    placeholder="Ej: 123456"
-                    autoFocus
-                  />
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Ingrese el número de confirmación del POS bancario
-                </p>
-              </div>
-            </div>
-          )}
-          
-          {/* Cash Change Calculator */}
-          {selectedMethod === 'cash' && (
-            <div className="bg-slate-50 rounded-xl p-4 animate-slide-up">
-              <p className="text-sm font-semibold text-slate-700 mb-3">
-                Calculadora de Cambio
-              </p>
-              
-              {/* Denomination Buttons */}
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                {[1, 2, 5, 10, 20, 50].map((amount) => (
-                  <button
-                    key={amount}
-                    onClick={() => handleCashDenomination(amount)}
-                    className="py-3 px-4 bg-white border border-slate-200 rounded-xl hover:border-primary-500 hover:bg-primary-50 transition-colors font-medium text-slate-700"
-                  >
-                    B/{amount}
-                  </button>
-                ))}
-              </div>
-              
-              {/* Amounts */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Monto a pagar</span>
-                  <span className="font-medium text-slate-800">{formatCurrency(total)}</span>
-                </div>
-                
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-slate-600">Efectivo del cliente</span>
-                  <input
-                    type="number"
-                    value={cashAmount}
-                    onChange={(e) => setCashAmount(e.target.value)}
-                    className="w-24 text-right px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="0.00"
-                  />
-                </div>
-                
-                <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                  <span className="text-sm font-semibold text-slate-700">Cambio</span>
-                  <span className={`text-2xl font-bold ${
-                    changeAmount >= 0 ? 'text-success-600' : 'text-error-600'
-                  }`}>
-                    {formatCurrency(changeAmount)}
+                <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200 mt-2">
+                  <span className="font-medium text-slate-700">
+                    {remaining > 0 ? 'Restante' : 'Cambio'}
+                  </span>
+                  <span className={`font-bold ${remaining > 0 ? 'text-warning-600' : 'text-success-600'}`}>
+                    {formatCurrency(remaining > 0 ? remaining : overpaid)}
                   </span>
                 </div>
+              </>
+            )}
+          </div>
+          
+          {/* Added Payments List */}
+          {payments.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                Pagos Agregados
+              </p>
+              <div className="space-y-2">
+                {payments.map((payment, index) => (
+                  <div key={index} className="flex items-center justify-between bg-success-50 border border-success-200 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-success-600" />
+                      <span className="text-sm font-medium text-slate-700">{payment.methodName}</span>
+                      {payment.reference && (
+                        <span className="text-xs text-slate-500">#{payment.reference}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-800">{formatCurrency(payment.amount)}</span>
+                      <button
+                        onClick={() => removePayment(index)}
+                        className="p-1 text-slate-400 hover:text-error-500 hover:bg-error-50 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              
-              {/* Clear Button */}
-              {cashAmount && (
+            </div>
+          )}
+          
+          {/* Payment Methods Selection */}
+          {remaining > 0 && (
+            <>
+              {/* Toggle to show/hide methods */}
+              {activeMethod && (
                 <button
-                  onClick={() => setCashAmount('')}
-                  className="mt-3 text-xs text-slate-500 hover:text-slate-700"
+                  onClick={() => setShowAllMethods(!showAllMethods)}
+                  className="w-full flex items-center justify-center gap-2 text-sm text-primary-600 mb-3 hover:text-primary-700"
                 >
-                  Limpiar
+                  {showAllMethods ? (
+                    <>
+                      <ChevronUp className="w-4 h-4" />
+                      Ocultar métodos de pago
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-4 h-4" />
+                      Ver otros métodos de pago
+                    </>
+                  )}
                 </button>
               )}
-            </div>
+              
+              {/* Payment Methods Grid */}
+              {(showAllMethods || !activeMethod) && (
+                <div className="mb-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    {payments.length > 0 ? 'Agregar Otro Pago' : 'Seleccionar Método de Pago'}
+                  </p>
+                  
+                  {/* Primary Methods */}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    {paymentMethods.filter(m => m.primary).map((method) => {
+                      const Icon = method.icon;
+                      const isSelected = activeMethod === method.id;
+                      
+                      return (
+                        <button
+                          key={method.id}
+                          onClick={() => handleMethodSelect(method.id)}
+                          className={`p-3 rounded-xl border-2 transition-all flex items-center gap-3 ${
+                            isSelected
+                              ? 'border-primary-500 bg-primary-50'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <Icon className={`w-6 h-6 ${
+                            isSelected ? 'text-primary-500' : 'text-slate-400'
+                          }`} />
+                          <span className={`text-sm font-medium ${
+                            isSelected ? 'text-primary-600' : 'text-slate-600'
+                          }`}>
+                            {method.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Other Methods */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {paymentMethods.filter(m => !m.primary).map((method) => {
+                      const isSelected = activeMethod === method.id;
+                      
+                      return (
+                        <button
+                          key={method.id}
+                          onClick={() => handleMethodSelect(method.id)}
+                          className={`p-2 rounded-lg border text-center transition-all ${
+                            isSelected
+                              ? 'border-primary-500 bg-primary-50'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <p className={`text-xs font-medium ${
+                            isSelected ? 'text-primary-600' : 'text-slate-600'
+                          }`}>
+                            {method.name}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
+              {/* Cash Payment Form */}
+              {activeMethod === 'cash' && (
+                <div className="bg-slate-50 rounded-xl p-4 animate-slide-up">
+                  <p className="text-sm font-semibold text-slate-700 mb-3">
+                    Pago en Efectivo
+                  </p>
+                  
+                  {/* Amount to pay with cash */}
+                  <div className="mb-3">
+                    <label className="text-xs text-slate-500 mb-1 block">Monto a pagar con efectivo</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
+                      <input
+                        type="number"
+                        value={cashAmount}
+                        onChange={(e) => setCashAmount(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder={remaining.toFixed(2)}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Denomination Buttons */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    {[1, 2, 5, 10, 20, 50].map((amount) => (
+                      <button
+                        key={amount}
+                        onClick={() => handleCashDenomination(amount)}
+                        className="py-2 px-3 bg-white border border-slate-200 rounded-lg hover:border-primary-500 hover:bg-primary-50 transition-colors font-medium text-slate-700 text-sm"
+                      >
+                        B/{amount}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* Cash tendered and change */}
+                  <div className="space-y-2 bg-white rounded-lg p-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-600">Efectivo recibido</span>
+                      <input
+                        type="number"
+                        value={cashTendered}
+                        onChange={(e) => setCashTendered(e.target.value)}
+                        className="w-24 text-right px-3 py-1.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    {cashTendered && parseFloat(cashTendered) >= parseFloat(cashAmount || 0) && (
+                      <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                        <span className="text-sm font-semibold text-slate-700">Cambio</span>
+                        <span className="text-xl font-bold text-success-600">
+                          {formatCurrency(cashChange)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {cashTendered && (
+                    <button
+                      onClick={() => setCashTendered('')}
+                      className="mt-2 text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                  
+                  {/* Add Payment Button */}
+                  <button
+                    onClick={addPayment}
+                    disabled={!parseFloat(cashAmount)}
+                    className={`w-full mt-3 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
+                      parseFloat(cashAmount) > 0
+                        ? 'bg-primary-500 text-white hover:bg-primary-600'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar Pago
+                  </button>
+                </div>
+              )}
+              
+              {/* Card Payment Form */}
+              {activeMethod === 'card' && (
+                <div className="bg-blue-50 rounded-xl p-4 animate-slide-up border border-blue-200">
+                  <p className="text-sm font-semibold text-blue-800 mb-3 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4" />
+                    Pago con Tarjeta (POS Bancario)
+                  </p>
+                  
+                  {/* Amount */}
+                  <div className="mb-3">
+                    <label className="text-xs text-slate-600 mb-1 block">Monto a pagar con tarjeta</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
+                      <input
+                        type="number"
+                        value={cardAmount}
+                        onChange={(e) => setCardAmount(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
+                        placeholder={remaining.toFixed(2)}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* POS Info */}
+                  {cardAmount && parseFloat(cardAmount) > 0 && (
+                    <div className="space-y-2 mb-3 bg-white rounded-lg p-3">
+                      <p className="text-xs text-slate-500 font-medium">Ingresar en POS:</p>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-600">Subtotal</span>
+                        <span className="font-mono font-semibold text-slate-800">
+                          {formatCurrency(parseFloat(cardAmount) / 1.07)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-600">ITBMS (7%)</span>
+                        <span className="font-mono font-semibold text-slate-800">
+                          {formatCurrency(parseFloat(cardAmount) - (parseFloat(cardAmount) / 1.07))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm pt-2 border-t border-slate-200">
+                        <span className="font-semibold text-slate-700">Total</span>
+                        <span className="font-mono font-bold text-lg text-primary-600">
+                          {formatCurrency(parseFloat(cardAmount))}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Reference Number */}
+                  <div className="mb-3">
+                    <label className="text-xs text-slate-600 mb-1 block">
+                      Número de Confirmación *
+                    </label>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        value={cardReference}
+                        onChange={(e) => setCardReference(e.target.value)}
+                        className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white ${
+                          cardReference ? 'border-success-400' : 'border-slate-200'
+                        }`}
+                        placeholder="Ej: 123456"
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Add Payment Button */}
+                  <button
+                    onClick={addPayment}
+                    disabled={!parseFloat(cardAmount) || !cardReference.trim()}
+                    className={`w-full py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
+                      parseFloat(cardAmount) > 0 && cardReference.trim()
+                        ? 'bg-primary-500 text-white hover:bg-primary-600'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar Pago
+                  </button>
+                </div>
+              )}
+              
+              {/* Other Payment Methods Form */}
+              {activeMethod && !['cash', 'card'].includes(activeMethod) && (
+                <div className="bg-slate-50 rounded-xl p-4 animate-slide-up">
+                  <p className="text-sm font-semibold text-slate-700 mb-3">
+                    Pago con {paymentMethods.find(m => m.id === activeMethod)?.name}
+                  </p>
+                  
+                  <div className="mb-3">
+                    <label className="text-xs text-slate-500 mb-1 block">Monto</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">B/</span>
+                      <input
+                        type="number"
+                        value={otherAmount}
+                        onChange={(e) => setOtherAmount(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        placeholder={remaining.toFixed(2)}
+                      />
+                    </div>
+                  </div>
+                  
+                  {/* Add Payment Button */}
+                  <button
+                    onClick={addPayment}
+                    disabled={!parseFloat(otherAmount)}
+                    className={`w-full py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-all ${
+                      parseFloat(otherAmount) > 0
+                        ? 'bg-primary-500 text-white hover:bg-primary-600'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar Pago
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
         
@@ -293,7 +531,7 @@ function PaymentModal({ total, subtotal, taxAmount, onClose, onComplete }) {
             ) : (
               <>
                 <Check className="w-5 h-5" />
-                Procesar Pago
+                {canProcess ? 'Completar Venta' : `Faltan ${formatCurrency(remaining)}`}
               </>
             )}
           </button>

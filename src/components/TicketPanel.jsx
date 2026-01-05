@@ -574,7 +574,9 @@ function TicketPanel() {
                 notes: state.ticket.notes,
                 promised_date: calculations.promisedDate.toISOString(),
                 items: state.ticket.items,
-                payment: paymentInfo,
+                payments: paymentInfo.payments, // Now an array of payments
+                total_paid: paymentInfo.totalPaid,
+                change_given: paymentInfo.change,
               };
               
               await dbAddOrder(orderData);
