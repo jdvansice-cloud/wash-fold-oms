@@ -7,6 +7,14 @@ import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 
+// Helper to display order number (legacy CC orders or new orders)
+const getOrderDisplayNumber = (order) => {
+  if (order.legacy_order_number) {
+    return order.legacy_order_number; // e.g., "CC1234"
+  }
+  return `#${order.order_number}`;
+};
+
 const workflowColumns = [
   { id: 'pending', title: 'Por Hacer', status: 'pending' },
   { id: 'washing', title: 'Lavadoras', status: 'washing' },
@@ -217,7 +225,12 @@ function OrderCard({ order, column, onDragStart, onDragEnd, onMove }) {
             <GripVertical className="w-4 h-4 text-slate-300 flex-shrink-0" />
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-800">#{order.order_number}</span>
+                <span className="font-bold text-slate-800">{getOrderDisplayNumber(order)}</span>
+                {order.legacy_order_number && (
+                  <span className="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded">
+                    H
+                  </span>
+                )}
                 {order.is_express && (
                   <span className="text-xs px-1.5 py-0.5 bg-warning-100 text-warning-700 rounded font-medium">
                     ⚡

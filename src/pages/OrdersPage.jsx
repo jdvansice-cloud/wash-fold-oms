@@ -29,6 +29,14 @@ const paymentMethodNames = {
   gift_card: 'Tarjeta Regalo',
 };
 
+// Helper to display order number (legacy CC orders or new orders)
+const getOrderDisplayNumber = (order) => {
+  if (order.legacy_order_number) {
+    return order.legacy_order_number; // e.g., "CC1234"
+  }
+  return `#${order.order_number}`;
+};
+
 function OrdersPage() {
   const { state, actions } = useApp();
   const { isAdmin } = useAuth();
@@ -73,7 +81,8 @@ function OrdersPage() {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        const matchesNumber = order.order_number.toString().includes(query);
+        const orderNum = order.legacy_order_number || order.order_number.toString();
+        const matchesNumber = orderNum.toLowerCase().includes(query);
         const matchesCustomer = order.customer_name?.toLowerCase().includes(query);
         return matchesNumber || matchesCustomer;
       }
@@ -209,8 +218,11 @@ function OrdersPage() {
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
                       <span className={`font-semibold ${order.total < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
-                        #{order.order_number}
+                        {getOrderDisplayNumber(order)}
                       </span>
+                      {order.legacy_order_number && (
+                        <span className="badge bg-slate-100 text-slate-500 text-xs">Histórico</span>
+                      )}
                       {order.is_express && (
                         <span className="badge bg-warning-100 text-warning-700">Express</span>
                       )}
@@ -220,7 +232,7 @@ function OrdersPage() {
                     </div>
                     {originalOrder && (
                       <p className="text-xs text-rose-500 mt-0.5">
-                        Ref. Orden #{originalOrder.order_number}
+                        Ref. Orden {getOrderDisplayNumber(originalOrder)}
                       </p>
                     )}
                   </td>
@@ -290,7 +302,7 @@ function OrdersPage() {
               setOrderDetails(null);
               // Reload orders to show updated data
               await reload();
-              alert(`Reembolso creado: Orden #${refundOrder.order_number}`);
+              alert(`Reembolso creado: Orden ${getOrderDisplayNumber(refundOrder)}`);
             } catch (err) {
               alert('Error al crear reembolso: ' + err.message);
             }
@@ -341,8 +353,11 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
           <div>
             <div className="flex items-center gap-3">
               <h2 className={`text-xl font-bold ${order.total < 0 ? 'text-rose-600' : 'text-slate-800'}`}>
-                Orden #{order.order_number}
+                Orden {getOrderDisplayNumber(order)}
               </h2>
+              {order.legacy_order_number && (
+                <span className="badge bg-slate-100 text-slate-500">Histórico</span>
+              )}
               <span className={`badge ${config.bgClass} ${config.textClass}`}>
                 {config.label}
               </span>
@@ -353,7 +368,7 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
             <p className="text-sm text-slate-500">{order.customer_name}</p>
             {originalOrder && (
               <p className="text-sm text-rose-500 font-medium">
-                Reembolso de Orden #{originalOrder.order_number}
+                Reembolso de Orden {getOrderDisplayNumber(originalOrder)}
               </p>
             )}
           </div>
@@ -638,7 +653,7 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-800">Confirmar Reembolso</h3>
-                  <p className="text-sm text-slate-500">Orden #{order.order_number}</p>
+                  <p className="text-sm text-slate-500">Orden {getOrderDisplayNumber(order)}</p>
                 </div>
               </div>
               

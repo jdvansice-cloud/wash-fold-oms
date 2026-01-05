@@ -7,6 +7,14 @@ import {
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 
+// Helper to display order number (legacy CC orders or new orders)
+const getOrderDisplayNumber = (order) => {
+  if (order.legacy_order_number) {
+    return order.legacy_order_number; // e.g., "CC1234"
+  }
+  return `#${order.order_number}`;
+};
+
 // Helper to fetch customer loyalty data
 const fetchCustomerLoyalty = async (customerId) => {
   const url = import.meta.env.SUPABASE_URL;
@@ -520,8 +528,8 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
                     className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center text-xs font-bold">
-                        #{order.order_number}
+                      <div className={`w-10 h-10 ${order.legacy_order_number ? 'bg-slate-100 text-slate-600' : 'bg-primary-100 text-primary-600'} rounded-full flex items-center justify-center text-xs font-bold`}>
+                        {getOrderDisplayNumber(order)}
                       </div>
                       <div>
                         <p className="text-sm font-medium text-slate-700">
@@ -529,6 +537,9 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
                         </p>
                         <p className="text-xs text-slate-500">
                           {formatDate(order.created_at)}
+                          {order.legacy_order_number && (
+                            <span className="ml-2 text-slate-400">• Histórico</span>
+                          )}
                         </p>
                       </div>
                     </div>
