@@ -57,6 +57,437 @@ const fetchLoyaltySettings = async (storeId) => {
   }
 };
 
+// Helper to add loyalty points after order (excluding Lavamático section)
+const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, lavamaticSubtotal = 0) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  // Exclude Lavamático subtotal from points calculation
+  const eligibleSubtotal = subtotal - lavamaticSubtotal;
+  
+  if (!url || !key || !customerId || !storeId || eligibleSubtotal <= 0) {
+    if (lavamaticSubtotal > 0) {
+      console.log(`Loyalty: Excluding B/${lavamaticSubtotal.toFixed(2)} from Lavamático (not eligible for points)`);
+    }
+    return null;
+  }
+  
+  try {
+    // 1. Get loyalty settings
+    const settingsRes = await fetch(
+      `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (!settingsRes.ok) return null;
+    const settings = await settingsRes.json();
+    
+    if (!settings || settings.length === 0 || !settings[0].points_enabled) {
+      console.log('Points program not enabled');
+      return null;
+    }
+    
+    const loyaltySettings = settings[0];
+    const pointsEarned = Math.round(eligibleSubtotal * loyaltySettings.points_per_dollar * 100) / 100;
+    
+    if (pointsEarned <= 0) return null;
+    
+    if (lavamaticSubtotal > 0) {
+      console.log(`Loyalty: Calculating points on B/${eligibleSubtotal.toFixed(2)} (excluded B/${lavamaticSubtotal.toFixed(2)} from Lavamático)`);
+    }
+    
+    // 2. Get or create customer loyalty record
+    let loyaltyRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    let loyalty = null;
+    if (loyaltyRes.ok) {
+      const loyaltyData = await loyaltyRes.json();
+      loyalty = loyaltyData && loyaltyData.length > 0 ? loyaltyData[0] : null;
+    }
+    
+    // Create loyalty record if doesn't exist
+    if (!loyalty) {
+      const createRes = await fetch(`${url}/rest/v1/customer_loyalty`, {
+        method: 'POST',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          store_id: storeId,
+          points_balance: 0,
+          total_points_earned: 0,
+          total_points_redeemed: 0,
+        })
+      });
+      
+      if (createRes.ok) {
+        const created = await createRes.json();
+        loyalty = created && created.length > 0 ? created[0] : null;
+      }
+    }
+    
+    if (!loyalty) {
+      console.error('Could not get or create loyalty record');
+      return null;
+    }
+    
+    const balanceBefore = loyalty.points_balance || 0;
+    const balanceAfter = Math.round((balanceBefore + pointsEarned) * 100) / 100;
+    const totalEarned = (loyalty.total_points_earned || 0) + pointsEarned;
+    
+    // 3. Update loyalty balance
+    const updateRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          points_balance: balanceAfter,
+          total_points_earned: totalEarned,
+          last_points_date: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+      }
+    );
+    
+    if (!updateRes.ok) {
+      console.error('Error updating loyalty balance:', await updateRes.text());
+      return null;
+    }
+    
+    // 4. Log the transaction
+    await fetch(`${url}/rest/v1/loyalty_transactions`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        customer_id: customerId,
+        store_id: storeId,
+        order_id: orderId,
+        transaction_type: 'points_earned',
+        points_amount: pointsEarned,
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        order_subtotal: eligibleSubtotal,
+      })
+    });
+    
+    console.log(`Loyalty: +B/${pointsEarned.toFixed(2)} earned, balance: B/${balanceAfter.toFixed(2)}`);
+    
+    return {
+      success: true,
+      points_earned: pointsEarned,
+      balance_before: balanceBefore,
+      balance_after: balanceAfter,
+    };
+  } catch (err) {
+    console.error('Error adding loyalty points:', err);
+    return null;
+  }
+};
+
+// Helper to add punch card punches - ONLY for Lavamático section with Lavado/Secado products
+const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !customerId || !storeId || !items || items.length === 0) return null;
+  
+  try {
+    // 1. Get loyalty settings
+    const settingsRes = await fetch(
+      `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (!settingsRes.ok) return null;
+    const settings = await settingsRes.json();
+    
+    if (!settings || settings.length === 0 || !settings[0].punch_card_enabled) {
+      console.log('Punch card not enabled');
+      return null;
+    }
+    
+    const loyaltySettings = settings[0];
+    
+    // 2. Find Lavamático section (exact match, case insensitive)
+    const lavamatico = sections?.find(s => {
+      const name = (s.name || '').toLowerCase().trim();
+      return name === 'lavamático' || name === 'lavamatico';
+    });
+    
+    if (!lavamatico) {
+      console.log('Punch card: No "Lavamático" section found');
+      return null;
+    }
+    
+    // 3. Count wash and dry punches - ONLY from Lavamático section with Lavado/Secado in name
+    let washPunches = 0;
+    let dryPunches = 0;
+    
+    items.forEach(item => {
+      const product = item.product;
+      if (!product) return;
+      
+      // Must be in Lavamático section
+      if (product.section_id !== lavamatico.id) return;
+      
+      const productName = (product.name || '').toLowerCase();
+      
+      // Check for "Lavado" in name (wash)
+      if (productName.includes('lavado')) {
+        washPunches += item.quantity || 1;
+        console.log(`Punch card: ${item.quantity || 1} wash punch(es) from "${product.name}"`);
+      }
+      
+      // Check for "Secado" in name (dry)
+      if (productName.includes('secado')) {
+        dryPunches += item.quantity || 1;
+        console.log(`Punch card: ${item.quantity || 1} dry punch(es) from "${product.name}"`);
+      }
+    });
+    
+    if (washPunches === 0 && dryPunches === 0) {
+      console.log('Punch card: No Lavado/Secado products found in Lavamático section');
+      return null;
+    }
+    
+    // 4. Get or create customer loyalty record
+    let loyaltyRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    let loyalty = null;
+    if (loyaltyRes.ok) {
+      const loyaltyData = await loyaltyRes.json();
+      loyalty = loyaltyData && loyaltyData.length > 0 ? loyaltyData[0] : null;
+    }
+    
+    // Create loyalty record if doesn't exist
+    if (!loyalty) {
+      const createRes = await fetch(`${url}/rest/v1/customer_loyalty`, {
+        method: 'POST',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          store_id: storeId,
+          wash_punches: 0,
+          dry_punches: 0,
+          pending_free_washes: 0,
+          pending_free_drys: 0,
+        })
+      });
+      
+      if (createRes.ok) {
+        const created = await createRes.json();
+        loyalty = created && created.length > 0 ? created[0] : null;
+      }
+    }
+    
+    if (!loyalty) {
+      console.error('Could not get or create loyalty record for punches');
+      return null;
+    }
+    
+    // 5. Calculate new punch counts and free services earned
+    const currentWashPunches = loyalty.wash_punches || 0;
+    const currentDryPunches = loyalty.dry_punches || 0;
+    
+    let newWashPunches = currentWashPunches + washPunches;
+    let newDryPunches = currentDryPunches + dryPunches;
+    
+    let freeWashesEarned = 0;
+    let freeDrysEarned = 0;
+    
+    // Check if free washes earned
+    while (newWashPunches >= loyaltySettings.wash_punches_required) {
+      freeWashesEarned++;
+      newWashPunches -= loyaltySettings.wash_punches_required;
+    }
+    
+    // Check if free drys earned
+    while (newDryPunches >= loyaltySettings.dry_punches_required) {
+      freeDrysEarned++;
+      newDryPunches -= loyaltySettings.dry_punches_required;
+    }
+    
+    // 6. Update loyalty record
+    const updateData = {
+      wash_punches: newWashPunches,
+      dry_punches: newDryPunches,
+      last_punch_date: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    
+    if (freeWashesEarned > 0) {
+      updateData.pending_free_washes = (loyalty.pending_free_washes || 0) + freeWashesEarned;
+      updateData.total_free_washes_earned = (loyalty.total_free_washes_earned || 0) + freeWashesEarned;
+    }
+    
+    if (freeDrysEarned > 0) {
+      updateData.pending_free_drys = (loyalty.pending_free_drys || 0) + freeDrysEarned;
+      updateData.total_free_drys_earned = (loyalty.total_free_drys_earned || 0) + freeDrysEarned;
+    }
+    
+    const updateRes = await fetch(
+      `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updateData)
+      }
+    );
+    
+    if (!updateRes.ok) {
+      console.error('Error updating punch card:', await updateRes.text());
+      return null;
+    }
+    
+    // 7. Log transactions
+    if (washPunches > 0) {
+      await fetch(`${url}/rest/v1/loyalty_transactions`, {
+        method: 'POST',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          store_id: storeId,
+          order_id: orderId,
+          transaction_type: 'punch_wash',
+          punch_count: washPunches,
+          punches_before: currentWashPunches,
+          punches_after: newWashPunches,
+          notes: `Added ${washPunches} wash punch(es)`,
+        })
+      });
+      
+      if (freeWashesEarned > 0) {
+        await fetch(`${url}/rest/v1/loyalty_transactions`, {
+          method: 'POST',
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer_id: customerId,
+            store_id: storeId,
+            order_id: orderId,
+            transaction_type: 'free_wash_earned',
+            punch_count: freeWashesEarned,
+            notes: `Earned ${freeWashesEarned} free wash(es)!`,
+          })
+        });
+      }
+    }
+    
+    if (dryPunches > 0) {
+      await fetch(`${url}/rest/v1/loyalty_transactions`, {
+        method: 'POST',
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          store_id: storeId,
+          order_id: orderId,
+          transaction_type: 'punch_dry',
+          punch_count: dryPunches,
+          punches_before: currentDryPunches,
+          punches_after: newDryPunches,
+          notes: `Added ${dryPunches} dry punch(es)`,
+        })
+      });
+      
+      if (freeDrysEarned > 0) {
+        await fetch(`${url}/rest/v1/loyalty_transactions`, {
+          method: 'POST',
+          headers: {
+            'apikey': key,
+            'Authorization': `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customer_id: customerId,
+            store_id: storeId,
+            order_id: orderId,
+            transaction_type: 'free_dry_earned',
+            punch_count: freeDrysEarned,
+            notes: `Earned ${freeDrysEarned} free dry(es)!`,
+          })
+        });
+      }
+    }
+    
+    console.log(`Punch card updated: Wash ${currentWashPunches}→${newWashPunches}, Dry ${currentDryPunches}→${newDryPunches}`);
+    if (freeWashesEarned > 0) console.log(`🎁 Earned ${freeWashesEarned} FREE WASH(ES)!`);
+    if (freeDrysEarned > 0) console.log(`🎁 Earned ${freeDrysEarned} FREE DRY(S)!`);
+    
+    return {
+      success: true,
+      wash_punches_added: washPunches,
+      dry_punches_added: dryPunches,
+      new_wash_punches: newWashPunches,
+      new_dry_punches: newDryPunches,
+      free_washes_earned: freeWashesEarned,
+      free_drys_earned: freeDrysEarned,
+    };
+  } catch (err) {
+    console.error('Error adding punch card punches:', err);
+    return null;
+  }
+};
+
+// Helper to calculate Lavamático subtotal (to exclude from points)
+const calculateLavamaticSubtotal = (items, sections) => {
+  // Find Lavamático section
+  const lavamatico = sections?.find(s => {
+    const name = (s.name || '').toLowerCase().trim();
+    return name === 'lavamático' || name === 'lavamatico';
+  });
+  
+  if (!lavamatico) return 0;
+  
+  let subtotal = 0;
+  items.forEach(item => {
+    const product = item.product;
+    if (product && product.section_id === lavamatico.id) {
+      subtotal += item.lineTotal || 0;
+    }
+  });
+  
+  return subtotal;
+};
+
 function TicketPanel() {
   const { state, actions, ticketCalculations } = useApp();
   const { addOrder: dbAddOrder } = useDataLoader();
@@ -718,7 +1149,53 @@ function TicketPanel() {
                 change_given: paymentInfo.change,
               };
               
-              await dbAddOrder(orderData);
+              const newOrder = await dbAddOrder(orderData);
+              
+              // Add loyalty rewards if customer is registered
+              if (state.ticket.customer?.id) {
+                // Calculate Lavamático subtotal to exclude from points
+                const lavamaticSubtotal = calculateLavamaticSubtotal(state.ticket.items, state.sections);
+                
+                // Add points if points program is enabled (excluding Lavamático)
+                if (loyaltySettings?.points_enabled && calculations.subtotal > 0) {
+                  try {
+                    const loyaltyResult = await addLoyaltyPointsForOrder(
+                      state.ticket.customer.id,
+                      state.store?.id,
+                      calculations.subtotal,
+                      newOrder?.id,
+                      lavamaticSubtotal // Pass Lavamático subtotal to exclude
+                    );
+                    if (loyaltyResult?.success) {
+                      console.log(`Loyalty points added: B/${loyaltyResult.points_earned} earned, new balance: B/${loyaltyResult.balance_after}`);
+                    }
+                  } catch (loyaltyErr) {
+                    console.error('Error adding loyalty points (order still completed):', loyaltyErr);
+                  }
+                }
+                
+                // Add punch card punches if punch card is enabled (only Lavamático with Lavado/Secado)
+                if (loyaltySettings?.punch_card_enabled) {
+                  try {
+                    const punchResult = await addLoyaltyPunches(
+                      state.ticket.customer.id,
+                      state.store?.id,
+                      state.ticket.items,
+                      state.sections,
+                      newOrder?.id
+                    );
+                    if (punchResult?.success) {
+                      if (punchResult.free_washes_earned > 0 || punchResult.free_drys_earned > 0) {
+                        // Could show a toast notification here
+                        console.log(`🎉 Customer earned free services!`);
+                      }
+                    }
+                  } catch (punchErr) {
+                    console.error('Error adding punch card punches (order still completed):', punchErr);
+                  }
+                }
+              }
+              
               actions.clearTicket();
               setPaymentModalOpen(false);
             } catch (err) {
