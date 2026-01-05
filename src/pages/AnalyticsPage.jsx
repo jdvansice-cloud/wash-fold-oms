@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   TrendingUp, TrendingDown, DollarSign, Package, 
   Users, Scale, Calendar, Filter, Download,
@@ -20,6 +20,10 @@ function AnalyticsPage() {
   const [compareCustomStart, setCompareCustomStart] = useState('');
   const [compareCustomEnd, setCompareCustomEnd] = useState('');
   const [showCompareOptions, setShowCompareOptions] = useState(false);
+  
+  // Database-fetched comparison orders
+  const [compareOrdersFromDB, setCompareOrdersFromDB] = useState([]);
+  const [loadingCompare, setLoadingCompare] = useState(false);
   
   const [viewMode, setViewMode] = useState('summary'); // summary, detail
   
@@ -84,22 +88,67 @@ function AnalyticsPage() {
     };
   }, [dateRange, customStartDate, customEndDate, compareType, compareCustomStart, compareCustomEnd]);
   
+  // Fetch comparison orders from database when needed
+  useEffect(() => {
+    const fetchCompareOrders = async () => {
+      const { compareStartDate, compareEndDate } = dateRanges;
+      
+      if (!compareEnabled || !compareStartDate || !compareEndDate || !state.store?.id) {
+        setCompareOrdersFromDB([]);
+        return;
+      }
+      
+      setLoadingCompare(true);
+      try {
+        const url = import.meta.env.SUPABASE_URL;
+        const key = import.meta.env.SUPABASE_ANON_KEY;
+        
+        if (!url || !key) {
+          setCompareOrdersFromDB([]);
+          setLoadingCompare(false);
+          return;
+        }
+        
+        // Format dates for query
+        const startISO = compareStartDate.toISOString();
+        const endISO = compareEndDate.toISOString();
+        
+        const response = await fetch(
+          `${url}/rest/v1/orders?store_id=eq.${state.store.id}&created_at=gte.${startISO}&created_at=lte.${endISO}&order=created_at.desc&limit=10000`,
+          { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+        );
+        
+        if (response.ok) {
+          const orders = await response.json();
+          console.log(`Fetched ${orders.length} orders for comparison period`);
+          setCompareOrdersFromDB(orders);
+        } else {
+          console.error('Error fetching comparison orders:', await response.text());
+          setCompareOrdersFromDB([]);
+        }
+      } catch (err) {
+        console.error('Error fetching comparison orders:', err);
+        setCompareOrdersFromDB([]);
+      }
+      setLoadingCompare(false);
+    };
+    
+    fetchCompareOrders();
+  }, [compareEnabled, dateRanges, state.store?.id]);
+  
   // Calculate KPIs from orders
   const kpis = useMemo(() => {
     const { startDate, endDate, compareStartDate, compareEndDate } = dateRanges;
     
-    // Filter orders for current period
+    // Filter orders for current period from state
     const filteredOrders = state.orders.filter(order => {
       const orderDate = new Date(order.created_at);
       return orderDate >= startDate && orderDate <= endDate;
     });
     
-    // Filter orders for comparison period
+    // Use database-fetched orders for comparison (they're already filtered by date)
     const compareOrders = compareEnabled && compareStartDate && compareEndDate
-      ? state.orders.filter(order => {
-          const orderDate = new Date(order.created_at);
-          return orderDate >= compareStartDate && orderDate <= compareEndDate;
-        })
+      ? compareOrdersFromDB
       : [];
     
     // Separate regular orders from refund orders
@@ -164,7 +213,7 @@ function AnalyticsPage() {
       compareAvgTicket,
       compareTotalRefunds,
     };
-  }, [state.orders, dateRanges, compareEnabled]);
+  }, [state.orders, dateRanges, compareEnabled, compareOrdersFromDB]);
   
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
   
@@ -344,6 +393,14 @@ function AnalyticsPage() {
                 />
               </div>
             )}
+            
+            {/* Loading indicator for comparison data */}
+            {compareEnabled && loadingCompare && (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <span className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></span>
+                Cargando datos...
+              </div>
+            )}
           </div>
         </div>
         
@@ -353,6 +410,7 @@ function AnalyticsPage() {
             <div className="w-3 h-3 rounded-full bg-primary-500" />
             <span className="text-sm text-slate-600">
               <span className="font-medium">Período actual:</span> {getDateRangeLabel()}
+              <span className="text-slate-400 ml-1">({kpis.totalOrders} órdenes)</span>
             </span>
           </div>
           
@@ -361,6 +419,9 @@ function AnalyticsPage() {
               <div className="w-3 h-3 rounded-full bg-slate-400" />
               <span className="text-sm text-slate-600">
                 <span className="font-medium">Comparación:</span> {getCompareRangeLabel()}
+                <span className="text-slate-400 ml-1">
+                  ({loadingCompare ? '...' : `${compareOrdersFromDB.length} órdenes`})
+                </span>
               </span>
             </div>
           )}
