@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   X, Plus, ClipboardList, BarChart3, RefreshCw, 
-  Users, FileText, Package, Settings, LogOut
+  Users, FileText, Package, Settings, LogOut,
+  ChevronDown, ChevronRight, PieChart, TrendingUp
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +13,11 @@ function Sidebar({ isOpen, onClose }) {
   const { user, appUser, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  
+  // Track expanded sections
+  const [expandedSections, setExpandedSections] = useState({
+    analytics: true, // Default open since it contains dashboard/reports
+  });
 
   const handleLogout = async () => {
     onClose(); // Close sidebar immediately
@@ -37,14 +43,28 @@ function Sidebar({ isOpen, onClose }) {
     operator: 'Operador',
   };
   
+  const toggleSection = (key) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }));
+  };
+  
   const menuSections = [
     {
       title: 'Operaciones',
       items: [
         { path: '/', label: 'Nueva Orden', icon: Plus },
         { path: '/orders', label: 'Órdenes', icon: ClipboardList },
-        { path: '/analytics', label: 'Dashboard', icon: BarChart3, badge: '📊' },
-        { path: '/reports', label: 'Reportes', icon: FileText },
+        { 
+          key: 'analytics',
+          label: 'Analíticas', 
+          icon: BarChart3,
+          children: [
+            { path: '/analytics', label: 'Dashboard', icon: TrendingUp },
+            { path: '/reports', label: 'Reportes', icon: FileText },
+          ]
+        },
         { path: '/machines', label: 'Máquinas / En Proceso', icon: RefreshCw },
         { path: '/customers', label: 'Clientes', icon: Users },
         { path: '/invoices', label: 'Facturas', icon: FileText },
@@ -61,6 +81,11 @@ function Sidebar({ isOpen, onClose }) {
       ],
     });
   }
+  
+  // Check if any child is active
+  const isChildActive = (children) => {
+    return children?.some(child => location.pathname === child.path);
+  };
   
   return (
     <>
@@ -102,6 +127,60 @@ function Sidebar({ isOpen, onClose }) {
               </p>
               
               {section.items.map((item) => {
+                // Check if item has children (expandable)
+                if (item.children) {
+                  const isExpanded = expandedSections[item.key];
+                  const hasActiveChild = isChildActive(item.children);
+                  const Icon = item.icon;
+                  
+                  return (
+                    <div key={item.key}>
+                      {/* Parent item - clickable to expand/collapse */}
+                      <button
+                        onClick={() => toggleSection(item.key)}
+                        className={`sidebar-link w-full justify-between ${hasActiveChild ? 'text-primary-600 bg-primary-50' : ''}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Icon className="w-5 h-5" />
+                          <span>{item.label}</span>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-slate-400" />
+                        )}
+                      </button>
+                      
+                      {/* Children items */}
+                      {isExpanded && (
+                        <div className="ml-4 mt-1 space-y-1 border-l-2 border-slate-100 pl-2">
+                          {item.children.map((child) => {
+                            const isActive = location.pathname === child.path;
+                            const ChildIcon = child.icon;
+                            
+                            return (
+                              <Link
+                                key={child.path}
+                                to={child.path}
+                                onClick={onClose}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                                  isActive 
+                                    ? 'bg-primary-50 text-primary-600 font-medium' 
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                                }`}
+                              >
+                                <ChildIcon className="w-4 h-4" />
+                                <span>{child.label}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+                
+                // Regular item (no children)
                 const isActive = location.pathname === item.path;
                 const Icon = item.icon;
                 
