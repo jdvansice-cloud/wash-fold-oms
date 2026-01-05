@@ -197,7 +197,7 @@ function OrdersPage() {
                   key={order.id}
                   className={`hover:bg-slate-50 transition-colors cursor-pointer ${
                     order.status === 'refund' ? 'bg-rose-50' : ''
-                  } ${order.status === 'refunded' ? 'bg-purple-50' : ''}`}
+                  }`}
                   onClick={() => handleSelectOrder(order)}
                 >
                   <td className="px-4 py-4">

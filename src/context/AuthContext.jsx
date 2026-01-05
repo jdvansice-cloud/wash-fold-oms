@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
@@ -8,57 +8,51 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [appUser, setAppUser] = useState(null); // User from our users table
   const [loading, setLoading] = useState(true);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
     
-    // Timeout to prevent infinite loading
+    // Timeout to prevent infinite loading (2 seconds)
     const timeout = setTimeout(() => {
       if (mounted && loading) {
         console.warn('Auth loading timeout - forcing completion');
         setLoading(false);
       }
-    }, 5000);
+    }, 2000);
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (!mounted) return;
-      
-      if (error) {
-        console.error('Error getting session:', error);
-        setLoading(false);
-        return;
-      }
-      
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        loadAppUser(session.user.id).finally(() => {
-          if (mounted) setLoading(false);
-        });
-      } else {
-        setLoading(false);
-      }
-    }).catch(err => {
-      console.error('Session check failed:', err);
-      if (mounted) setLoading(false);
-    });
-
-    // Listen for auth changes
+    // Listen for auth changes - this fires immediately with current session
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       
-      console.log('Auth event:', event);
+      console.log('Auth event:', event, session?.user?.email);
+      
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        await loadAppUser(session.user.id);
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('auth_id', session.user.id)
+            .maybeSingle();
+
+          if (!error && mounted) {
+            setAppUser(data || null);
+          }
+        } catch (err) {
+          console.error('Error loading app user:', err);
+        }
       } else {
         setAppUser(null);
       }
-      setLoading(false);
+      
+      // Only set loading false after we've processed the session
+      if (mounted) {
+        setLoading(false);
+        initializedRef.current = true;
+      }
     });
 
     return () => {
@@ -67,24 +61,6 @@ export function AuthProvider({ children }) {
       subscription.unsubscribe();
     };
   }, []);
-
-  const loadAppUser = async (authId) => {
-    try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('auth_id', authId)
-        .maybeSingle(); // Use maybeSingle instead of single to avoid error on no match
-
-      if (error) {
-        console.error('Error loading app user:', error);
-      }
-      setAppUser(data || null);
-    } catch (err) {
-      console.error('Error loading app user:', err);
-      setAppUser(null);
-    }
-  };
 
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -106,11 +82,9 @@ export function AuthProvider({ children }) {
       const { error } = await supabase.auth.signOut();
       if (error) {
         console.error('Supabase signOut error:', error);
-        // Even if there's an error, we've already cleared local state
       }
     } catch (err) {
       console.error('SignOut exception:', err);
-      // Still clear state even on exception
       setSession(null);
       setUser(null);
       setAppUser(null);
@@ -138,7 +112,6 @@ export function AuthProvider({ children }) {
 
     if (error) {
       // If admin API fails, try using the edge function approach or manual invite
-      // For now, we'll use signUp with a random password and send reset email
       const tempPassword = crypto.randomUUID();
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,

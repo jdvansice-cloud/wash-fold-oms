@@ -1,11 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 
+// Environment variables are exposed via vite.config.js
 const supabaseUrl = import.meta.env.SUPABASE_URL
 const supabaseKey = import.meta.env.SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('Missing Supabase environment variables!')
-  console.error('Please set SUPABASE_URL and SUPABASE_ANON_KEY')
+  console.error('Please set SUPABASE_URL and SUPABASE_ANON_KEY in Vercel')
 }
 
 export const supabase = createClient(

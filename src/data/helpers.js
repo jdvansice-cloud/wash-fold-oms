@@ -21,7 +21,7 @@ export const statusConfig = {
   ready: { label: 'Listo', color: 'emerald', bgClass: 'bg-emerald-100', textClass: 'text-emerald-700' },
   completed: { label: 'Completado', color: 'slate', bgClass: 'bg-slate-100', textClass: 'text-slate-600' },
   cancelled: { label: 'Cancelado', color: 'red', bgClass: 'bg-red-100', textClass: 'text-red-700' },
-  refunded: { label: 'Reembolsado', color: 'purple', bgClass: 'bg-purple-100', textClass: 'text-purple-700' },
+  refunded: { label: 'Reembolsado', color: 'red', bgClass: 'bg-red-100', textClass: 'text-red-700' },
   refund: { label: 'Reembolso', color: 'rose', bgClass: 'bg-rose-100', textClass: 'text-rose-700' },
 };
 
