@@ -100,10 +100,22 @@ function OrdersPage() {
   // Load more orders
   const handleLoadMore = async () => {
     setLoadingMore(true);
-    const currentCount = state.orders.length;
-    const newOrders = await loadMoreOrders(currentCount, 500);
-    if (newOrders.length < 500) {
-      setHasMoreOrders(false);
+    try {
+      const currentCount = state.orders.length;
+      const newOrders = await loadMoreOrders(currentCount, 500);
+      
+      if (newOrders.length > 0) {
+        // Merge new orders with existing, avoiding duplicates
+        const existingIds = new Set(state.orders.map(o => o.id));
+        const uniqueNewOrders = newOrders.filter(o => !existingIds.has(o.id));
+        actions.setOrders([...state.orders, ...uniqueNewOrders]);
+      }
+      
+      if (newOrders.length < 500) {
+        setHasMoreOrders(false);
+      }
+    } catch (err) {
+      console.error('Error loading more orders:', err);
     }
     setLoadingMore(false);
   };

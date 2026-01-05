@@ -1068,7 +1068,7 @@ export function useDataLoader() {
     }
   };
 
-  // Load more orders (pagination)
+  // Load more orders (pagination) - returns orders for caller to merge
   const loadMoreOrders = async (offset = 0, limit = 500) => {
     if (!storeId) return [];
     
@@ -1083,14 +1083,7 @@ export function useDataLoader() {
       });
       
       if (response.ok) {
-        const orders = await response.json();
-        // Merge with existing orders in state
-        actions.setOrders(prevOrders => {
-          const existingIds = new Set(prevOrders.map(o => o.id));
-          const newOrders = orders.filter(o => !existingIds.has(o.id));
-          return [...prevOrders, ...newOrders];
-        });
-        return orders;
+        return await response.json();
       }
       return [];
     } catch (err) {

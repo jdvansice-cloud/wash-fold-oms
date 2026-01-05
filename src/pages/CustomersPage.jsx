@@ -281,11 +281,18 @@ function CustomerRow({ customer, onClick, onEdit }) {
   );
 }
 
-function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
+function CustomerDetailsModal({ customer, onClose, onEdit, orders: initialOrders }) {
   const { state } = useApp();
   const [loyalty, setLoyalty] = useState(null);
   const [loyaltySettings, setLoyaltySettings] = useState(null);
   const [loadingLoyalty, setLoadingLoyalty] = useState(true);
+  
+  // Customer orders from database
+  const [customerOrders, setCustomerOrders] = useState(initialOrders || []);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [orderStats, setOrderStats] = useState({ total: 0, count: 0, weight: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  const ordersPerPage = 10;
   
   const formatCurrency = (amount) => `B/${amount?.toFixed(2) || '0.00'}`;
   
@@ -298,7 +305,56 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
     }).format(date);
   };
   
-  const totalSpent = orders.reduce((sum, order) => sum + (order.total || 0), 0);
+  // Load all customer orders from database
+  useEffect(() => {
+    const loadCustomerOrders = async () => {
+      setLoadingOrders(true);
+      try {
+        const url = import.meta.env.SUPABASE_URL;
+        const key = import.meta.env.SUPABASE_ANON_KEY;
+        
+        if (!url || !key || !customer.id) {
+          setCustomerOrders(initialOrders || []);
+          setLoadingOrders(false);
+          return;
+        }
+        
+        // Fetch all orders for this customer
+        const response = await fetch(
+          `${url}/rest/v1/orders?customer_id=eq.${customer.id}&order=created_at.desc&limit=1000`,
+          { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+        );
+        
+        if (response.ok) {
+          const orders = await response.json();
+          setCustomerOrders(orders);
+          
+          // Calculate totals
+          const stats = orders.reduce((acc, order) => ({
+            total: acc.total + (order.total || 0),
+            count: acc.count + 1,
+            weight: acc.weight + (order.total_weight || 0),
+          }), { total: 0, count: 0, weight: 0 });
+          setOrderStats(stats);
+        } else {
+          setCustomerOrders(initialOrders || []);
+        }
+      } catch (err) {
+        console.error('Error loading customer orders:', err);
+        setCustomerOrders(initialOrders || []);
+      }
+      setLoadingOrders(false);
+    };
+    
+    loadCustomerOrders();
+  }, [customer.id, initialOrders]);
+  
+  // Pagination
+  const totalPages = Math.ceil(customerOrders.length / ordersPerPage);
+  const paginatedOrders = customerOrders.slice(
+    (currentPage - 1) * ordersPerPage,
+    currentPage * ordersPerPage
+  );
   
   // Load loyalty data
   useEffect(() => {
@@ -346,16 +402,22 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
           
           <div className="grid grid-cols-3 gap-4 mt-6">
             <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{orders.length}</p>
+              <p className="text-2xl font-bold">
+                {loadingOrders ? '...' : orderStats.count}
+              </p>
               <p className="text-xs text-primary-100">Órdenes</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{formatCurrency(totalSpent)}</p>
+              <p className="text-2xl font-bold">
+                {loadingOrders ? '...' : formatCurrency(orderStats.total)}
+              </p>
               <p className="text-xs text-primary-100">Total Gastado</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{formatCurrency(loyalty?.points_balance || 0)}</p>
-              <p className="text-xs text-primary-100">Saldo Puntos</p>
+              <p className="text-2xl font-bold">
+                {loadingOrders ? '...' : `${orderStats.weight.toFixed(1)} kg`}
+              </p>
+              <p className="text-xs text-primary-100">Total Peso</p>
             </div>
           </div>
         </div>
@@ -516,39 +578,79 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
           )}
           
           <div>
-            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
-              Órdenes Recientes
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+                Historial de Órdenes
+              </h3>
+              {!loadingOrders && customerOrders.length > 0 && (
+                <span className="text-xs text-slate-400">
+                  {customerOrders.length} órdenes • {formatCurrency(orderStats.total)} total
+                </span>
+              )}
+            </div>
             
-            {orders.length > 0 ? (
-              <div className="space-y-2">
-                {orders.slice(0, 5).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 ${order.legacy_order_number ? 'bg-slate-100 text-slate-600' : 'bg-primary-100 text-primary-600'} rounded-full flex items-center justify-center text-xs font-bold`}>
-                        {getOrderDisplayNumber(order)}
+            {loadingOrders ? (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                <p className="text-sm text-slate-400">Cargando órdenes...</p>
+              </div>
+            ) : customerOrders.length > 0 ? (
+              <>
+                <div className="space-y-2">
+                  {paginatedOrders.map((order) => (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 ${order.legacy_order_number ? 'bg-slate-100 text-slate-600' : 'bg-primary-100 text-primary-600'} rounded-full flex items-center justify-center text-xs font-bold`}>
+                          {getOrderDisplayNumber(order)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-slate-700">
+                            {order.total_weight?.toFixed(2) || '0.00'} kg
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {formatDate(order.created_at)}
+                            {order.legacy_order_number && (
+                              <span className="ml-2 text-slate-400">• Histórico</span>
+                            )}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">
-                          {order.total_weight?.toFixed(2) || '0.00'} kg
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {formatDate(order.created_at)}
-                          {order.legacy_order_number && (
-                            <span className="ml-2 text-slate-400">• Histórico</span>
-                          )}
-                        </p>
+                      <div className="text-right">
+                        <span className="font-semibold text-slate-800">
+                          {formatCurrency(order.total)}
+                        </span>
+                        <p className="text-xs text-slate-400">{order.status}</p>
                       </div>
                     </div>
-                    <span className="font-semibold text-slate-800">
-                      {formatCurrency(order.total)}
+                  ))}
+                </div>
+                
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-100">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1 text-sm rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      ← Anterior
+                    </button>
+                    <span className="text-sm text-slate-500">
+                      Página {currentPage} de {totalPages}
                     </span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1 text-sm rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Siguiente →
+                    </button>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             ) : (
               <p className="text-sm text-slate-400 text-center py-4">
                 Sin órdenes registradas
