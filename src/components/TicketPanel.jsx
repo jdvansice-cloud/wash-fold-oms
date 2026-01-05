@@ -715,17 +715,17 @@ function TicketPanel() {
       ).length 
     : 0;
   
-  // Calculate free services that can be auto-applied
+  // Calculate free services that can be auto-applied (including ITBMS)
   const freeServicesApplied = useMemo(() => {
     if (!customerLoyalty || !loyaltySettings?.punch_card_enabled) {
-      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, items: [] };
+      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, taxDiscount: 0, items: [] };
     }
     
     const pendingFreeWashes = customerLoyalty.pending_free_washes || 0;
     const pendingFreeDrys = customerLoyalty.pending_free_drys || 0;
     
     if (pendingFreeWashes === 0 && pendingFreeDrys === 0) {
-      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, items: [] };
+      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, taxDiscount: 0, items: [] };
     }
     
     // Find Lavamático section
@@ -735,12 +735,16 @@ function TicketPanel() {
     });
     
     if (!lavamatico) {
-      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, items: [] };
+      return { freeWashes: 0, freeDrys: 0, discountAmount: 0, taxDiscount: 0, items: [] };
     }
+    
+    // Get ITBMS rate
+    const itbmsRate = (state.settings?.itbms_rate || 7) / 100;
     
     let freeWashesUsed = 0;
     let freeDrysUsed = 0;
-    let totalDiscount = 0;
+    let totalDiscount = 0; // Base price discount
+    let totalTaxDiscount = 0; // Tax discount
     const discountedItems = [];
     
     // Check ticket items for Lavado/Secado products
@@ -750,22 +754,26 @@ function TicketPanel() {
       
       const productName = (product.name || '').toLowerCase();
       const quantity = item.quantity || 1;
+      const isTaxable = product.is_taxable !== false; // Default to taxable
       
       // Check for "Lavado" products
       if (productName.includes('lavado') && freeWashesUsed < pendingFreeWashes) {
         const freeCount = Math.min(quantity, pendingFreeWashes - freeWashesUsed);
         const discountPerUnit = item.unitPrice || 0;
         const itemDiscount = freeCount * discountPerUnit;
+        const itemTaxDiscount = isTaxable ? Math.round(itemDiscount * itbmsRate * 100) / 100 : 0;
         
         if (freeCount > 0 && itemDiscount > 0) {
           freeWashesUsed += freeCount;
           totalDiscount += itemDiscount;
+          totalTaxDiscount += itemTaxDiscount;
           discountedItems.push({
             index,
             productName: product.name,
             type: 'wash',
             freeCount,
             discount: itemDiscount,
+            taxDiscount: itemTaxDiscount,
           });
         }
       }
@@ -775,16 +783,19 @@ function TicketPanel() {
         const freeCount = Math.min(quantity, pendingFreeDrys - freeDrysUsed);
         const discountPerUnit = item.unitPrice || 0;
         const itemDiscount = freeCount * discountPerUnit;
+        const itemTaxDiscount = isTaxable ? Math.round(itemDiscount * itbmsRate * 100) / 100 : 0;
         
         if (freeCount > 0 && itemDiscount > 0) {
           freeDrysUsed += freeCount;
           totalDiscount += itemDiscount;
+          totalTaxDiscount += itemTaxDiscount;
           discountedItems.push({
             index,
             productName: product.name,
             type: 'dry',
             freeCount,
             discount: itemDiscount,
+            taxDiscount: itemTaxDiscount,
           });
         }
       }
@@ -793,13 +804,15 @@ function TicketPanel() {
     return {
       freeWashes: freeWashesUsed,
       freeDrys: freeDrysUsed,
-      discountAmount: totalDiscount,
+      discountAmount: totalDiscount, // Base price
+      taxDiscount: totalTaxDiscount, // ITBMS on free items
+      totalDiscount: totalDiscount + totalTaxDiscount, // Full amount including tax
       items: discountedItems,
     };
-  }, [ticket.items, customerLoyalty, loyaltySettings, state.sections]);
+  }, [ticket.items, customerLoyalty, loyaltySettings, state.sections, state.settings?.itbms_rate]);
   
-  // Adjust total with free services discount
-  const adjustedTotal = Math.max(0, calculations.total - freeServicesApplied.discountAmount);
+  // Adjust total with free services discount (includes base price + ITBMS)
+  const adjustedTotal = Math.max(0, calculations.total - (freeServicesApplied.totalDiscount || 0));
   
   // Load loyalty settings on mount
   useEffect(() => {
@@ -1335,14 +1348,14 @@ function TicketPanel() {
               </div>
               
               {/* Free Services Applied */}
-              {freeServicesApplied.discountAmount > 0 && (
+              {(freeServicesApplied.totalDiscount || 0) > 0 && (
                 <div className="bg-emerald-50 rounded-lg p-2 my-1 border border-emerald-200">
                   <div className="flex justify-between text-sm">
                     <span className="text-emerald-700 font-medium flex items-center gap-1">
                       <Gift className="w-3.5 h-3.5" />
                       Servicios Gratis
                     </span>
-                    <span className="text-emerald-700 font-bold">-{formatCurrency(freeServicesApplied.discountAmount)}</span>
+                    <span className="text-emerald-700 font-bold">-{formatCurrency(freeServicesApplied.totalDiscount)}</span>
                   </div>
                   <div className="text-xs text-emerald-600 mt-1">
                     {freeServicesApplied.freeWashes > 0 && (
@@ -1351,6 +1364,7 @@ function TicketPanel() {
                     {freeServicesApplied.freeDrys > 0 && (
                       <span>☀️ {freeServicesApplied.freeDrys} secado(s)</span>
                     )}
+                    <span className="ml-2 text-emerald-500">(incl. ITBMS)</span>
                   </div>
                 </div>
               )}
@@ -1431,15 +1445,15 @@ function TicketPanel() {
                 is_walk_in: !state.ticket.customer,
                 is_express: state.ticket.isExpress,
                 subtotal: calculations.subtotal,
-                discount_amount: calculations.discountAmount + freeServicesApplied.discountAmount, // Include free services discount
+                discount_amount: calculations.discountAmount + (freeServicesApplied.totalDiscount || 0), // Include free services discount with tax
                 delivery_charge: calculations.deliveryCharge,
-                tax_amount: calculations.taxAmount,
+                tax_amount: calculations.taxAmount - (freeServicesApplied.taxDiscount || 0), // Reduce tax by the free services tax discount
                 total: adjustedTotal, // Use adjusted total
                 total_weight: calculations.totalWeight,
                 total_bags: calculations.totalBags,
                 total_pieces: calculations.totalPieces,
-                notes: state.ticket.notes + (freeServicesApplied.discountAmount > 0 
-                  ? `\n[Servicios gratis aplicados: ${freeServicesApplied.freeWashes} lavado(s), ${freeServicesApplied.freeDrys} secado(s)]` 
+                notes: state.ticket.notes + ((freeServicesApplied.totalDiscount || 0) > 0 
+                  ? `\n[Servicios gratis: ${freeServicesApplied.freeWashes} lavado(s), ${freeServicesApplied.freeDrys} secado(s) = -B/${(freeServicesApplied.totalDiscount || 0).toFixed(2)} incl. ITBMS]` 
                   : ''),
                 promised_date: calculations.promisedDate.toISOString(),
                 items: state.ticket.items,
