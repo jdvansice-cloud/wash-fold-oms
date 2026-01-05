@@ -1,12 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, X, User, Zap, ChevronDown, ChevronUp, 
-  Trash2, Tag, Truck, MessageSquare, AlertCircle 
+  Trash2, Tag, Truck, MessageSquare, AlertCircle,
+  Award, Coins, Stamp, Gift
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import CustomerSearchModal from './modals/CustomerSearchModal';
 import PaymentModal from './modals/PaymentModal';
+
+// Helper to fetch customer loyalty data
+const fetchCustomerLoyalty = async (customerId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !customerId) return null;
+  
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data && data.length > 0 ? data[0] : null;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error fetching loyalty:', err);
+    return null;
+  }
+};
+
+// Helper to fetch loyalty settings
+const fetchLoyaltySettings = async (storeId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !storeId) return null;
+  
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data && data.length > 0 ? data[0] : null;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error fetching loyalty settings:', err);
+    return null;
+  }
+};
 
 function TicketPanel() {
   const { state, actions, ticketCalculations } = useApp();
@@ -18,6 +67,11 @@ function TicketPanel() {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [processing, setProcessing] = useState(false);
   
+  // Loyalty state
+  const [customerLoyalty, setCustomerLoyalty] = useState(null);
+  const [loyaltySettings, setLoyaltySettings] = useState(null);
+  const [loadingLoyalty, setLoadingLoyalty] = useState(false);
+  
   const calculations = ticketCalculations();
   const { ticket } = state;
   
@@ -28,6 +82,32 @@ function TicketPanel() {
         !['completed', 'cancelled'].includes(o.status)
       ).length 
     : 0;
+  
+  // Load loyalty settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      if (state.store?.id) {
+        const settings = await fetchLoyaltySettings(state.store.id);
+        setLoyaltySettings(settings);
+      }
+    };
+    loadSettings();
+  }, [state.store?.id]);
+  
+  // Load customer loyalty when customer changes
+  useEffect(() => {
+    const loadLoyalty = async () => {
+      if (ticket.customer?.id) {
+        setLoadingLoyalty(true);
+        const loyalty = await fetchCustomerLoyalty(ticket.customer.id);
+        setCustomerLoyalty(loyalty);
+        setLoadingLoyalty(false);
+      } else {
+        setCustomerLoyalty(null);
+      }
+    };
+    loadLoyalty();
+  }, [ticket.customer?.id]);
   
   const formatCurrency = (amount) => {
     return `B/${amount.toFixed(2)}`;
@@ -134,6 +214,65 @@ function TicketPanel() {
           <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-lg text-sm">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{pendingOrdersCount} {pendingOrdersCount === 1 ? 'orden pendiente' : 'órdenes pendientes'}</span>
+          </div>
+        )}
+        
+        {/* Loyalty Info - Show when customer is selected and loyalty programs are enabled */}
+        {ticket.customer && ticket.customerConfirmed && (loyaltySettings?.punch_card_enabled || loyaltySettings?.points_enabled) && (
+          <div className="mt-3 space-y-2">
+            {loadingLoyalty ? (
+              <div className="flex items-center justify-center py-2">
+                <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Points Balance */}
+                {loyaltySettings?.points_enabled && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-emerald-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-emerald-600" />
+                      <span className="text-sm font-medium text-emerald-700">Saldo Puntos</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-bold text-emerald-700">B/{(customerLoyalty?.points_balance || 0).toFixed(2)}</span>
+                      {(customerLoyalty?.points_balance || 0) >= (loyaltySettings?.min_redemption_amount || 0) && (customerLoyalty?.points_balance || 0) > 0 && (
+                        <span className="ml-1 text-xs text-emerald-600">✓</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Punch Card Progress */}
+                {loyaltySettings?.punch_card_enabled && (
+                  <div className="px-3 py-2 bg-blue-50 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Stamp className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-700">Sellos Lavamático</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">🌀 Lavados:</span>
+                        <span className="font-medium text-slate-800">
+                          {customerLoyalty?.wash_punches || 0}/{loyaltySettings.wash_punches_required}
+                          {(customerLoyalty?.pending_free_washes || 0) > 0 && (
+                            <span className="ml-1 text-success-600">+{customerLoyalty.pending_free_washes}🎁</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">☀️ Secados:</span>
+                        <span className="font-medium text-slate-800">
+                          {customerLoyalty?.dry_punches || 0}/{loyaltySettings.dry_punches_required}
+                          {(customerLoyalty?.pending_free_drys || 0) > 0 && (
+                            <span className="ml-1 text-success-600">+{customerLoyalty.pending_free_drys}🎁</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

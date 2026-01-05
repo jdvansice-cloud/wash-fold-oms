@@ -1,10 +1,59 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Search, Plus, User, Phone, Mail, Building, 
-  MapPin, Edit, Trash2, Eye, Star, Clock 
+  MapPin, Edit, Trash2, Eye, Star, Clock,
+  Award, Coins, Stamp, Gift
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
+
+// Helper to fetch customer loyalty data
+const fetchCustomerLoyalty = async (customerId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !customerId) return null;
+  
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data && data.length > 0 ? data[0] : null;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error fetching loyalty:', err);
+    return null;
+  }
+};
+
+// Helper to fetch loyalty settings
+const fetchLoyaltySettings = async (storeId) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  
+  if (!url || !key || !storeId) return null;
+  
+  try {
+    const response = await fetch(
+      `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
+      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data && data.length > 0 ? data[0] : null;
+    }
+    return null;
+  } catch (err) {
+    console.error('Error fetching loyalty settings:', err);
+    return null;
+  }
+};
 
 function CustomersPage() {
   const { state, actions } = useApp();
@@ -225,6 +274,11 @@ function CustomerRow({ customer, onClick, onEdit }) {
 }
 
 function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
+  const { state } = useApp();
+  const [loyalty, setLoyalty] = useState(null);
+  const [loyaltySettings, setLoyaltySettings] = useState(null);
+  const [loadingLoyalty, setLoadingLoyalty] = useState(true);
+  
   const formatCurrency = (amount) => `B/${amount?.toFixed(2) || '0.00'}`;
   
   const formatDate = (dateStr) => {
@@ -237,6 +291,21 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
   };
   
   const totalSpent = orders.reduce((sum, order) => sum + (order.total || 0), 0);
+  
+  // Load loyalty data
+  useEffect(() => {
+    const loadLoyalty = async () => {
+      setLoadingLoyalty(true);
+      const [loyaltyData, settings] = await Promise.all([
+        fetchCustomerLoyalty(customer.id),
+        fetchLoyaltySettings(state.store?.id)
+      ]);
+      setLoyalty(loyaltyData);
+      setLoyaltySettings(settings);
+      setLoadingLoyalty(false);
+    };
+    loadLoyalty();
+  }, [customer.id, state.store?.id]);
   
   return (
     <div className="modal-backdrop flex items-center justify-center p-4 animate-fade-in">
@@ -277,13 +346,118 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders }) {
               <p className="text-xs text-primary-100">Total Gastado</p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-xl p-3 text-center">
-              <p className="text-2xl font-bold">{customer.loyalty_points || 0}</p>
-              <p className="text-xs text-primary-100">Puntos</p>
+              <p className="text-2xl font-bold">{formatCurrency(loyalty?.points_balance || 0)}</p>
+              <p className="text-xs text-primary-100">Saldo Puntos</p>
             </div>
           </div>
         </div>
         
         <div className="p-6 overflow-y-auto max-h-[50vh] scrollbar-thin">
+          {/* Loyalty Section */}
+          {(loyaltySettings?.punch_card_enabled || loyaltySettings?.points_enabled) && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Award className="w-4 h-4" />
+                Programa de Lealtad
+              </h3>
+              
+              {loadingLoyalty ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Punch Cards */}
+                  {loyaltySettings?.punch_card_enabled && (
+                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Stamp className="w-5 h-5 text-blue-600" />
+                        <span className="font-medium text-slate-800">Tarjeta de Sellos</span>
+                      </div>
+                      
+                      {/* Wash Punches */}
+                      <div className="mb-3">
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-slate-600">🌀 Lavados</span>
+                          <span className="font-medium text-slate-800">
+                            {loyalty?.wash_punches || 0} / {loyaltySettings.wash_punches_required}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-blue-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-500 rounded-full transition-all"
+                            style={{ width: `${Math.min(100, ((loyalty?.wash_punches || 0) / loyaltySettings.wash_punches_required) * 100)}%` }}
+                          />
+                        </div>
+                        {(loyalty?.pending_free_washes || 0) > 0 && (
+                          <p className="text-xs text-success-600 mt-1 flex items-center gap-1">
+                            <Gift className="w-3 h-3" />
+                            {loyalty.pending_free_washes} lavado{loyalty.pending_free_washes > 1 ? 's' : ''} gratis disponible{loyalty.pending_free_washes > 1 ? 's' : ''}
+                          </p>
+                        )}
+                      </div>
+                      
+                      {/* Dry Punches */}
+                      <div>
+                        <div className="flex items-center justify-between text-sm mb-1">
+                          <span className="text-slate-600">☀️ Secados</span>
+                          <span className="font-medium text-slate-800">
+                            {loyalty?.dry_punches || 0} / {loyaltySettings.dry_punches_required}
+                          </span>
+                        </div>
+                        <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-orange-500 rounded-full transition-all"
+                            style={{ width: `${Math.min(100, ((loyalty?.dry_punches || 0) / loyaltySettings.dry_punches_required) * 100)}%` }}
+                          />
+                        </div>
+                        {(loyalty?.pending_free_drys || 0) > 0 && (
+                          <p className="text-xs text-success-600 mt-1 flex items-center gap-1">
+                            <Gift className="w-3 h-3" />
+                            {loyalty.pending_free_drys} secado{loyalty.pending_free_drys > 1 ? 's' : ''} gratis disponible{loyalty.pending_free_drys > 1 ? 's' : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Points Balance */}
+                  {loyaltySettings?.points_enabled && (
+                    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Coins className="w-5 h-5 text-emerald-600" />
+                        <span className="font-medium text-slate-800">Saldo de Puntos</span>
+                      </div>
+                      
+                      <div className="text-center py-2">
+                        <p className="text-3xl font-bold text-emerald-600">
+                          {formatCurrency(loyalty?.points_balance || 0)}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {(loyalty?.points_balance || 0) >= loyaltySettings.min_redemption_amount 
+                            ? '✓ Disponible para usar'
+                            : `Mínimo para redimir: ${formatCurrency(loyaltySettings.min_redemption_amount)}`
+                          }
+                        </p>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-emerald-100 grid grid-cols-2 gap-2 text-xs">
+                        <div className="text-center">
+                          <p className="text-slate-500">Total Ganado</p>
+                          <p className="font-medium text-slate-700">{formatCurrency(loyalty?.total_points_earned || 0)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-slate-500">Total Usado</p>
+                          <p className="font-medium text-slate-700">{formatCurrency(loyalty?.total_points_redeemed || 0)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          
           <div className="mb-6">
             <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Información de Contacto
