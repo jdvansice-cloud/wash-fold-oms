@@ -10,6 +10,7 @@ import MachinesPage from './pages/MachinesPage';
 import CustomersPage from './pages/CustomersPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import SettingsPage from './pages/SettingsPage';
+import EODPage from './pages/EODPage';
 import LoginPage from './pages/LoginPage';
 import SetPasswordPage from './pages/SetPasswordPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -118,6 +119,7 @@ function AppContent() {
         <Route path="/machines" element={<MachinesPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/eod" element={<EODPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
