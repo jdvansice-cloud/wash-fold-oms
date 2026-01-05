@@ -840,7 +840,21 @@ export function useDataLoader() {
         if (paymentsError) throw paymentsError;
       }
 
-      // 4. Update original order status to 'refunded'
+      // 4. Reverse loyalty transactions if customer has any
+      if (originalOrder.customer_id && originalOrder.loyaltyTransactions?.length > 0) {
+        try {
+          await reverseLoyaltyTransactions(
+            originalOrder.customer_id,
+            originalOrder.loyaltyTransactions,
+            refundOrder.id
+          );
+          console.log('Loyalty transactions reversed for refund');
+        } catch (loyaltyErr) {
+          console.error('Error reversing loyalty (refund still processed):', loyaltyErr);
+        }
+      }
+
+      // 5. Update original order status to 'refunded'
       const { error: updateError } = await supabase
         .from('orders')
         .update({ 
@@ -852,7 +866,7 @@ export function useDataLoader() {
 
       if (updateError) throw updateError;
 
-      // 5. Create refund record
+      // 6. Create refund record
       const { error: refundRecordError } = await supabase
         .from('refunds')
         .insert({
@@ -871,7 +885,7 @@ export function useDataLoader() {
         // Don't throw - refund order was created successfully
       }
 
-      // 6. Update local state
+      // 7. Update local state
       actions.addOrder(refundOrder);
       actions.updateOrderStatus(originalOrder.id, 'refunded');
 
@@ -880,6 +894,138 @@ export function useDataLoader() {
       console.error('Error creating refund:', err);
       throw err;
     }
+  };
+
+  // Helper to reverse loyalty transactions on refund
+  const reverseLoyaltyTransactions = async (customerId, transactions, refundOrderId) => {
+    // Calculate what needs to be reversed
+    let pointsToRestore = 0;      // Points that were redeemed (add back)
+    let pointsToSubtract = 0;     // Points that were earned (subtract)
+    let washPunchesToSubtract = 0;
+    let dryPunchesToSubtract = 0;
+    let freeWashesToRestore = 0;  // Free washes that were used (add back)
+    let freeDrysToRestore = 0;    // Free drys that were used (add back)
+    let freeWashesToSubtract = 0; // Free washes that were earned (subtract)
+    let freeDrysToSubtract = 0;   // Free drys that were earned (subtract)
+
+    transactions.forEach(tx => {
+      switch (tx.transaction_type) {
+        case 'points_earned':
+          pointsToSubtract += Math.abs(tx.points_amount || 0);
+          break;
+        case 'points_redeemed':
+          pointsToRestore += Math.abs(tx.points_amount || 0);
+          break;
+        case 'punch_wash':
+          washPunchesToSubtract += Math.abs(tx.punch_count || 0);
+          break;
+        case 'punch_dry':
+          dryPunchesToSubtract += Math.abs(tx.punch_count || 0);
+          break;
+        case 'redeem_free_wash':
+          freeWashesToRestore += Math.abs(tx.punch_count || 0);
+          break;
+        case 'redeem_free_dry':
+          freeDrysToRestore += Math.abs(tx.punch_count || 0);
+          break;
+        case 'free_wash_earned':
+          freeWashesToSubtract += Math.abs(tx.punch_count || 0);
+          break;
+        case 'free_dry_earned':
+          freeDrysToSubtract += Math.abs(tx.punch_count || 0);
+          break;
+      }
+    });
+
+    // Get customer loyalty record
+    const { data: loyaltyData, error: loyaltyError } = await supabase
+      .from('customer_loyalty')
+      .select('*')
+      .eq('customer_id', customerId)
+      .single();
+
+    if (loyaltyError || !loyaltyData) {
+      console.warn('No loyalty record found for customer');
+      return;
+    }
+
+    const loyalty = loyaltyData;
+
+    // Calculate new values
+    const newPointsBalance = Math.max(0, (loyalty.points_balance || 0) - pointsToSubtract + pointsToRestore);
+    const newTotalPointsEarned = Math.max(0, (loyalty.total_points_earned || 0) - pointsToSubtract);
+    const newTotalPointsRedeemed = Math.max(0, (loyalty.total_points_redeemed || 0) - pointsToRestore);
+    
+    const newWashPunches = Math.max(0, (loyalty.wash_punches || 0) - washPunchesToSubtract);
+    const newDryPunches = Math.max(0, (loyalty.dry_punches || 0) - dryPunchesToSubtract);
+    
+    const newPendingFreeWashes = Math.max(0, (loyalty.pending_free_washes || 0) - freeWashesToSubtract + freeWashesToRestore);
+    const newPendingFreeDrys = Math.max(0, (loyalty.pending_free_drys || 0) - freeDrysToSubtract + freeDrysToRestore);
+    
+    const newTotalFreeWashesEarned = Math.max(0, (loyalty.total_free_washes_earned || 0) - freeWashesToSubtract);
+    const newTotalFreeDrysEarned = Math.max(0, (loyalty.total_free_drys_earned || 0) - freeDrysToSubtract);
+    const newTotalFreeWashesRedeemed = Math.max(0, (loyalty.total_free_washes_redeemed || 0) - freeWashesToRestore);
+    const newTotalFreeDrysRedeemed = Math.max(0, (loyalty.total_free_drys_redeemed || 0) - freeDrysToRestore);
+
+    // Update loyalty record
+    const { error: updateError } = await supabase
+      .from('customer_loyalty')
+      .update({
+        points_balance: newPointsBalance,
+        total_points_earned: newTotalPointsEarned,
+        total_points_redeemed: newTotalPointsRedeemed,
+        wash_punches: newWashPunches,
+        dry_punches: newDryPunches,
+        pending_free_washes: newPendingFreeWashes,
+        pending_free_drys: newPendingFreeDrys,
+        total_free_washes_earned: newTotalFreeWashesEarned,
+        total_free_drys_earned: newTotalFreeDrysEarned,
+        total_free_washes_redeemed: newTotalFreeWashesRedeemed,
+        total_free_drys_redeemed: newTotalFreeDrysRedeemed,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', loyalty.id);
+
+    if (updateError) {
+      console.error('Error updating loyalty record:', updateError);
+      throw updateError;
+    }
+
+    // Log reversal transactions
+    const reversalNotes = [];
+    if (pointsToSubtract > 0) reversalNotes.push(`-B/${pointsToSubtract.toFixed(2)} puntos ganados`);
+    if (pointsToRestore > 0) reversalNotes.push(`+B/${pointsToRestore.toFixed(2)} puntos restaurados`);
+    if (washPunchesToSubtract > 0) reversalNotes.push(`-${washPunchesToSubtract} sellos lavado`);
+    if (dryPunchesToSubtract > 0) reversalNotes.push(`-${dryPunchesToSubtract} sellos secado`);
+    if (freeWashesToRestore > 0) reversalNotes.push(`+${freeWashesToRestore} lavados gratis restaurados`);
+    if (freeDrysToRestore > 0) reversalNotes.push(`+${freeDrysToRestore} secados gratis restaurados`);
+    if (freeWashesToSubtract > 0) reversalNotes.push(`-${freeWashesToSubtract} lavados gratis ganados`);
+    if (freeDrysToSubtract > 0) reversalNotes.push(`-${freeDrysToSubtract} secados gratis ganados`);
+
+    if (reversalNotes.length > 0) {
+      await supabase
+        .from('loyalty_transactions')
+        .insert({
+          customer_id: customerId,
+          store_id: storeId,
+          order_id: refundOrderId,
+          transaction_type: 'manual_adjustment',
+          points_amount: pointsToRestore - pointsToSubtract,
+          punch_count: -(washPunchesToSubtract + dryPunchesToSubtract) + (freeWashesToRestore + freeDrysToRestore),
+          balance_before: loyalty.points_balance,
+          balance_after: newPointsBalance,
+          notes: `REEMBOLSO: ${reversalNotes.join(', ')}`,
+        });
+    }
+
+    console.log('Loyalty reversed:', {
+      pointsSubtracted: pointsToSubtract,
+      pointsRestored: pointsToRestore,
+      washPunchesSubtracted: washPunchesToSubtract,
+      dryPunchesSubtracted: dryPunchesToSubtract,
+      freeWashesRestored: freeWashesToRestore,
+      freeDrysRestored: freeDrysToRestore,
+    });
   };
 
   return {
