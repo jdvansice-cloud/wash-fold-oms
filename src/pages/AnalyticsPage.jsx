@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, Package, 
   Users, Scale, Calendar, Filter, Download,
   ShoppingCart, Clock, Percent, CreditCard,
-  ChevronDown, X, ArrowLeftRight
+  ChevronDown, X, ArrowLeftRight, RotateCcw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
@@ -102,21 +102,32 @@ function AnalyticsPage() {
         })
       : [];
     
-    // Current period stats
-    const totalSales = filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-    const totalWeight = filteredOrders.reduce((sum, o) => sum + (o.total_weight || 0), 0);
-    const totalOrders = filteredOrders.length;
-    const avgTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
-    const expressOrders = filteredOrders.filter(o => o.is_express).length;
+    // Separate regular orders from refund orders
+    const regularOrders = filteredOrders.filter(o => o.status !== 'refund' && o.status !== 'cancelled');
+    const refundOrders = filteredOrders.filter(o => o.status === 'refund');
+    
+    // Current period stats (excluding refund orders from main metrics)
+    const grossSales = regularOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const totalRefunds = Math.abs(refundOrders.reduce((sum, o) => sum + (o.total || 0), 0));
+    const totalSales = grossSales - totalRefunds; // Net sales
+    const totalWeight = regularOrders.reduce((sum, o) => sum + (o.total_weight || 0), 0);
+    const totalOrders = regularOrders.length;
+    const avgTicket = totalOrders > 0 ? grossSales / totalOrders : 0;
+    const expressOrders = regularOrders.filter(o => o.is_express).length;
     const expressRate = totalOrders > 0 ? (expressOrders / totalOrders) * 100 : 0;
-    const uniqueCustomers = new Set(filteredOrders.map(o => o.customer_id).filter(Boolean)).size;
+    const uniqueCustomers = new Set(regularOrders.map(o => o.customer_id).filter(Boolean)).size;
     const avgWeightPerOrder = totalOrders > 0 ? totalWeight / totalOrders : 0;
+    const refundCount = refundOrders.length;
     
     // Comparison period stats
-    const compareTotalSales = compareOrders.reduce((sum, o) => sum + (o.total || 0), 0);
-    const compareTotalWeight = compareOrders.reduce((sum, o) => sum + (o.total_weight || 0), 0);
-    const compareTotalOrders = compareOrders.length;
-    const compareAvgTicket = compareTotalOrders > 0 ? compareTotalSales / compareTotalOrders : 0;
+    const compareRegularOrders = compareOrders.filter(o => o.status !== 'refund' && o.status !== 'cancelled');
+    const compareRefundOrders = compareOrders.filter(o => o.status === 'refund');
+    const compareGrossSales = compareRegularOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const compareTotalRefunds = Math.abs(compareRefundOrders.reduce((sum, o) => sum + (o.total || 0), 0));
+    const compareTotalSales = compareGrossSales - compareTotalRefunds;
+    const compareTotalWeight = compareRegularOrders.reduce((sum, o) => sum + (o.total_weight || 0), 0);
+    const compareTotalOrders = compareRegularOrders.length;
+    const compareAvgTicket = compareTotalOrders > 0 ? compareGrossSales / compareTotalOrders : 0;
     
     // Calculate growth percentages
     const calcGrowth = (current, previous) => {
@@ -131,6 +142,9 @@ function AnalyticsPage() {
     
     return {
       totalSales,
+      grossSales,
+      totalRefunds,
+      refundCount,
       totalWeight,
       totalOrders,
       avgTicket,
@@ -142,12 +156,13 @@ function AnalyticsPage() {
       ordersGrowth,
       weightGrowth,
       avgTicketGrowth,
-      filteredOrders,
+      filteredOrders, // Keep all orders for the table
       // Comparison data
       compareTotalSales,
       compareTotalOrders,
       compareTotalWeight,
       compareAvgTicket,
+      compareTotalRefunds,
     };
   }, [state.orders, dateRanges, compareEnabled]);
   
@@ -389,7 +404,7 @@ function AnalyticsPage() {
       </div>
       
       {/* Secondary Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="card p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-slate-500">Órdenes Express</span>
@@ -422,6 +437,19 @@ function AnalyticsPage() {
               {kpis.avgWeightPerOrder.toFixed(2)}
             </span>
             <span className="text-sm text-slate-500">kg</span>
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-slate-500">Reembolsos</span>
+            <RotateCcw className="w-4 h-4 text-red-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-red-600">
+              {formatCurrency(kpis.totalRefunds)}
+            </span>
+            <span className="text-sm text-slate-500">({kpis.refundCount})</span>
           </div>
         </div>
       </div>
@@ -579,6 +607,9 @@ function StatusBadge({ status }) {
     folding: { label: 'Doblando', bg: 'bg-purple-100', text: 'text-purple-700' },
     ready: { label: 'Listo', bg: 'bg-green-100', text: 'text-green-700' },
     completed: { label: 'Completado', bg: 'bg-slate-100', text: 'text-slate-700' },
+    cancelled: { label: 'Cancelado', bg: 'bg-red-100', text: 'text-red-700' },
+    refunded: { label: 'Reembolsado', bg: 'bg-red-100', text: 'text-red-700' },
+    refund: { label: 'Reembolso', bg: 'bg-rose-100', text: 'text-rose-700' },
   };
   
   const config = statusConfig[status] || statusConfig.pending;
