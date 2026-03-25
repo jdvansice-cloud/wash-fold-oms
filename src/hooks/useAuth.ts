@@ -11,6 +11,8 @@ export interface AuthContextValue {
   authUser: AuthUser | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<unknown>;
+  signInWithOtp: (email: string) => Promise<unknown>;
+  verifyOtp: (email: string, token: string) => Promise<unknown>;
   signOut: () => Promise<void>;
   updatePassword: (newPassword: string) => Promise<unknown>;
   inviteUser: (email: string, userData: Record<string, unknown>) => Promise<unknown>;

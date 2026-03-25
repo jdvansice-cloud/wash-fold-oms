@@ -52,8 +52,27 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  // Legacy password login (kept for backward compat, e.g. set-password flow)
   const signIn = async (email, password) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    return data;
+  };
+
+  // OTP: send magic code to email
+  const signInWithOtp = async (email) => {
+    const { data, error } = await supabase.auth.signInWithOtp({ email });
+    if (error) throw error;
+    return data;
+  };
+
+  // OTP: verify the 6-digit code
+  const verifyOtp = async (email, token) => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    });
     if (error) throw error;
     return data;
   };
@@ -121,6 +140,8 @@ export function AuthProvider({ children }) {
 
     loading,
     signIn,
+    signInWithOtp,
+    verifyOtp,
     signOut,
     updatePassword,
     inviteUser,

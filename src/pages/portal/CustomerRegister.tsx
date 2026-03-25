@@ -1,22 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { UserPlus, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, KeyRound, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../hooks/useAuth';
 import { isValidEmail, isValidPanamaPhone } from '../../lib/validation';
 
 export default function CustomerRegister() {
   const navigate = useNavigate();
+  const { signInWithOtp, verifyOtp } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [step, setStep] = useState<'info' | 'otp'>('info');
+  const [otpCode, setOtpCode] = useState('');
+  const [cooldown, setCooldown] = useState(0);
   const [form, setForm] = useState({
     first_name: '',
     last_name: '',
     email: '',
     phone: '',
-    password: '',
-    confirmPassword: '',
   });
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [cooldown]);
 
   const updateField = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -28,15 +36,10 @@ export default function CustomerRegister() {
     if (!form.last_name.trim()) return 'Apellido es requerido';
     if (!isValidEmail(form.email)) return 'Email invalido';
     if (!isValidPanamaPhone(form.phone)) return 'Telefono debe ser 8 digitos (Panama)';
-    if (form.password.length < 8) return 'Contrasena debe tener al menos 8 caracteres';
-    if (!/[A-Z]/.test(form.password)) return 'Contrasena necesita al menos una mayuscula';
-    if (!/[a-z]/.test(form.password)) return 'Contrasena necesita al menos una minuscula';
-    if (!/[0-9]/.test(form.password)) return 'Contrasena necesita al menos un numero';
-    if (form.password !== form.confirmPassword) return 'Las contrasenas no coinciden';
     return null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     const validationError = validate();
     if (validationError) {
@@ -48,17 +51,28 @@ export default function CustomerRegister() {
     setError('');
 
     try {
-      // 1. Create Supabase Auth account
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: {
-          data: { role: 'customer', first_name: form.first_name },
-        },
-      });
+      // Send OTP — Supabase auto-creates user if email doesn't exist
+      await signInWithOtp(form.email);
+      setStep('otp');
+      setCooldown(60);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Error al enviar codigo';
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error('No se pudo crear la cuenta');
+  const handleVerifyAndRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+
+    try {
+      // 1. Verify OTP (this also creates the Supabase auth session)
+      const result = await verifyOtp(form.email, otpCode);
+      const authUser = (result as { user?: { id: string } })?.user;
+      if (!authUser?.id) throw new Error('No se pudo verificar la cuenta');
 
       // 2. Get the default store
       const { data: store } = await supabase
@@ -70,45 +84,84 @@ export default function CustomerRegister() {
 
       if (!store) throw new Error('No se encontro la tienda');
 
-      // 3. Create customer record
-      const { data: customer, error: customerError } = await supabase
+      // 3. Check if customer already exists for this email
+      const { data: existingCustomer } = await supabase
         .from('customers')
-        .insert({
-          store_id: store.id,
-          first_name: form.first_name.trim(),
-          last_name: form.last_name.trim(),
-          email: form.email.trim().toLowerCase(),
-          phone: form.phone.replace(/\D/g, ''),
-          phone_country: '+507',
-          address_district: 'Panama',
-          address_province: 'Panama',
-          is_active: true,
-        })
-        .select()
+        .select('id')
+        .eq('email', form.email.trim().toLowerCase())
+        .eq('store_id', store.id)
+        .limit(1)
         .single();
 
-      if (customerError) throw customerError;
+      let customerId: string;
 
-      // 4. Create customer_auth bridge
-      const { error: bridgeError } = await supabase.from('customer_auth').insert({
-        auth_id: authData.user.id,
-        customer_id: customer.id,
-        store_id: store.id,
-      });
+      if (existingCustomer) {
+        customerId = existingCustomer.id;
+      } else {
+        // 4. Create customer record
+        const { data: customer, error: customerError } = await supabase
+          .from('customers')
+          .insert({
+            store_id: store.id,
+            first_name: form.first_name.trim(),
+            last_name: form.last_name.trim(),
+            email: form.email.trim().toLowerCase(),
+            phone: form.phone.replace(/\D/g, ''),
+            phone_country: '+507',
+            address_district: 'Panama',
+            address_province: 'Panama',
+            is_active: true,
+          })
+          .select()
+          .single();
 
-      if (bridgeError) throw bridgeError;
+        if (customerError) throw customerError;
+        customerId = customer.id;
+      }
 
-      // Success — navigate to portal (auth state change will trigger)
+      // 5. Check if customer_auth bridge already exists
+      const { data: existingBridge } = await supabase
+        .from('customer_auth')
+        .select('id')
+        .eq('auth_id', authUser.id)
+        .limit(1)
+        .single();
+
+      if (!existingBridge) {
+        // 6. Create customer_auth bridge
+        const { error: bridgeError } = await supabase.from('customer_auth').insert({
+          auth_id: authUser.id,
+          customer_id: customerId,
+          store_id: store.id,
+        });
+
+        if (bridgeError) throw bridgeError;
+      }
+
+      // Success — auth state change will redirect
       navigate('/portal');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al registrarse';
-      if (message.includes('already registered')) {
-        setError('Este email ya esta registrado. Intenta iniciar sesion.');
+      if (message.includes('expired')) {
+        setError('El codigo ha expirado. Solicita uno nuevo.');
+      } else if (message.toLowerCase().includes('invalid')) {
+        setError('Codigo invalido. Verifica e intenta de nuevo.');
       } else {
         setError(message);
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (cooldown > 0) return;
+    setError('');
+    try {
+      await signInWithOtp(form.email);
+      setCooldown(60);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al reenviar');
     }
   };
 
@@ -121,115 +174,148 @@ export default function CustomerRegister() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-card p-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-6">Registro</h2>
+          <h2 className="text-lg font-semibold text-slate-900 mb-6">
+            {step === 'info' ? 'Registro' : 'Verificar Email'}
+          </h2>
 
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+          {step === 'info' ? (
+            <form onSubmit={handleSendOtp} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
+                  <input
+                    type="text"
+                    value={form.first_name}
+                    onChange={(e) => updateField('first_name', e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Apellido</label>
+                  <input
+                    type="text"
+                    value={form.last_name}
+                    onChange={(e) => updateField('last_name', e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => updateField('email', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="tu@email.com"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Telefono</label>
+                <div className="flex gap-2">
+                  <span className="flex items-center px-3 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-600">
+                    +507
+                  </span>
+                  <input
+                    type="tel"
+                    value={form.phone}
+                    onChange={(e) => updateField('phone', e.target.value)}
+                    className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    placeholder="6789-0000"
+                    maxLength={9}
+                    required
+                  />
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-400">
+                Te enviaremos un codigo de verificacion a tu email
+              </p>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <UserPlus size={16} />
+                )}
+                Continuar
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyAndRegister} className="space-y-4">
+              <div className="text-center mb-2">
+                <div className="inline-flex items-center justify-center w-10 h-10 bg-primary-100 rounded-full mb-2">
+                  <KeyRound size={20} className="text-primary-600" />
+                </div>
+                <p className="text-sm text-slate-600">
+                  Codigo enviado a <strong>{form.email}</strong>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Codigo de Verificacion
+                </label>
                 <input
                   type="text"
-                  value={form.first_name}
-                  onChange={(e) => updateField('first_name', e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm text-center text-2xl tracking-[0.5em] font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  placeholder="000000"
+                  maxLength={6}
                   required
+                  autoFocus
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Apellido</label>
-                <input
-                  type="text"
-                  value={form.last_name}
-                  onChange={(e) => updateField('last_name', e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  required
-                />
-              </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={(e) => updateField('email', e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                placeholder="tu@email.com"
-                required
-              />
-            </div>
+              <button
+                type="submit"
+                disabled={loading || otpCode.length !== 6}
+                className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <KeyRound size={16} />
+                )}
+                Crear Cuenta
+              </button>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Telefono</label>
-              <div className="flex gap-2">
-                <span className="flex items-center px-3 bg-slate-50 border border-slate-300 rounded-lg text-sm text-slate-600">
-                  +507
-                </span>
-                <input
-                  type="tel"
-                  value={form.phone}
-                  onChange={(e) => updateField('phone', e.target.value)}
-                  className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  placeholder="6789-0000"
-                  maxLength={9}
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Contrasena</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={(e) => updateField('password', e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 pr-10"
-                  required
-                />
+              <div className="flex items-center justify-between text-xs">
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  onClick={() => { setStep('info'); setOtpCode(''); setError(''); }}
+                  className="text-slate-500 hover:text-slate-700 flex items-center gap-1"
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <ArrowLeft size={12} />
+                  Volver
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={cooldown > 0}
+                  className="text-primary-600 hover:text-primary-700 disabled:text-slate-300"
+                >
+                  {cooldown > 0 ? `Reenviar (${cooldown}s)` : 'Reenviar codigo'}
                 </button>
               </div>
-              <p className="text-xs text-slate-400 mt-1">
-                Minimo 8 caracteres, 1 mayuscula, 1 minuscula, 1 numero
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Confirmar contrasena
-              </label>
-              <input
-                type="password"
-                value={form.confirmPassword}
-                onChange={(e) => updateField('confirmPassword', e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                required
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <UserPlus size={16} />
-              )}
-              Crear Cuenta
-            </button>
-          </form>
+            </form>
+          )}
 
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-500">
