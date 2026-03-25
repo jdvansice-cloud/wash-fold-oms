@@ -1,34 +1,41 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useDataLoader } from './hooks/useDataLoader';
 import Layout from './components/Layout';
-import POSScreen from './pages/POSScreen';
-import OrdersPage from './pages/OrdersPage';
-import MachinesPage from './pages/MachinesPage';
-import CustomersPage from './pages/CustomersPage';
-import AnalyticsPage from './pages/AnalyticsPage';
-import ReportsPage from './pages/ReportsPage';
-import SettingsPage from './pages/SettingsPage';
-import EODPage from './pages/EODPage';
-import LoginPage from './pages/LoginPage';
-import SetPasswordPage from './pages/SetPasswordPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import { FullPageSpinner } from './components/ui/Spinner';
 
-// Protected Route wrapper
+// Lazy-loaded pages (code splitting)
+const POSScreen = lazy(() => import('./pages/POSScreen'));
+const OrdersPage = lazy(() => import('./pages/OrdersPage'));
+const MachinesPage = lazy(() => import('./pages/MachinesPage'));
+const CustomersPage = lazy(() => import('./pages/CustomersPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const EODPage = lazy(() => import('./pages/EODPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const SetPasswordPage = lazy(() => import('./pages/SetPasswordPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+
+// Portal pages
+const PortalDashboard = lazy(() => import('./pages/portal/Dashboard'));
+const CustomerLogin = lazy(() => import('./pages/portal/CustomerLogin'));
+const CustomerRegister = lazy(() => import('./pages/portal/CustomerRegister'));
+const MyOrders = lazy(() => import('./pages/portal/MyOrders'));
+const OrderDetail = lazy(() => import('./pages/portal/OrderDetail'));
+const SchedulePickup = lazy(() => import('./pages/portal/SchedulePickup'));
+const MyLoyalty = lazy(() => import('./pages/portal/MyLoyalty'));
+const MyProfile = lazy(() => import('./pages/portal/MyProfile'));
+const PortalLayout = lazy(() => import('./components/portal/PortalLayout'));
+
+// Protected Route wrapper (staff)
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isStaff } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Verificando sesión...</p>
-        </div>
-      </div>
-    );
+    return <FullPageSpinner text="Verificando sesion..." />;
   }
 
   if (!user) {
@@ -38,23 +45,32 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-// Public Route wrapper (redirect to app if already logged in)
+// Public Route wrapper (redirect if logged in)
 function PublicRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isCustomer } = useAuth();
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando...</p>
-        </div>
-      </div>
-    );
+    return <FullPageSpinner text="Cargando..." />;
   }
 
   if (user) {
-    return <Navigate to="/" replace />;
+    // Route customers to portal, staff to POS
+    return <Navigate to={isCustomer ? '/portal' : '/'} replace />;
+  }
+
+  return children;
+}
+
+// Portal Protected Route (customer)
+function PortalProtectedRoute({ children }) {
+  const { user, loading, isCustomer } = useAuth();
+
+  if (loading) {
+    return <FullPageSpinner text="Cargando..." />;
+  }
+
+  if (!user || !isCustomer) {
+    return <Navigate to="/portal/login" replace />;
   }
 
   return children;
@@ -63,16 +79,9 @@ function PublicRoute({ children }) {
 function AppContent() {
   const { state } = useApp();
   const { isLoading, error, reload } = useDataLoader();
-  
+
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Conectando con Supabase...</p>
-        </div>
-      </div>
-    );
+    return <FullPageSpinner text="Conectando con Supabase..." />;
   }
 
   if (error) {
@@ -84,7 +93,7 @@ function AppContent() {
           </div>
           <h2 className="text-xl font-semibold text-gray-800 mb-2">{error.message}</h2>
           <p className="text-gray-600 mb-6">{error.details}</p>
-          
+
           {error.type === 'config' && (
             <div className="bg-gray-50 rounded-xl p-4 mb-6 text-left">
               <p className="text-sm font-medium text-gray-700 mb-2">Variables requeridas en Vercel:</p>
@@ -92,7 +101,7 @@ function AppContent() {
               <code className="block text-xs bg-gray-100 p-2 rounded">SUPABASE_ANON_KEY</code>
             </div>
           )}
-          
+
           {error.type === 'data' && (
             <div className="bg-amber-50 rounded-xl p-4 mb-6 text-left">
               <p className="text-sm text-amber-800">
@@ -100,9 +109,9 @@ function AppContent() {
               </p>
             </div>
           )}
-          
-          <button 
-            onClick={reload} 
+
+          <button
+            onClick={reload}
             className="px-6 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors font-medium"
           >
             Reintentar
@@ -111,20 +120,22 @@ function AppContent() {
       </div>
     );
   }
-  
+
   return (
     <Layout>
-      <Routes>
-        <Route path="/" element={<POSScreen />} />
-        <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/machines" element={<MachinesPage />} />
-        <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/eod" element={<EODPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <Suspense fallback={<FullPageSpinner />}>
+        <Routes>
+          <Route path="/" element={<POSScreen />} />
+          <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/machines" element={<MachinesPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/eod" element={<EODPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </Layout>
   );
 }
@@ -132,23 +143,36 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={
-          <PublicRoute>
-            <LoginPage />
-          </PublicRoute>
-        } />
-        <Route path="/set-password" element={<SetPasswordPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        
-        {/* Protected routes */}
-        <Route path="/*" element={
-          <ProtectedRoute>
-            <AppContent />
-          </ProtectedRoute>
-        } />
-      </Routes>
+      <Suspense fallback={<FullPageSpinner />}>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={
+            <PublicRoute>
+              <LoginPage />
+            </PublicRoute>
+          } />
+          <Route path="/set-password" element={<SetPasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+          {/* Portal public routes (MUST be before /portal/* wildcard) */}
+          <Route path="/portal/login" element={<CustomerLogin />} />
+          <Route path="/portal/register" element={<CustomerRegister />} />
+
+          {/* Portal protected routes (customer-facing) */}
+          <Route path="/portal/*" element={
+            <PortalProtectedRoute>
+              <PortalLayout />
+            </PortalProtectedRoute>
+          } />
+
+          {/* Staff routes */}
+          <Route path="/*" element={
+            <ProtectedRoute>
+              <AppContent />
+            </ProtectedRoute>
+          } />
+        </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }
