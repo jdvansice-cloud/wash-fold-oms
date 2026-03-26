@@ -10,6 +10,7 @@ import {
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import { useApp } from '../context/AppContext';
 import { useFeature } from '../hooks/useFeature';
+import { useTenant } from '../hooks/useTenant';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
 import { 
@@ -22,6 +23,7 @@ import {
 
 function SettingsPage() {
   const { state } = useApp();
+  const { activeStore } = useTenant();
   const [activeSection, setActiveSection] = useState('company');
   
   const menuItems = [
@@ -92,7 +94,7 @@ function SettingsPage() {
           {activeSection === 'promotions' && <PromotionsSettings />}
           {activeSection === 'giftcards' && <GiftCardsSettings />}
           {activeSection === 'loyalty' && <LoyaltySettings />}
-          {activeSection === 'pickup' && <PickupScheduleSettings storeId={state.currentStore?.id} />}
+          {activeSection === 'pickup' && <PickupScheduleSettings storeId={activeStore?.id || state.currentStore?.id} />}
         </div>
       </div>
     </div>
