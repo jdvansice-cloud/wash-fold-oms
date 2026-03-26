@@ -56,6 +56,25 @@ export function createNumberedIcon(num: number): L.DivIcon {
   });
 }
 
+// Store origin marker (green house icon)
+export function createStoreIcon(): L.DivIcon {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      width: 36px; height: 36px;
+      background: #059669;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 18px;
+    ">🏠</div>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -20],
+  });
+}
+
 // Panama City center coordinates
 export const PANAMA_CENTER: [number, number] = [9.0, -79.5];
 export const DEFAULT_ZOOM = 13;

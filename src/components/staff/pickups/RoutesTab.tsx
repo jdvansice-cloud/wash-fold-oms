@@ -3,15 +3,24 @@ import { Route as RouteIcon, Plus, Play, CheckCircle, Navigation } from 'lucide-
 import { useStorePickupRequests } from '../../../hooks/queries/usePickupRequests';
 import { useStorePickupRoutes, useCreateRoute, useUpdateRoute } from '../../../hooks/queries/usePickupRoutes';
 import { useAuth } from '../../../context/AuthContext';
+import { useTenant } from '../../../hooks/useTenant';
 import { optimizeRoute } from '../../../utils/routeOptimizer';
 import { format } from 'date-fns';
 import PickupMapView from '../../map/PickupMapView';
 import type { PickupRoute } from '../../../types';
 
-const PANAMA_STORE = { lat: 9.0, lng: -79.5 }; // default store location
+const PANAMA_DEFAULT = { lat: 9.0, lng: -79.5 };
 
 export default function RoutesTab({ storeId }: { storeId: string | undefined }) {
   const { appUser } = useAuth();
+  const { activeStore } = useTenant();
+
+  // Use store geolocation as route starting point
+  const storeGeo = activeStore?.geolocation as { lat?: number; lng?: number; latitude?: number; longitude?: number } | null;
+  const storeLocation = {
+    lat: storeGeo?.lat ?? storeGeo?.latitude ?? PANAMA_DEFAULT.lat,
+    lng: storeGeo?.lng ?? storeGeo?.longitude ?? PANAMA_DEFAULT.lng,
+  };
   const today = format(new Date(), 'yyyy-MM-dd');
   const [routeDate, setRouteDate] = useState(today);
   const [selectedPickups, setSelectedPickups] = useState<string[]>([]);
@@ -43,7 +52,7 @@ export default function RoutesTab({ storeId }: { storeId: string | undefined }) 
       .filter((p) => p?.latitude && p?.longitude)
       .map((p) => ({ id: p!.id, latitude: p!.latitude!, longitude: p!.longitude! }));
 
-    const optimized = optimizeRoute(PANAMA_STORE, points);
+    const optimized = optimizeRoute(storeLocation, points);
     setSelectedPickups(optimized);
   };
 
@@ -144,6 +153,7 @@ export default function RoutesTab({ storeId }: { storeId: string | undefined }) 
               <PickupMapView
                 pickups={pickups.filter((p) => viewingRoute.route_order.includes(p.id))}
                 routeOrder={viewingRoute.route_order}
+                storeLocation={storeLocation}
                 height="400px"
               />
             </div>
@@ -236,6 +246,7 @@ export default function RoutesTab({ storeId }: { storeId: string | undefined }) 
               <PickupMapView
                 pickups={unassigned.filter((p) => selectedPickups.includes(p.id))}
                 routeOrder={selectedPickups}
+                storeLocation={storeLocation}
                 height="350px"
               />
             )}

@@ -1,16 +1,17 @@
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
-import { PANAMA_CENTER, DEFAULT_ZOOM, createStatusIcon, createNumberedIcon } from './leafletSetup';
+import { PANAMA_CENTER, DEFAULT_ZOOM, createStatusIcon, createNumberedIcon, createStoreIcon } from './leafletSetup';
 import './leafletSetup';
 import type { PickupRequest } from '@/types';
 
 interface PickupMapViewProps {
   pickups: PickupRequest[];
   routeOrder?: string[]; // ordered IDs for route polyline
+  storeLocation?: { lat: number; lng: number }; // starting point for routes
   height?: string;
 }
 
-export default function PickupMapView({ pickups, routeOrder, height = '400px' }: PickupMapViewProps) {
+export default function PickupMapView({ pickups, routeOrder, storeLocation, height = '400px' }: PickupMapViewProps) {
   // Only show pickups that have coordinates
   const mappable = pickups.filter((p) => p.latitude && p.longitude);
 
@@ -23,9 +24,13 @@ export default function PickupMapView({ pickups, routeOrder, height = '400px' }:
         ]
       : PANAMA_CENTER;
 
-  // Build route polyline if routeOrder is provided
+  // Build route polyline if routeOrder is provided (starting from store)
   const routePositions: [number, number][] = [];
   if (routeOrder) {
+    // Start from store location
+    if (storeLocation) {
+      routePositions.push([storeLocation.lat, storeLocation.lng]);
+    }
     for (const id of routeOrder) {
       const p = mappable.find((m) => m.id === id);
       if (p?.latitude && p?.longitude) {
@@ -64,6 +69,18 @@ export default function PickupMapView({ pickups, routeOrder, height = '400px' }:
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+
+        {/* Store starting point marker */}
+        {storeLocation && (
+          <Marker
+            position={[storeLocation.lat, storeLocation.lng]}
+            icon={createStoreIcon()}
+          >
+            <Popup>
+              <p className="text-xs font-semibold">Tienda (Punto de inicio)</p>
+            </Popup>
+          </Marker>
+        )}
 
         {mappable.map((pickup, idx) => {
           const routeIdx = routeOrder?.indexOf(pickup.id);
