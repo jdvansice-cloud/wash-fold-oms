@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Truck, Package, Star, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useTenant } from '../../hooks/useTenant';
 import { useMyOrders } from '../../hooks/queries/useMyOrders';
 import { useCustomerLoyalty, useLoyaltySettings } from '../../hooks/queries/useLoyalty';
 import { OrderCard } from '../../components/portal/OrderCard';
@@ -17,6 +18,8 @@ export default function PortalDashboard() {
   const { data: activeOrders, isLoading: ordersLoading } = useMyOrders(customerId, 'active');
   const { data: loyalty } = useCustomerLoyalty(customerId);
   const { data: loyaltySettings } = useLoyaltySettings(storeId);
+  const { slug } = useTenant();
+  const pp = (path: string) => `/portal/${slug}${path}`;
 
   return (
     <div className="space-y-6">
@@ -28,7 +31,7 @@ export default function PortalDashboard() {
 
       {/* Schedule Pickup CTA */}
       <Link
-        to="/portal/schedule-pickup"
+        to={pp('/schedule-pickup')}
         className="group block bg-white rounded-xl border-2 border-primary-500 p-4 hover:bg-primary-50 transition-all shadow-sm"
       >
         <div className="flex items-center gap-4">
@@ -47,7 +50,7 @@ export default function PortalDashboard() {
 
       {/* Loyalty Points */}
       {loyaltySettings && (loyaltySettings.points_enabled || loyaltySettings.punch_card_enabled) && (
-        <Link to="/portal/loyalty" className="block">
+        <Link to={pp('/loyalty')} className="block">
           <LoyaltyCard loyalty={loyalty ?? null} settings={loyaltySettings} compact />
         </Link>
       )}
@@ -56,7 +59,7 @@ export default function PortalDashboard() {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-slate-900">Pedidos Activos</h2>
-          <Link to="/portal/orders" className="text-sm text-primary-600 font-medium hover:underline">
+          <Link to={pp('/orders')} className="text-sm text-primary-600 font-medium hover:underline">
             Ver todos
           </Link>
         </div>
@@ -72,7 +75,7 @@ export default function PortalDashboard() {
             ))}
             {activeOrders.length > 3 && (
               <Link
-                to="/portal/orders"
+                to={pp('/orders')}
                 className="block text-center text-sm text-primary-600 font-medium py-2 hover:underline"
               >
                 Ver {activeOrders.length - 3} mas
@@ -90,21 +93,21 @@ export default function PortalDashboard() {
       {/* Quick Links */}
       <div className="grid grid-cols-3 gap-3">
         <Link
-          to="/portal/orders"
+          to={pp('/orders')}
           className="bg-white rounded-xl border border-slate-200 p-4 text-center hover:shadow-card transition-shadow"
         >
           <Package size={20} className="mx-auto mb-1 text-primary-500" />
           <span className="text-xs font-medium text-slate-700">Mis Pedidos</span>
         </Link>
         <Link
-          to="/portal/loyalty"
+          to={pp('/loyalty')}
           className="bg-white rounded-xl border border-slate-200 p-4 text-center hover:shadow-card transition-shadow"
         >
           <Star size={20} className="mx-auto mb-1 text-accent-500" />
           <span className="text-xs font-medium text-slate-700">Lealtad</span>
         </Link>
         <Link
-          to="/portal/profile"
+          to={pp('/profile')}
           className="bg-white rounded-xl border border-slate-200 p-4 text-center hover:shadow-card transition-shadow"
         >
           <User size={20} className="mx-auto mb-1 text-slate-500" />

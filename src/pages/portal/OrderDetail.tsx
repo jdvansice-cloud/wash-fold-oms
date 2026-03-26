@@ -2,12 +2,15 @@ import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Zap } from 'lucide-react';
 import { useMyOrderDetails } from '../../hooks/queries/useMyOrders';
+import { useTenant } from '../../hooks/useTenant';
 import { OrderTimeline } from '../../components/portal/OrderTimeline';
 import { Spinner } from '../../components/ui/Spinner';
 import { formatCurrency, formatDate, formatWeight, formatOrderNumber } from '../../utils/formatters';
 
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>();
+  const { slug } = useTenant();
+  const pp = (path: string) => `/portal/${slug}${path}`;
   const { data: order, isLoading, error } = useMyOrderDetails(id);
 
   if (isLoading) {
@@ -22,7 +25,7 @@ export default function OrderDetail() {
     return (
       <div className="text-center py-12">
         <p className="text-slate-500">No se encontro el pedido</p>
-        <Link to="/portal/orders" className="text-primary-600 text-sm mt-2 inline-block">
+        <Link to={pp('/orders')} className="text-primary-600 text-sm mt-2 inline-block">
           Volver a pedidos
         </Link>
       </div>
@@ -35,7 +38,7 @@ export default function OrderDetail() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link to="/portal/orders" className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
+        <Link to={pp('/orders')} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
           <ArrowLeft size={20} />
         </Link>
         <div>

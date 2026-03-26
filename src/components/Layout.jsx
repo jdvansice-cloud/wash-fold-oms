@@ -9,7 +9,8 @@ function Layout({ children }) {
   const { state, actions } = useApp();
   const location = useLocation();
   
-  const isPOSPage = location.pathname === '/';
+  // POS page is the root of the slug route: /app/:slug or /app/:slug/
+  const isPOSPage = /^\/app\/[^/]+\/?$/.test(location.pathname);
   
   return (
     <div className="min-h-screen flex flex-col">

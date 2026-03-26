@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../hooks/useTenant';
 
 function Header() {
   const { state, actions } = useApp();
@@ -27,23 +28,25 @@ function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const { company, slug } = useTenant();
+  const p = (path) => `/app/${slug}${path}`;
+
   const handleLogout = async () => {
-    setUserMenuOpen(false); // Close menu immediately
+    setUserMenuOpen(false);
     try {
       await signOut();
-      navigate('/login', { replace: true });
+      navigate(p('/login'), { replace: true });
     } catch (err) {
       console.error('Logout error:', err);
-      // Force navigation even on error
-      navigate('/login', { replace: true });
+      navigate(p('/login'), { replace: true });
     }
   };
-  
+
   const navLinks = [
-    { path: '/', label: 'Nueva Orden', icon: null },
-    { path: '/machines', label: 'En Proceso', icon: null },
-    { path: '/orders', label: 'Listo', query: '?status=ready', icon: null },
-    { path: '/orders', label: 'Completado', query: '?status=completed', icon: null },
+    { path: p('/'), label: 'Nueva Orden', icon: null },
+    { path: p('/machines'), label: 'En Proceso', icon: null },
+    { path: p('/orders'), label: 'Listo', query: '?status=ready', icon: null },
+    { path: p('/orders'), label: 'Completado', query: '?status=completed', icon: null },
   ];
 
   // Get user display info
@@ -70,12 +73,11 @@ function Header() {
               <Menu className="w-5 h-5 text-slate-600" />
             </button>
             
-            <Link to="/" className="flex items-center gap-2">
+            <Link to={p('/')} className="flex items-center gap-2">
               <span className="text-2xl">✨</span>
-              <div className="flex items-baseline gap-1">
-                <span className="font-display font-bold text-slate-800 text-lg tracking-tight">AMERICAN</span>
-                <span className="font-display font-light text-slate-500 text-lg">LAUNDRY</span>
-              </div>
+              <span className="font-display font-bold text-slate-800 text-lg tracking-tight truncate max-w-[200px]">
+                {company?.name || 'Wash & Fold'}
+              </span>
             </Link>
           </div>
           
@@ -132,7 +134,7 @@ function Header() {
                   {/* Menu Items */}
                   <div className="py-1">
                     <Link 
-                      to="/eod"
+                      to={p('/eod')}
                       onClick={() => setUserMenuOpen(false)}
                       className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
                     >
@@ -167,7 +169,7 @@ function Header() {
 
                     {appUser?.role === 'admin' && (
                       <Link 
-                        to="/settings"
+                        to={p('/settings')}
                         className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
                         onClick={() => setUserMenuOpen(false)}
                       >

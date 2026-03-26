@@ -3,11 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { UserPlus, KeyRound, ArrowLeft } from 'lucide-react';
 import { supabasePortal as supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import { useTenant } from '../../hooks/useTenant';
 import { isValidEmail, isValidPanamaPhone } from '../../lib/validation';
 
 export default function CustomerRegister() {
   const navigate = useNavigate();
   const { signInWithOtp, verifyOtp } = useAuth();
+  const { company, slug } = useTenant();
+  const companyName = company?.name || 'Lavanderia';
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState<'info' | 'otp'>('info');
@@ -139,7 +142,7 @@ export default function CustomerRegister() {
       }
 
       // Success — auth state change will redirect
-      navigate('/portal');
+      navigate(`/portal/${slug}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al registrarse';
       if (message.includes('expired')) {
@@ -169,7 +172,7 @@ export default function CustomerRegister() {
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-primary-600">American Laundry</h1>
+          <h1 className="text-2xl font-bold text-primary-600">{companyName}</h1>
           <p className="text-slate-500 text-sm mt-1">Crear cuenta de cliente</p>
         </div>
 
@@ -320,7 +323,7 @@ export default function CustomerRegister() {
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-500">
               Ya tienes cuenta?{' '}
-              <Link to="/portal/login" className="text-primary-600 font-medium hover:underline">
+              <Link to={`/portal/${slug}/login`} className="text-primary-600 font-medium hover:underline">
                 Iniciar sesion
               </Link>
             </p>

@@ -1,7 +1,8 @@
 import React, { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { TenantProvider } from './context/TenantContext';
 import { useDataLoader } from './hooks/useDataLoader';
 import Layout from './components/Layout';
 import { FullPageSpinner } from './components/ui/Spinner';
@@ -21,31 +22,25 @@ const SetPasswordPage = lazy(() => import('./pages/SetPasswordPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 
 // Portal pages
-const PortalDashboard = lazy(() => import('./pages/portal/Dashboard'));
 const CustomerLogin = lazy(() => import('./pages/portal/CustomerLogin'));
 const CustomerRegister = lazy(() => import('./pages/portal/CustomerRegister'));
-const MyOrders = lazy(() => import('./pages/portal/MyOrders'));
-const OrderDetail = lazy(() => import('./pages/portal/OrderDetail'));
-const SchedulePickup = lazy(() => import('./pages/portal/SchedulePickup'));
-const MyLoyalty = lazy(() => import('./pages/portal/MyLoyalty'));
-const MyProfile = lazy(() => import('./pages/portal/MyProfile'));
 const PortalLayout = lazy(() => import('./components/portal/PortalLayout'));
 
 // Protected Route wrapper (staff)
 function ProtectedRoute({ children }) {
-  const { user, loading, isStaff, isCustomer } = useAuth();
+  const { slug } = useParams();
+  const { user, loading, isCustomer } = useAuth();
 
   if (loading) {
     return <FullPageSpinner text="Verificando sesion..." />;
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={`/app/${slug}/login`} replace />;
   }
 
-  // Redirect customers away from staff routes
   if (isCustomer) {
-    return <Navigate to="/portal" replace />;
+    return <Navigate to={`/portal/${slug}`} replace />;
   }
 
   return children;
@@ -53,6 +48,7 @@ function ProtectedRoute({ children }) {
 
 // Public Route wrapper (redirect if logged in)
 function PublicRoute({ children }) {
+  const { slug } = useParams();
   const { user, loading, isCustomer } = useAuth();
 
   if (loading) {
@@ -60,8 +56,7 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
-    // Route customers to portal, staff to POS
-    return <Navigate to={isCustomer ? '/portal' : '/'} replace />;
+    return <Navigate to={isCustomer ? `/portal/${slug}` : `/app/${slug}`} replace />;
   }
 
   return children;
@@ -69,6 +64,7 @@ function PublicRoute({ children }) {
 
 // Portal Protected Route (customer)
 function PortalProtectedRoute({ children }) {
+  const { slug } = useParams();
   const { user, loading, isCustomer } = useAuth();
 
   if (loading) {
@@ -76,7 +72,7 @@ function PortalProtectedRoute({ children }) {
   }
 
   if (!user || !isCustomer) {
-    return <Navigate to="/portal/login" replace />;
+    return <Navigate to={`/portal/${slug}/login`} replace />;
   }
 
   return children;
@@ -99,23 +95,6 @@ function AppContent() {
           </div>
           <h2 className="text-xl font-semibold text-gray-800 mb-2">{error.message}</h2>
           <p className="text-gray-600 mb-6">{error.details}</p>
-
-          {error.type === 'config' && (
-            <div className="bg-gray-50 rounded-xl p-4 mb-6 text-left">
-              <p className="text-sm font-medium text-gray-700 mb-2">Variables requeridas en Vercel:</p>
-              <code className="block text-xs bg-gray-100 p-2 rounded mb-1">SUPABASE_URL</code>
-              <code className="block text-xs bg-gray-100 p-2 rounded">SUPABASE_ANON_KEY</code>
-            </div>
-          )}
-
-          {error.type === 'data' && (
-            <div className="bg-amber-50 rounded-xl p-4 mb-6 text-left">
-              <p className="text-sm text-amber-800">
-                Ejecuta el archivo <code className="bg-amber-100 px-1 rounded">supabase-schema.sql</code> en el SQL Editor de Supabase para crear las tablas y datos iniciales.
-              </p>
-            </div>
-          )}
-
           <button
             onClick={reload}
             className="px-6 py-3 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors font-medium"
@@ -140,47 +119,76 @@ function AppContent() {
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/eod" element={<EODPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
       </Suspense>
     </Layout>
   );
 }
 
+// Wrapper that provides Tenant + Auth context for slug-based routes
+function TenantApp({ children }) {
+  return (
+    <TenantProvider>
+      <AuthProvider>
+        {children}
+      </AuthProvider>
+    </TenantProvider>
+  );
+}
+
 function App() {
   return (
-    <AuthProvider>
-      <Suspense fallback={<FullPageSpinner />}>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={
+    <Suspense fallback={<FullPageSpinner />}>
+      <Routes>
+        {/* Backward-compat redirects for existing users */}
+        <Route path="/login" element={<Navigate to="/app/american-laundry/login" replace />} />
+        <Route path="/set-password" element={<SetPasswordPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/portal/login" element={<Navigate to="/portal/american-laundry/login" replace />} />
+        <Route path="/portal/register" element={<Navigate to="/portal/american-laundry/register" replace />} />
+        <Route path="/portal" element={<Navigate to="/portal/american-laundry" replace />} />
+
+        {/* Staff routes — /app/:slug/* */}
+        <Route path="/app/:slug/login" element={
+          <TenantApp>
             <PublicRoute>
               <LoginPage />
             </PublicRoute>
-          } />
-          <Route path="/set-password" element={<SetPasswordPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-
-          {/* Portal public routes (MUST be before /portal/* wildcard) */}
-          <Route path="/portal/login" element={<CustomerLogin />} />
-          <Route path="/portal/register" element={<CustomerRegister />} />
-
-          {/* Portal protected routes (customer-facing) */}
-          <Route path="/portal/*" element={
-            <PortalProtectedRoute>
-              <PortalLayout />
-            </PortalProtectedRoute>
-          } />
-
-          {/* Staff routes */}
-          <Route path="/*" element={
+          </TenantApp>
+        } />
+        <Route path="/app/:slug/*" element={
+          <TenantApp>
             <ProtectedRoute>
               <AppContent />
             </ProtectedRoute>
-          } />
-        </Routes>
-      </Suspense>
-    </AuthProvider>
+          </TenantApp>
+        } />
+
+        {/* Portal routes — /portal/:slug/* */}
+        <Route path="/portal/:slug/login" element={
+          <TenantApp>
+            <CustomerLogin />
+          </TenantApp>
+        } />
+        <Route path="/portal/:slug/register" element={
+          <TenantApp>
+            <CustomerRegister />
+          </TenantApp>
+        } />
+        <Route path="/portal/:slug/*" element={
+          <TenantApp>
+            <PortalProtectedRoute>
+              <PortalLayout />
+            </PortalProtectedRoute>
+          </TenantApp>
+        } />
+
+        {/* Root redirect (will become landing page in Phase 2) */}
+        <Route path="/" element={<Navigate to="/app/american-laundry" replace />} />
+        <Route path="*" element={<Navigate to="/app/american-laundry" replace />} />
+      </Routes>
+    </Suspense>
   );
 }
 

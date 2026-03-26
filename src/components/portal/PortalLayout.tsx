@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
 import { Package, Truck, Star, User, LogOut, MapPin } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useTenant } from '../../hooks/useTenant';
 import { Spinner } from '../ui/Spinner';
 
 const Dashboard = lazy(() => import('../../pages/portal/Dashboard'));
@@ -12,25 +13,30 @@ const MyLoyalty = lazy(() => import('../../pages/portal/MyLoyalty'));
 const MyProfile = lazy(() => import('../../pages/portal/MyProfile'));
 const MyLocations = lazy(() => import('../../pages/portal/MyLocations'));
 
-const navItems = [
-  { to: '/portal', icon: Package, label: 'Inicio', end: true },
-  { to: '/portal/orders', icon: Package, label: 'Pedidos' },
-  { to: '/portal/schedule-pickup', icon: Truck, label: 'Recoger' },
-  { to: '/portal/locations', icon: MapPin, label: 'Direcciones' },
-  { to: '/portal/loyalty', icon: Star, label: 'Lealtad' },
-  { to: '/portal/profile', icon: User, label: 'Perfil' },
-];
-
 export default function PortalLayout() {
   const { authUser, signOut } = useAuth();
+  const { company, slug } = useTenant();
   const navigate = useNavigate();
+
+  const p = (path: string) => `/portal/${slug}${path}`;
+
+  const navItems = [
+    { to: p('/'), icon: Package, label: 'Inicio', end: true },
+    { to: p('/orders'), icon: Package, label: 'Pedidos' },
+    { to: p('/schedule-pickup'), icon: Truck, label: 'Recoger' },
+    { to: p('/locations'), icon: MapPin, label: 'Direcciones' },
+    { to: p('/loyalty'), icon: Star, label: 'Lealtad' },
+    { to: p('/profile'), icon: User, label: 'Perfil' },
+  ];
+
+  const companyName = company?.name || 'Lavanderia';
   const customerName = authUser?.customerProfile
     ? `${authUser.customerProfile.first_name} ${authUser.customerProfile.last_name || ''}`.trim()
     : 'Cliente';
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/portal/login');
+    navigate(p('/login'));
   };
 
   return (
@@ -39,7 +45,7 @@ export default function PortalLayout() {
       <header className="bg-white border-b border-slate-200 hidden md:block">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <h1 className="text-lg font-bold text-primary-600">American Laundry</h1>
+            <h1 className="text-lg font-bold text-primary-600">{companyName}</h1>
             <nav className="flex items-center gap-1">
               {navItems.map(({ to, label, end }) => (
                 <NavLink
@@ -75,7 +81,7 @@ export default function PortalLayout() {
       {/* Mobile Header */}
       <header className="bg-white border-b border-slate-200 md:hidden">
         <div className="px-4 h-14 flex items-center justify-between">
-          <h1 className="text-base font-bold text-primary-600">American Laundry</h1>
+          <h1 className="text-base font-bold text-primary-600">{companyName}</h1>
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-600">{authUser?.customerProfile?.first_name}</span>
             <button
@@ -100,7 +106,7 @@ export default function PortalLayout() {
               <Route path="locations" element={<MyLocations />} />
               <Route path="loyalty" element={<MyLoyalty />} />
               <Route path="profile" element={<MyProfile />} />
-              <Route path="*" element={<Navigate to="/portal" replace />} />
+              <Route path="*" element={<Navigate to={p('/')} replace />} />
             </Routes>
           </Suspense>
         </div>

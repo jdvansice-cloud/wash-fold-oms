@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../hooks/useTenant';
 import { Loader2, Mail, Sparkles, ArrowLeft, KeyRound } from 'lucide-react';
 
 function LoginPage() {
   const navigate = useNavigate();
   const { signInWithOtp, verifyOtp } = useAuth();
+  const { company, slug } = useTenant();
+  const companyName = company?.name || 'Lavanderia';
   const [email, setEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [step, setStep] = useState('email'); // 'email' or 'otp'
@@ -44,7 +47,7 @@ function LoginPage() {
 
     try {
       await verifyOtp(email, otpCode);
-      navigate('/');
+      navigate(`/app/${slug}`);
     } catch (err) {
       console.error('OTP verify error:', err);
       if (err.message.includes('Token has expired') || err.message.includes('expired')) {
@@ -78,7 +81,7 @@ function LoginPage() {
           <div className="inline-flex items-center gap-2 mb-4">
             <Sparkles className="w-10 h-10 text-primary-500" />
             <span className="text-3xl font-bold text-slate-800">
-              American<span className="text-primary-500">Laundry</span>
+              {companyName}
             </span>
           </div>
           <p className="text-slate-500">Sistema de Gestion de Ordenes</p>

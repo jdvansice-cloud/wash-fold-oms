@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, KeyRound, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useTenant } from '../../hooks/useTenant';
 
 export default function CustomerLogin() {
   const [email, setEmail] = useState('');
@@ -11,7 +12,9 @@ export default function CustomerLogin() {
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const { signInWithOtp, verifyOtp } = useAuth();
+  const { company, slug } = useTenant();
   const navigate = useNavigate();
+  const companyName = company?.name || 'Lavanderia';
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -42,7 +45,7 @@ export default function CustomerLogin() {
 
     try {
       await verifyOtp(email, otpCode);
-      navigate('/portal');
+      navigate(`/portal/${slug}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Error al verificar';
       if (message.includes('expired')) {
@@ -72,7 +75,7 @@ export default function CustomerLogin() {
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-primary-600">American Laundry</h1>
+          <h1 className="text-2xl font-bold text-primary-600">{companyName}</h1>
           <p className="text-slate-500 text-sm mt-1">Portal del Cliente</p>
         </div>
 
@@ -182,7 +185,7 @@ export default function CustomerLogin() {
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-500">
               No tienes cuenta?{' '}
-              <Link to="/portal/register" className="text-primary-600 font-medium hover:underline">
+              <Link to={`/portal/${slug}/register`} className="text-primary-600 font-medium hover:underline">
                 Registrate
               </Link>
             </p>
@@ -190,7 +193,7 @@ export default function CustomerLogin() {
         </div>
 
         <div className="text-center mt-4">
-          <Link to="/login" className="text-xs text-slate-400 hover:text-slate-600">
+          <Link to={`/app/${slug}/login`} className="text-xs text-slate-400 hover:text-slate-600">
             Acceso para empleados
           </Link>
         </div>

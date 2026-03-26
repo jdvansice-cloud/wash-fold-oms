@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../hooks/useTenant';
 
 function Sidebar({ isOpen, onClose }) {
   const { state } = useApp();
@@ -19,15 +20,17 @@ function Sidebar({ isOpen, onClose }) {
     analytics: true, // Default open since it contains dashboard/reports
   });
 
+  const { company, slug } = useTenant();
+  const p = (path) => `/app/${slug}${path}`; // slug-prefixed path builder
+
   const handleLogout = async () => {
-    onClose(); // Close sidebar immediately
+    onClose();
     try {
       await signOut();
-      navigate('/login', { replace: true });
+      navigate(p('/login'), { replace: true });
     } catch (err) {
       console.error('Logout error:', err);
-      // Force navigation even on error
-      navigate('/login', { replace: true });
+      navigate(p('/login'), { replace: true });
     }
   };
 
@@ -54,21 +57,21 @@ function Sidebar({ isOpen, onClose }) {
     {
       title: 'Operaciones',
       items: [
-        { path: '/', label: 'Nueva Orden', icon: Plus },
-        { path: '/orders', label: 'Órdenes', icon: ClipboardList },
-        { 
+        { path: p('/'), label: 'Nueva Orden', icon: Plus },
+        { path: p('/orders'), label: 'Ordenes', icon: ClipboardList },
+        {
           key: 'analytics',
-          label: 'Analíticas', 
+          label: 'Analiticas',
           icon: BarChart3,
           children: [
-            { path: '/analytics', label: 'Dashboard', icon: TrendingUp },
-            { path: '/reports', label: 'Reportes', icon: FileText },
+            { path: p('/analytics'), label: 'Dashboard', icon: TrendingUp },
+            { path: p('/reports'), label: 'Reportes', icon: FileText },
           ]
         },
-        { path: '/machines', label: 'Máquinas / En Proceso', icon: RefreshCw },
-        { path: '/pickups', label: 'Recogidas', icon: Truck },
-        { path: '/customers', label: 'Clientes', icon: Users },
-        { path: '/invoices', label: 'Facturas', icon: FileText },
+        { path: p('/machines'), label: 'Maquinas / En Proceso', icon: RefreshCw },
+        { path: p('/pickups'), label: 'Recogidas', icon: Truck },
+        { path: p('/customers'), label: 'Clientes', icon: Users },
+        { path: p('/invoices'), label: 'Facturas', icon: FileText },
       ],
     },
   ];
@@ -78,7 +81,7 @@ function Sidebar({ isOpen, onClose }) {
     menuSections.push({
       title: 'Configuración',
       items: [
-        { path: '/settings', label: 'Configuración', icon: Settings },
+        { path: p('/settings'), label: 'Configuracion', icon: Settings },
       ],
     });
   }
@@ -108,8 +111,7 @@ function Sidebar({ isOpen, onClose }) {
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xl">✨</span>
-            <span className="font-display font-bold text-slate-800">AMERICAN</span>
-            <span className="font-display font-light text-slate-500">LAUNDRY</span>
+            <span className="font-display font-bold text-slate-800 truncate">{company?.name || 'Wash & Fold'}</span>
           </div>
           <button 
             onClick={onClose}
