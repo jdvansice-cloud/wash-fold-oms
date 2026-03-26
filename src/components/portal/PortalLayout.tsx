@@ -3,6 +3,7 @@ import { Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom'
 import { Package, Truck, Star, User, LogOut, MapPin } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useTenant } from '../../hooks/useTenant';
+import { useFeatures } from '../../hooks/useFeature';
 import { Spinner } from '../ui/Spinner';
 
 const Dashboard = lazy(() => import('../../pages/portal/Dashboard'));
@@ -16,6 +17,7 @@ const MyLocations = lazy(() => import('../../pages/portal/MyLocations'));
 export default function PortalLayout() {
   const { authUser, signOut } = useAuth();
   const { company, slug } = useTenant();
+  const { has } = useFeatures();
   const navigate = useNavigate();
 
   const p = (path: string) => `/portal/${slug}${path}`;
@@ -23,11 +25,11 @@ export default function PortalLayout() {
   const navItems = [
     { to: p('/'), icon: Package, label: 'Inicio', end: true },
     { to: p('/orders'), icon: Package, label: 'Pedidos' },
-    { to: p('/schedule-pickup'), icon: Truck, label: 'Recoger' },
-    { to: p('/locations'), icon: MapPin, label: 'Direcciones' },
-    { to: p('/loyalty'), icon: Star, label: 'Lealtad' },
+    has('pickups') ? { to: p('/schedule-pickup'), icon: Truck, label: 'Recoger' } : null,
+    has('pickups') ? { to: p('/locations'), icon: MapPin, label: 'Direcciones' } : null,
+    has('loyalty') ? { to: p('/loyalty'), icon: Star, label: 'Lealtad' } : null,
     { to: p('/profile'), icon: User, label: 'Perfil' },
-  ];
+  ].filter(Boolean) as { to: string; icon: typeof Package; label: string; end?: boolean }[];
 
   const companyName = company?.name || 'Lavanderia';
   const customerName = authUser?.customerProfile

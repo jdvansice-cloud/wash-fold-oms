@@ -8,6 +8,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../hooks/useTenant';
+import { useFeatures } from '../hooks/useFeature';
 
 function Sidebar({ isOpen, onClose }) {
   const { state } = useApp();
@@ -21,6 +22,7 @@ function Sidebar({ isOpen, onClose }) {
   });
 
   const { company, slug } = useTenant();
+  const { has } = useFeatures();
   const p = (path) => `/app/${slug}${path}`; // slug-prefixed path builder
 
   const handleLogout = async () => {
@@ -69,10 +71,10 @@ function Sidebar({ isOpen, onClose }) {
           ]
         },
         { path: p('/machines'), label: 'Maquinas / En Proceso', icon: RefreshCw },
-        { path: p('/pickups'), label: 'Recogidas', icon: Truck },
+        has('pickups') && { path: p('/pickups'), label: 'Recogidas', icon: Truck },
         { path: p('/customers'), label: 'Clientes', icon: Users },
-        { path: p('/invoices'), label: 'Facturas', icon: FileText },
-      ],
+        has('invoices') && { path: p('/invoices'), label: 'Facturas', icon: FileText },
+      ].filter(Boolean),
     },
   ];
 

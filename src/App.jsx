@@ -4,6 +4,7 @@ import { useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { TenantProvider } from './context/TenantContext';
 import { useDataLoader } from './hooks/useDataLoader';
+import { FeatureGate } from './components/FeatureGate';
 import Layout from './components/Layout';
 import { FullPageSpinner } from './components/ui/Spinner';
 
@@ -115,7 +116,7 @@ function AppContent() {
           <Route path="/" element={<POSScreen />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/machines" element={<MachinesPage />} />
-          <Route path="/pickups" element={<PickupsPage />} />
+          <Route path="/pickups" element={<FeatureGate feature="pickups"><PickupsPage /></FeatureGate>} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
@@ -136,6 +137,15 @@ function TenantApp({ children }) {
         {children}
       </AuthProvider>
     </TenantProvider>
+  );
+}
+
+// Portal feature gate — shown when portal is not in the plan
+function PortalFeatureCheck({ children }) {
+  return (
+    <FeatureGate feature="portal">
+      {children}
+    </FeatureGate>
   );
 }
 
@@ -167,22 +177,28 @@ function App() {
           </TenantApp>
         } />
 
-        {/* Portal routes — /portal/:slug/* */}
+        {/* Portal routes — /portal/:slug/* (requires Pro plan) */}
         <Route path="/portal/:slug/login" element={
           <TenantApp>
-            <CustomerLogin />
+            <PortalFeatureCheck>
+              <CustomerLogin />
+            </PortalFeatureCheck>
           </TenantApp>
         } />
         <Route path="/portal/:slug/register" element={
           <TenantApp>
-            <CustomerRegister />
+            <PortalFeatureCheck>
+              <CustomerRegister />
+            </PortalFeatureCheck>
           </TenantApp>
         } />
         <Route path="/portal/:slug/*" element={
           <TenantApp>
-            <PortalProtectedRoute>
-              <PortalLayout />
-            </PortalProtectedRoute>
+            <PortalFeatureCheck>
+              <PortalProtectedRoute>
+                <PortalLayout />
+              </PortalProtectedRoute>
+            </PortalFeatureCheck>
           </TenantApp>
         } />
 
