@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabasePortal as supabase } from '@/lib/supabase';
 import type { PickupSchedule, PickupBlockedDate, TimeSlot, DayAvailability } from '@/types';
 
 // --- Fetch functions ---

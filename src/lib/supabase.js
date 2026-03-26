@@ -4,33 +4,44 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.SUPABASE_URL
 const supabaseKey = import.meta.env.SUPABASE_ANON_KEY
 
-// Debug logging
-console.log('=== SUPABASE CLIENT INIT ===')
-console.log('URL configured:', !!supabaseUrl)
-console.log('Key configured:', !!supabaseKey)
-if (supabaseUrl) console.log('URL:', supabaseUrl.substring(0, 30) + '...')
-
 if (!supabaseUrl || !supabaseKey) {
   console.error('Missing Supabase environment variables!')
-  console.error('SUPABASE_URL:', supabaseUrl ? 'SET' : 'MISSING')
-  console.error('SUPABASE_ANON_KEY:', supabaseKey ? 'SET' : 'MISSING')
 }
 
-export const supabase = createClient(
+const commonOptions = {
+  global: { headers: { 'x-client-info': 'wash-fold-oms' } },
+}
+
+// Staff client — isolated session storage
+export const supabaseStaff = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseKey || 'placeholder-key',
   {
+    ...commonOptions,
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      storageKey: 'sb-staff-auth-token',
     },
-    global: {
-      headers: {
-        'x-client-info': 'wash-fold-oms'
-      }
-    }
   }
 )
+
+// Customer portal client — isolated session storage
+export const supabasePortal = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseKey || 'placeholder-key',
+  {
+    ...commonOptions,
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      storageKey: 'sb-portal-auth-token',
+    },
+  }
+)
+
+// Default export for data queries (uses staff client)
+export const supabase = supabaseStaff
 
 export const isConfigured = !!(supabaseUrl && supabaseKey)
 

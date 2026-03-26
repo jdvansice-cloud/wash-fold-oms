@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, Lock } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useUpdateCustomer } from '../../hooks/queries/useCustomers';
-import { supabase } from '../../lib/supabase';
+import { supabasePortal as supabase } from '../../lib/supabase';
 
 export default function MyProfile() {
   const { authUser, updatePassword } = useAuth();

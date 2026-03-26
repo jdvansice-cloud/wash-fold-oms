@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/lib/supabase';
+import { supabaseStaff, supabasePortal } from '@/lib/supabase';
 import type { PickupRequest, CreatePickupRequestInput, PickupRequestStatus } from '@/types';
 
 // --- Fetch functions ---
 
 async function fetchMyPickupRequests(customerId: string): Promise<PickupRequest[]> {
-  const { data, error } = await supabase
+  const { data, error } = await supabasePortal
     .from('pickup_requests')
     .select('*')
     .eq('customer_id', customerId)
@@ -20,7 +20,7 @@ async function fetchStorePickupRequests(
   storeId: string,
   filters?: { status?: PickupRequestStatus; startDate?: string; endDate?: string },
 ): Promise<PickupRequest[]> {
-  let query = supabase
+  let query = supabaseStaff
     .from('pickup_requests')
     .select('*, customer:customers(first_name, last_name, phone)')
     .eq('store_id', storeId)
@@ -56,7 +56,7 @@ export function useCreatePickupRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreatePickupRequestInput) => {
-      const { data, error } = await supabase
+      const { data, error } = await supabasePortal
         .from('pickup_requests')
         .insert(input)
         .select()
@@ -75,7 +75,7 @@ export function useCancelPickupRequest() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
-      const { error } = await supabase
+      const { error } = await supabasePortal
         .from('pickup_requests')
         .update({ status: 'cancelled', cancelled_reason: reason, updated_at: new Date().toISOString() })
         .eq('id', id);
@@ -126,7 +126,7 @@ export function useUpdatePickupStatus() {
       if (orderId) updates.order_id = orderId;
       if (cancelledReason) updates.cancelled_reason = cancelledReason;
 
-      const { error } = await supabase.from('pickup_requests').update(updates).eq('id', id);
+      const { error } = await supabaseStaff.from('pickup_requests').update(updates).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {

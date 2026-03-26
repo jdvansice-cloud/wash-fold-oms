@@ -9,6 +9,23 @@ import { ToastProvider } from './components/Toast'
 import { queryClient } from './lib/queryClient'
 import './index.css'
 
+// One-time cleanup: remove old shared Supabase auth key that caused session conflicts
+// between staff and customer portals. Each now uses its own storage key.
+const OLD_KEY_PREFIX = 'sb-';
+const OLD_KEY_SUFFIX = '-auth-token';
+for (let i = localStorage.length - 1; i >= 0; i--) {
+  const key = localStorage.key(i);
+  if (
+    key &&
+    key.startsWith(OLD_KEY_PREFIX) &&
+    key.endsWith(OLD_KEY_SUFFIX) &&
+    key !== 'sb-staff-auth-token' &&
+    key !== 'sb-portal-auth-token'
+  ) {
+    localStorage.removeItem(key);
+  }
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { UserPlus, KeyRound, ArrowLeft } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabasePortal as supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { isValidEmail, isValidPanamaPhone } from '../../lib/validation';
 

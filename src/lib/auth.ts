@@ -1,5 +1,5 @@
 // Auth user resolution — determines if an auth session belongs to staff or customer
-import { supabase } from './supabase';
+import { supabaseStaff as supabase } from './supabase';
 
 export type UserRole = 'admin' | 'supervisor' | 'operator' | 'customer';
 
