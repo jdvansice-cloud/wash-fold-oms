@@ -1,9 +1,11 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   Sparkles, ShoppingCart, Truck, Star, BarChart3, Users,
-  Shield, Zap, Globe, Check, ArrowRight, Package
+  Shield, Zap, Globe, Check, ArrowRight, Package, LogIn,
+  Search, MapPin, X, Building, Navigation, Loader2
 } from 'lucide-react';
+import { supabaseStaff } from '../lib/supabase';
 
 const FEATURES = [
   { icon: ShoppingCart, title: 'Punto de Venta', desc: 'POS completo para ordenes de lavanderia con peso, piezas y precios por kilo o unidad.' },
@@ -44,9 +46,202 @@ const PLANS = [
   },
 ];
 
+interface OrgResult {
+  id: string;
+  name: string;
+  slug: string;
+  address?: string;
+  stores?: { name: string; address?: string; geolocation?: { lat: number; lng: number } }[];
+}
+
+function OrgSearchModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<OrgResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 100);
+      // Try to get user location on open
+      if (!userLocation && navigator.geolocation) {
+        setLocating(true);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            setLocating(false);
+          },
+          () => setLocating(false),
+          { enableHighAccuracy: false, timeout: 5000 },
+        );
+      }
+    }
+  }, [open]);
+
+  const searchOrgs = async (q: string) => {
+    if (q.length < 2) {
+      setResults([]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const { data } = await supabaseStaff
+        .from('companies')
+        .select('id, name, slug, address, stores:stores(name, address, geolocation)')
+        .ilike('name', `%${q}%`)
+        .limit(8);
+      setResults((data as OrgResult[]) || []);
+    } catch {
+      setResults([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleInputChange = (value: string) => {
+    setQuery(value);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchOrgs(value), 300);
+  };
+
+  // Calculate distance in km using Haversine
+  const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  };
+
+  const handleSelectOrg = (org: OrgResult, type: 'staff' | 'portal') => {
+    onClose();
+    navigate(type === 'staff' ? `/app/${org.slug}/login` : `/portal/${org.slug}/login`);
+  };
+
+  // Sort results by distance if user location is available
+  const sortedResults = userLocation
+    ? [...results].sort((a, b) => {
+        const aGeo = a.stores?.[0]?.geolocation;
+        const bGeo = b.stores?.[0]?.geolocation;
+        const aDist = aGeo ? getDistance(userLocation.lat, userLocation.lng, aGeo.lat, aGeo.lng) : Infinity;
+        const bDist = bGeo ? getDistance(userLocation.lat, userLocation.lng, bGeo.lat, bGeo.lng) : Infinity;
+        return aDist - bDist;
+      })
+    : results;
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-start justify-center pt-[15vh] px-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* Search Header */}
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <Search size={18} className="text-slate-400 shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => handleInputChange(e.target.value)}
+              className="flex-1 text-base text-slate-900 outline-none placeholder:text-slate-400"
+              placeholder="Buscar tu organizacion..."
+            />
+            {searching && <Loader2 size={16} className="text-slate-400 animate-spin" />}
+            <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg text-slate-400">
+              <X size={18} />
+            </button>
+          </div>
+          {locating && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-primary-600">
+              <Navigation size={12} className="animate-pulse" />
+              Detectando tu ubicacion...
+            </div>
+          )}
+          {userLocation && !locating && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600">
+              <MapPin size={12} />
+              Mostrando resultados cercanos primero
+            </div>
+          )}
+        </div>
+
+        {/* Results */}
+        <div className="max-h-[50vh] overflow-y-auto">
+          {query.length < 2 ? (
+            <div className="p-6 text-center">
+              <Building size={28} className="mx-auto mb-2 text-slate-300" />
+              <p className="text-sm text-slate-500">Escribe el nombre de tu lavanderia</p>
+              <p className="text-xs text-slate-400 mt-1">Ej: "American Laundry", "Clean Express"</p>
+            </div>
+          ) : sortedResults.length === 0 && !searching ? (
+            <div className="p-6 text-center">
+              <Search size={28} className="mx-auto mb-2 text-slate-300" />
+              <p className="text-sm text-slate-500">No se encontraron resultados</p>
+              <p className="text-xs text-slate-400 mt-1">Verifica el nombre o contacta a tu administrador</p>
+            </div>
+          ) : (
+            <div className="py-2">
+              {sortedResults.map((org) => {
+                const storeGeo = org.stores?.[0]?.geolocation;
+                const distance = userLocation && storeGeo
+                  ? getDistance(userLocation.lat, userLocation.lng, storeGeo.lat, storeGeo.lng)
+                  : null;
+
+                return (
+                  <div key={org.id} className="px-4 py-3 hover:bg-slate-50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="bg-primary-50 rounded-lg p-2 mt-0.5 shrink-0">
+                        <Building size={16} className="text-primary-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-semibold text-slate-900">{org.name}</h4>
+                        {org.stores?.[0]?.address && (
+                          <p className="text-xs text-slate-500 mt-0.5 truncate">{org.stores[0].address}</p>
+                        )}
+                        {distance !== null && distance < 100 && (
+                          <p className="text-[10px] text-emerald-600 mt-0.5 flex items-center gap-1">
+                            <MapPin size={10} /> {distance < 1 ? `${Math.round(distance * 1000)}m` : `${distance.toFixed(1)}km`}
+                          </p>
+                        )}
+                        <div className="flex gap-2 mt-2">
+                          <button
+                            onClick={() => handleSelectOrg(org, 'staff')}
+                            className="px-3 py-1.5 bg-primary-500 text-white text-xs font-medium rounded-lg hover:bg-primary-600 transition-colors flex items-center gap-1"
+                          >
+                            <LogIn size={12} /> Staff
+                          </button>
+                          <button
+                            onClick={() => handleSelectOrg(org, 'portal')}
+                            className="px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-200 transition-colors flex items-center gap-1"
+                          >
+                            <Users size={12} /> Cliente
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPage() {
+  const [showOrgSearch, setShowOrgSearch] = useState(false);
+
   return (
     <div className="min-h-screen bg-white">
+      {/* Org Search Modal */}
+      <OrgSearchModal open={showOrgSearch} onClose={() => setShowOrgSearch(false)} />
+
       {/* Nav */}
       <header className="fixed top-0 left-0 right-0 bg-white/90 backdrop-blur-sm border-b border-slate-100 z-50">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -59,6 +254,13 @@ export default function LandingPage() {
             <a href="#pricing" className="hover:text-slate-900 transition-colors">Precios</a>
           </nav>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowOrgSearch(true)}
+              className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors flex items-center gap-2"
+            >
+              <LogIn size={16} />
+              Iniciar Sesion
+            </button>
             <Link
               to="/signup"
               className="px-4 py-2 bg-primary-500 text-white rounded-lg text-sm font-medium hover:bg-primary-600 transition-colors"
