@@ -89,12 +89,19 @@ function OrgSearchModal({ open, onClose }: { open: boolean; onClose: () => void 
     }
     setSearching(true);
     try {
-      const { data } = await supabaseStaff
-        .from('companies')
-        .select('id, name, slug, address, stores:stores(name, address, geolocation)')
-        .ilike('name', `%${q}%`)
-        .limit(8);
-      setResults((data as OrgResult[]) || []);
+      // Use raw REST API with anon key to avoid auth session issues on landing page
+      const url = import.meta.env.SUPABASE_URL;
+      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const response = await fetch(
+        `${url}/rest/v1/companies?name=ilike.*${encodeURIComponent(q)}*&select=id,name,slug,address,stores:stores(name,address,geolocation)&limit=8`,
+        { headers: { apikey: key, Authorization: `Bearer ${key}` } },
+      );
+      if (response.ok) {
+        const data = await response.json();
+        setResults((data as OrgResult[]) || []);
+      } else {
+        setResults([]);
+      }
     } catch {
       setResults([]);
     } finally {
