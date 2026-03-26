@@ -27,10 +27,9 @@ export function AuthProvider({ children }) {
 
     const timeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn('Auth loading timeout - forcing completion');
         setLoading(false);
       }
-    }, 2000);
+    }, 4000);
 
     const handleAuthChange = async (_event, session) => {
       if (!mounted) return;

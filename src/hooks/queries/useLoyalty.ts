@@ -7,9 +7,9 @@ async function fetchLoyaltySettings(storeId: string): Promise<LoyaltySettings | 
     .from('loyalty_settings')
     .select('*')
     .eq('store_id', storeId)
-    .single();
+    .maybeSingle();
 
-  if (error && error.code !== 'PGRST116') throw error; // PGRST116 = not found
+  if (error) throw error;
   return data as LoyaltySettings | null;
 }
 
@@ -18,9 +18,9 @@ async function fetchCustomerLoyalty(customerId: string): Promise<CustomerLoyalty
     .from('customer_loyalty')
     .select('*')
     .eq('customer_id', customerId)
-    .single();
+    .maybeSingle();
 
-  if (error && error.code !== 'PGRST116') throw error;
+  if (error) throw error;
   return data as CustomerLoyalty | null;
 }
 
