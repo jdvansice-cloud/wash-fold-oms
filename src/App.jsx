@@ -20,6 +20,8 @@ const PickupsPage = lazy(() => import('./pages/PickupsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SetPasswordPage = lazy(() => import('./pages/SetPasswordPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+const SignupPage = lazy(() => import('./pages/SignupPage'));
 
 // Portal pages
 const CustomerLogin = lazy(() => import('./pages/portal/CustomerLogin'));
@@ -184,9 +186,10 @@ function App() {
           </TenantApp>
         } />
 
-        {/* Root redirect (will become landing page in Phase 2) */}
-        <Route path="/" element={<Navigate to="/app/american-laundry" replace />} />
-        <Route path="*" element={<Navigate to="/app/american-laundry" replace />} />
+        {/* Landing page + Signup */}
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
   );
