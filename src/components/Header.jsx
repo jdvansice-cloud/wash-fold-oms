@@ -17,6 +17,7 @@ function Header() {
   const navigate = useNavigate();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showGiftCardModal, setShowGiftCardModal] = useState(false);
   const userMenuRef = useRef(null);
   
   // Close user menu when clicking outside
@@ -108,7 +109,10 @@ function Header() {
           {/* Right: Actions */}
           <div className="flex items-center gap-2">
             {/* Gift Card Button */}
-            <button className="flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-sm font-medium transition-colors">
+            <button
+              onClick={() => setShowGiftCardModal(true)}
+              className="flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl text-sm font-medium transition-colors"
+            >
               <Gift className="w-4 h-4" />
               <span className="hidden lg:inline">Gift Card</span>
             </button>
@@ -202,6 +206,11 @@ function Header() {
       {/* Change Password Modal */}
       {showPasswordModal && (
         <ChangePasswordModal onClose={() => setShowPasswordModal(false)} />
+      )}
+
+      {/* Gift Card Lookup Modal */}
+      {showGiftCardModal && (
+        <GiftCardLookupModal onClose={() => setShowGiftCardModal(false)} />
       )}
     </>
   );
@@ -309,6 +318,142 @@ function ChangePasswordModal({ onClose }) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Gift Card Lookup Modal
+function GiftCardLookupModal({ onClose }) {
+  const [code, setCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleLookup = async (e) => {
+    e.preventDefault();
+    if (!code.trim()) return;
+    setError(null);
+    setResult(null);
+    setLoading(true);
+
+    try {
+      const url = import.meta.env.SUPABASE_URL;
+      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const response = await fetch(
+        `${url}/rest/v1/gift_cards?code=eq.${encodeURIComponent(code.trim().toUpperCase())}&select=id,code,initial_value,current_balance,is_active,expires_at,created_at`,
+        { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+      );
+      const data = await response.json();
+
+      if (!data || data.length === 0) {
+        setError('Tarjeta no encontrada. Verifica el codigo.');
+      } else {
+        setResult(data[0]);
+      }
+    } catch (err) {
+      setError('Error al buscar la tarjeta');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isExpired = result?.expires_at && new Date(result.expires_at) < new Date();
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-elevated w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Gift className="w-5 h-5 text-purple-500" />
+            <h2 className="text-lg font-semibold text-slate-800">Consultar Gift Card</h2>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
+            <span className="text-slate-500 text-xl">&times;</span>
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <form onSubmit={handleLookup} className="flex gap-2">
+            <input
+              ref={inputRef}
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="Codigo de la tarjeta"
+              className="flex-1 px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-mono tracking-wider uppercase focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400"
+              maxLength={20}
+            />
+            <button
+              type="submit"
+              disabled={loading || !code.trim()}
+              className="px-4 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? '...' : 'Buscar'}
+            </button>
+          </form>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm text-center">
+              {error}
+            </div>
+          )}
+
+          {result && (
+            <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl border border-purple-200 p-5">
+              {/* Balance */}
+              <div className="text-center mb-4">
+                <p className="text-xs text-purple-500 font-medium uppercase tracking-wide mb-1">Balance Disponible</p>
+                <p className={`text-3xl font-bold ${result.current_balance > 0 ? 'text-purple-700' : 'text-slate-400'}`}>
+                  B/{parseFloat(result.current_balance).toFixed(2)}
+                </p>
+              </div>
+
+              {/* Details */}
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Codigo</span>
+                  <span className="font-mono font-medium text-slate-700">{result.code}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Valor Inicial</span>
+                  <span className="text-slate-700">B/{parseFloat(result.initial_value).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Estado</span>
+                  <span className={`font-medium ${
+                    !result.is_active ? 'text-red-600' :
+                    isExpired ? 'text-amber-600' :
+                    result.current_balance <= 0 ? 'text-slate-400' :
+                    'text-emerald-600'
+                  }`}>
+                    {!result.is_active ? 'Inactiva' :
+                     isExpired ? 'Expirada' :
+                     result.current_balance <= 0 ? 'Agotada' :
+                     'Activa'}
+                  </span>
+                </div>
+                {result.expires_at && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Expira</span>
+                    <span className={`${isExpired ? 'text-red-500' : 'text-slate-700'}`}>
+                      {new Date(result.expires_at).toLocaleDateString('es-PA')}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Creada</span>
+                  <span className="text-slate-700">{new Date(result.created_at).toLocaleDateString('es-PA')}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
