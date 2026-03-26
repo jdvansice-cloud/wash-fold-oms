@@ -29,6 +29,9 @@ export default function SignupPage() {
   const [form, setForm] = useState({
     companyName: '',
     legalName: '',
+    country: 'PA',
+    ruc: '',
+    dv: '',
     adminName: '',
     adminEmail: '',
     slug: '',
@@ -86,8 +89,10 @@ export default function SignupPage() {
         .insert({
           name: form.companyName.trim(),
           legal_name: form.legalName.trim() || null,
+          ruc: form.ruc.trim() || null,
+          dv: form.dv.trim() || null,
           slug: form.slug,
-          itbms_rate: 7.0,
+          itbms_rate: form.country === 'PA' ? 7.0 : 0,
         })
         .select()
         .single();
@@ -257,8 +262,21 @@ export default function SignupPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <Globe size={14} className="inline mr-1" />
+                  Pais
+                </label>
+                <select
+                  value={form.country}
+                  onChange={(e) => updateField('country', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="PA">Panama</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
                   <Building size={14} className="inline mr-1" />
-                  Razon social (opcional)
+                  Razon social
                 </label>
                 <input
                   type="text"
@@ -268,6 +286,31 @@ export default function SignupPage() {
                   placeholder="Empresa XYZ, S.A."
                 />
               </div>
+              {form.country === 'PA' && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">RUC</label>
+                    <input
+                      type="text"
+                      value={form.ruc}
+                      onChange={(e) => updateField('ruc', e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="12345-6-789012"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">DV</label>
+                    <input
+                      type="text"
+                      value={form.dv}
+                      onChange={(e) => updateField('dv', e.target.value.slice(0, 2))}
+                      className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      placeholder="12"
+                      maxLength={2}
+                    />
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   <User size={14} className="inline mr-1" />
