@@ -4339,26 +4339,231 @@ function PromotionsSettings() {
   );
 }
 
-// Gift Cards Settings (placeholder)
+// Gift Cards Settings — manage gift card denominations (sold in POS)
 function GiftCardsSettings() {
+  const { activeStore } = useTenant();
+  const storeId = activeStore?.id;
+  const [denominations, setDenominations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ name: '', price: '' });
+  const [saving, setSaving] = useState(false);
+  const [sectionId, setSectionId] = useState(null);
+
+  // Load gift card products and ensure section exists
+  useEffect(() => {
+    if (!storeId) return;
+    const load = async () => {
+      // Find or create "Tarjetas Regalo" section
+      let { data: sections } = await supabase
+        .from('sections')
+        .select('id')
+        .eq('store_id', storeId)
+        .ilike('name', '%gift%card%');
+
+      if (!sections || sections.length === 0) {
+        // Also check Spanish name
+        const { data: sections2 } = await supabase
+          .from('sections')
+          .select('id')
+          .eq('store_id', storeId)
+          .ilike('name', '%tarjeta%regalo%');
+        sections = sections2;
+      }
+
+      let secId;
+      if (sections && sections.length > 0) {
+        secId = sections[0].id;
+      } else {
+        // Create the section
+        const { data: newSec } = await supabase
+          .from('sections')
+          .insert({ store_id: storeId, name: 'Tarjetas Regalo', color: '#7c3aed', display_order: 99, is_active: true })
+          .select()
+          .single();
+        secId = newSec?.id;
+      }
+      setSectionId(secId);
+
+      // Load gift card products
+      if (secId) {
+        const { data: products } = await supabase
+          .from('products')
+          .select('*')
+          .eq('store_id', storeId)
+          .eq('section_id', secId)
+          .eq('product_type', 'gift_card')
+          .order('price', { ascending: true });
+        setDenominations(products || []);
+      }
+      setLoading(false);
+    };
+    load();
+  }, [storeId]);
+
+  const handleSave = async () => {
+    if (!storeId || !sectionId || !form.name.trim() || !form.price) return;
+    setSaving(true);
+    try {
+      const payload = {
+        store_id: storeId,
+        section_id: sectionId,
+        name: form.name.trim(),
+        price: parseFloat(form.price),
+        product_type: 'gift_card',
+        pricing_type: 'quantity',
+        is_active: true,
+        is_taxable: false,
+        icon: '🎁',
+      };
+
+      if (editingId) {
+        await supabase.from('products').update(payload).eq('id', editingId);
+      } else {
+        await supabase.from('products').insert(payload);
+      }
+
+      // Reload
+      const { data: products } = await supabase
+        .from('products')
+        .select('*')
+        .eq('store_id', storeId)
+        .eq('section_id', sectionId)
+        .eq('product_type', 'gift_card')
+        .order('price', { ascending: true });
+      setDenominations(products || []);
+      setShowForm(false);
+      setEditingId(null);
+      setForm({ name: '', price: '' });
+    } catch (err) {
+      console.error('Error saving gift card:', err);
+      alert('Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (item) => {
+    setForm({ name: item.name, price: String(item.price) });
+    setEditingId(item.id);
+    setShowForm(true);
+  };
+
+  const handleToggle = async (item) => {
+    await supabase.from('products').update({ is_active: !item.is_active }).eq('id', item.id);
+    setDenominations(prev => prev.map(d => d.id === item.id ? { ...d, is_active: !d.is_active } : d));
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Eliminar esta denominacion?')) return;
+    await supabase.from('products').delete().eq('id', id);
+    setDenominations(prev => prev.filter(d => d.id !== id));
+  };
+
   return (
     <div className="card p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-lg font-semibold text-slate-800">Tarjetas de Regalo</h2>
-          <p className="text-sm text-slate-500">Gestiona gift cards</p>
+          <p className="text-sm text-slate-500">Crea denominaciones de gift cards para vender en el POS</p>
         </div>
-        <button className="btn-primary">
-          <Gift className="w-4 h-4" />
-          Nueva Gift Card
-        </button>
+        {!showForm && (
+          <button onClick={() => { setShowForm(true); setEditingId(null); setForm({ name: '', price: '' }); }} className="btn-primary">
+            <Plus className="w-4 h-4" />
+            Nueva Denominacion
+          </button>
+        )}
       </div>
-      
-      <div className="text-center py-12 text-slate-400">
-        <Gift className="w-16 h-16 mx-auto mb-4 opacity-50" />
-        <p className="font-medium">Próximamente</p>
-        <p className="text-sm mt-1">La gestión de gift cards estará disponible pronto</p>
-      </div>
+
+      {/* Create/Edit Form */}
+      {showForm && (
+        <div className="bg-slate-50 rounded-xl p-4 mb-6 space-y-3">
+          <h3 className="text-sm font-semibold text-slate-700">
+            {editingId ? 'Editar Denominacion' : 'Nueva Denominacion'}
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Nombre</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Ej: Gift Card B/25.00"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Valor (B/)</label>
+              <input
+                type="number"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="25.00"
+                min="1"
+                step="0.01"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={saving || !form.name.trim() || !form.price}
+              className="px-4 py-2 bg-primary-500 text-white rounded-lg text-sm font-medium hover:bg-primary-600 disabled:opacity-50"
+            >
+              {saving ? 'Guardando...' : editingId ? 'Actualizar' : 'Crear'}
+            </button>
+            <button
+              onClick={() => { setShowForm(false); setEditingId(null); }}
+              className="px-4 py-2 bg-slate-200 text-slate-600 rounded-lg text-sm"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Denominations List */}
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+        </div>
+      ) : denominations.length === 0 ? (
+        <div className="text-center py-12 text-slate-400">
+          <Gift className="w-16 h-16 mx-auto mb-4 opacity-50" />
+          <p className="font-medium">No hay denominaciones</p>
+          <p className="text-sm mt-1">Crea gift cards con montos fijos para vender en el punto de venta</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {denominations.map((item) => (
+            <div key={item.id} className={`flex items-center justify-between p-4 rounded-xl border ${item.is_active ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🎁</span>
+                <div>
+                  <p className="font-medium text-slate-800">{item.name}</p>
+                  <p className="text-sm text-slate-500">B/{parseFloat(item.price).toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleToggle(item)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium ${item.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}
+                >
+                  {item.is_active ? 'Activa' : 'Inactiva'}
+                </button>
+                <button onClick={() => handleEdit(item)} className="p-1.5 text-slate-400 hover:text-primary-500 hover:bg-primary-50 rounded-lg">
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => handleDelete(item.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

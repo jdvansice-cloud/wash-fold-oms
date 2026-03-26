@@ -1,14 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTenant } from '../hooks/useTenant';
 import WeightEntryModal from '../components/modals/WeightEntryModal';
 import ChildProductsModal from '../components/modals/ChildProductsModal';
 import CustomerSearchModal from '../components/modals/CustomerSearchModal';
+import GiftCardActivationModal from '../components/modals/GiftCardActivationModal';
 
 function POSScreen() {
   const { state, actions } = useApp();
+  const { activeStore } = useTenant();
   const [weightModalProduct, setWeightModalProduct] = useState(null);
   const [childModalProduct, setChildModalProduct] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [giftCardProduct, setGiftCardProduct] = useState(null);
   
   // Set default active section when sections load
   useEffect(() => {
@@ -33,18 +37,24 @@ function POSScreen() {
   };
   
   const handleProductClick = (product) => {
+    // If product is a gift card, show activation modal
+    if (product.product_type === 'gift_card') {
+      setGiftCardProduct(product);
+      return;
+    }
+
     // If product has children, show child selection modal
     if (product.has_children) {
       setChildModalProduct(product);
       return;
     }
-    
+
     // If product is weight-based, show weight entry modal
     if (product.pricing_type === 'weight') {
       setWeightModalProduct(product);
       return;
     }
-    
+
     // For quantity-based products, add directly to ticket
     addProductToTicket(product);
   };
@@ -175,6 +185,18 @@ function POSScreen() {
           onSelect={handleCustomerSelect}
           onWalkIn={handleWalkInSelect}
           showWalkInPrompt={true}
+        />
+      )}
+
+      {giftCardProduct && (
+        <GiftCardActivationModal
+          product={giftCardProduct}
+          storeId={activeStore?.id}
+          onConfirm={(cardCode) => {
+            addProductToTicket(giftCardProduct);
+            setGiftCardProduct(null);
+          }}
+          onClose={() => setGiftCardProduct(null)}
         />
       )}
     </div>
