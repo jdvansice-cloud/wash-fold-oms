@@ -1,6 +1,6 @@
 import React, { useState, lazy, Suspense } from 'react';
 import { Truck, Calendar, Map, Route } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useTenant } from '../hooks/useTenant';
 
 const TodayTab = lazy(() => import('../components/staff/pickups/TodayTab'));
 const UpcomingTab = lazy(() => import('../components/staff/pickups/UpcomingTab'));
@@ -17,8 +17,8 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id'];
 
 export default function PickupsPage() {
-  const { state } = useApp();
-  const storeId = state.currentStore?.id;
+  const { activeStore } = useTenant();
+  const storeId = activeStore?.id;
   const [activeTab, setActiveTab] = useState<TabId>('today');
 
   return (
