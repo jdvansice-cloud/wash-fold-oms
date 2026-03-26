@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Plus, Trash2, Calendar } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabaseStaff as supabase } from '../../lib/supabase';
 import type { PickupSchedule, PickupBlockedDate } from '../../types';
 
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
@@ -74,7 +74,7 @@ export default function PickupScheduleSettings({ storeId }: PickupScheduleSettin
     setSaving(true);
     try {
       for (const row of schedule) {
-        await supabase.from('pickup_schedules').upsert(
+        const { error } = await supabase.from('pickup_schedules').upsert(
           {
             store_id: storeId,
             day_of_week: row.day_of_week,
@@ -87,6 +87,10 @@ export default function PickupScheduleSettings({ storeId }: PickupScheduleSettin
           },
           { onConflict: 'store_id,day_of_week' },
         );
+        if (error) {
+          console.error('Error saving schedule row:', row.day_of_week, error);
+          throw error;
+        }
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
