@@ -97,9 +97,9 @@ function OrgSearchModal({ open, onClose }: { open: boolean; onClose: () => void 
         setSearching(false);
         return;
       }
-      // PostgREST ilike filter: name=ilike.%25search%25
+      // PostgREST OR filter: search name or slug
       const encoded = encodeURIComponent(q);
-      const apiUrl = `${url}/rest/v1/companies?select=id,name,slug,address&name=ilike.%25${encoded}%25&limit=8`;
+      const apiUrl = `${url}/rest/v1/companies?select=id,name,slug,address,legal_name&or=(name.ilike.%25${encoded}%25,slug.ilike.%25${encoded}%25,legal_name.ilike.%25${encoded}%25)&limit=8`;
       console.log('Searching orgs:', apiUrl);
       const response = await fetch(apiUrl, {
         headers: {

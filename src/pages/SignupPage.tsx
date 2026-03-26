@@ -28,6 +28,7 @@ export default function SignupPage() {
 
   const [form, setForm] = useState({
     companyName: '',
+    legalName: '',
     adminName: '',
     adminEmail: '',
     slug: '',
@@ -84,6 +85,7 @@ export default function SignupPage() {
         .from('companies')
         .insert({
           name: form.companyName.trim(),
+          legal_name: form.legalName.trim() || null,
           slug: form.slug,
           itbms_rate: 7.0,
         })
@@ -251,6 +253,19 @@ export default function SignupPage() {
                   onChange={(e) => updateField('companyName', e.target.value)}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                   placeholder="Mi Lavanderia"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  <Building size={14} className="inline mr-1" />
+                  Razon social (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={form.legalName}
+                  onChange={(e) => updateField('legalName', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="Empresa XYZ, S.A."
                 />
               </div>
               <div>
