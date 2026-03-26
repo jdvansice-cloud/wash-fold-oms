@@ -89,20 +89,37 @@ function OrgSearchModal({ open, onClose }: { open: boolean; onClose: () => void 
     }
     setSearching(true);
     try {
-      // Use raw REST API with anon key to avoid auth session issues on landing page
       const url = import.meta.env.SUPABASE_URL;
       const key = import.meta.env.SUPABASE_ANON_KEY;
-      const response = await fetch(
-        `${url}/rest/v1/companies?name=ilike.*${encodeURIComponent(q)}*&select=id,name,slug,address,stores:stores(name,address,geolocation)&limit=8`,
-        { headers: { apikey: key, Authorization: `Bearer ${key}` } },
-      );
+      if (!url || !key) {
+        console.error('Missing Supabase config for org search');
+        setResults([]);
+        setSearching(false);
+        return;
+      }
+      // PostgREST ilike filter: name=ilike.%25search%25
+      const encoded = encodeURIComponent(q);
+      const apiUrl = `${url}/rest/v1/companies?select=id,name,slug,address&name=ilike.%25${encoded}%25&limit=8`;
+      console.log('Searching orgs:', apiUrl);
+      const response = await fetch(apiUrl, {
+        headers: {
+          'apikey': key,
+          'Authorization': `Bearer ${key}`,
+          'Accept': 'application/json',
+        },
+      });
+      console.log('Search response:', response.status);
       if (response.ok) {
         const data = await response.json();
+        console.log('Search results:', data);
         setResults((data as OrgResult[]) || []);
       } else {
+        const text = await response.text();
+        console.error('Search error:', response.status, text);
         setResults([]);
       }
-    } catch {
+    } catch (err) {
+      console.error('Search exception:', err);
       setResults([]);
     } finally {
       setSearching(false);
