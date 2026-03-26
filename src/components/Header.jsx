@@ -7,6 +7,8 @@ import {
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../hooks/useTenant';
+import { useFeature } from '../hooks/useFeature';
+import StoreSwitcher from './StoreSwitcher';
 
 function Header() {
   const { state, actions } = useApp();
@@ -29,6 +31,7 @@ function Header() {
   }, []);
 
   const { company, slug } = useTenant();
+  const isMultiStore = useFeature('multi_store');
   const p = (path) => `/app/${slug}${path}`;
 
   const handleLogout = async () => {
@@ -79,6 +82,9 @@ function Header() {
                 {company?.name || 'Wash & Fold'}
               </span>
             </Link>
+
+            {/* Store Switcher — Enterprise only, multi-store */}
+            {isMultiStore && <StoreSwitcher />}
           </div>
           
           {/* Center: Navigation */}

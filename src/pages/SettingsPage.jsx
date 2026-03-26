@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import { useApp } from '../context/AppContext';
+import { useFeature } from '../hooks/useFeature';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
 import { 
@@ -386,6 +387,7 @@ function CompanySettings() {
 
 // Store Settings Section - Multi-store management
 function StoreSettings() {
+  const isMultiStore = useFeature('multi_store');
   const [stores, setStores] = useState([]);
   const [currentStoreId, setCurrentStoreId] = useState(null);
   const [companyId, setCompanyId] = useState(null);
@@ -618,13 +620,20 @@ function StoreSettings() {
             <h2 className="text-lg font-semibold text-slate-800">Tiendas / Ubicaciones</h2>
             <p className="text-sm text-slate-500">Administra las ubicaciones de tu negocio</p>
           </div>
-          <button 
-            onClick={() => { setEditingStore(null); setShowModal(true); }}
-            className="btn-primary"
-          >
-            <Plus className="w-4 h-4" />
-            Nueva Tienda
-          </button>
+          {(isMultiStore || stores.length === 0) && (
+            <button
+              onClick={() => { setEditingStore(null); setShowModal(true); }}
+              className="btn-primary"
+            >
+              <Plus className="w-4 h-4" />
+              Nueva Tienda
+            </button>
+          )}
+          {!isMultiStore && stores.length >= 1 && (
+            <span className="text-xs text-slate-400 bg-slate-100 px-3 py-1.5 rounded-lg">
+              Plan Enterprise requerido para multi-tienda
+            </span>
+          )}
         </div>
 
         {/* Stores List */}
