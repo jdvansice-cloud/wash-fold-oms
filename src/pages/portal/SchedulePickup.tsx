@@ -25,12 +25,6 @@ export default function SchedulePickup() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<CustomerLocation | null>(null);
-  const [manualAddress, setManualAddress] = useState(false);
-  const [address, setAddress] = useState({
-    address_line: '',
-    district: 'Panama',
-    city: 'Panama',
-  });
   const [notes, setNotes] = useState('');
   const [success, setSuccess] = useState(false);
 
@@ -52,12 +46,10 @@ export default function SchedulePickup() {
 
   const handleSelectLocation = (loc: CustomerLocation) => {
     setSelectedLocation(loc);
-    setManualAddress(false);
-    setAddress({ address_line: loc.address_line, district: loc.district || 'Panama', city: loc.city || 'Panama' });
   };
 
   const handleConfirm = async () => {
-    if (!customerId || !storeId || !selectedDate || !selectedSlot) return;
+    if (!customerId || !storeId || !selectedDate || !selectedSlot || !selectedLocation) return;
 
     try {
       await createPickup.mutateAsync({
@@ -65,13 +57,13 @@ export default function SchedulePickup() {
         customer_id: customerId,
         requested_date: selectedDate,
         requested_time_slot: selectedSlot,
-        address_line: address.address_line || undefined,
-        district: address.district || undefined,
-        city: address.city || undefined,
+        address_line: selectedLocation.address_line,
+        district: selectedLocation.district || undefined,
+        city: selectedLocation.city || undefined,
         notes: notes || undefined,
-        customer_location_id: selectedLocation?.id || undefined,
-        latitude: selectedLocation?.latitude || undefined,
-        longitude: selectedLocation?.longitude || undefined,
+        customer_location_id: selectedLocation.id,
+        latitude: selectedLocation.latitude || undefined,
+        longitude: selectedLocation.longitude || undefined,
       });
       setSuccess(true);
     } catch {
@@ -81,9 +73,7 @@ export default function SchedulePickup() {
 
   const activeAddress = selectedLocation
     ? `${selectedLocation.label}: ${selectedLocation.address_line}`
-    : address.address_line
-      ? `${address.address_line}, ${address.district}`
-      : '';
+    : '';
 
   if (success) {
     return (
@@ -175,7 +165,7 @@ export default function SchedulePickup() {
             </h3>
 
             {/* Saved Locations */}
-            {savedLocations && savedLocations.length > 0 && !manualAddress && (
+            {savedLocations && savedLocations.length > 0 ? (
               <div className="space-y-2">
                 <p className="text-xs text-slate-500">Selecciona una direccion guardada:</p>
                 {savedLocations.map((loc) => (
@@ -203,62 +193,24 @@ export default function SchedulePickup() {
                     )}
                   </button>
                 ))}
-
-                <button
-                  onClick={() => { setManualAddress(true); setSelectedLocation(null); }}
-                  className="w-full flex items-center gap-2 p-3 text-sm text-primary-600 hover:bg-primary-50 rounded-lg border border-dashed border-slate-300 transition-colors"
-                >
-                  <Plus size={14} />
-                  Usar otra direccion
-                </button>
               </div>
-            )}
-
-            {/* Manual Address Entry (shown if no saved locations or user chose "other") */}
-            {(manualAddress || !savedLocations || savedLocations.length === 0) && (
-              <div className="space-y-3">
-                {manualAddress && savedLocations && savedLocations.length > 0 && (
-                  <button
-                    onClick={() => setManualAddress(false)}
-                    className="text-xs text-primary-600 hover:underline"
-                  >
-                    Volver a direcciones guardadas
-                  </button>
-                )}
-                <div>
-                  <label className="block text-sm text-slate-600 mb-1">Direccion</label>
-                  <input
-                    type="text"
-                    value={address.address_line}
-                    onChange={(e) => setAddress({ ...address, address_line: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    placeholder="Calle, edificio, apartamento..."
-                  />
+            ) : (
+              /* No saved locations — prompt to create one */
+              <div className="text-center py-6">
+                <div className="w-14 h-14 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <MapPin size={24} className="text-slate-400" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm text-slate-600 mb-1">Distrito</label>
-                    <select
-                      value={address.district}
-                      onChange={(e) => setAddress({ ...address, district: e.target.value })}
-                      className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    >
-                      <option value="Panama">Panama</option>
-                      <option value="San Miguelito">San Miguelito</option>
-                      <option value="Arraijan">Arraijan</option>
-                      <option value="La Chorrera">La Chorrera</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-600 mb-1">Ciudad</label>
-                    <input
-                      type="text"
-                      value={address.city}
-                      onChange={(e) => setAddress({ ...address, city: e.target.value })}
-                      className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-                </div>
+                <p className="text-sm font-medium text-slate-700 mb-1">No tienes direcciones guardadas</p>
+                <p className="text-xs text-slate-400 mb-4">
+                  Agrega una direccion antes de programar tu recogida
+                </p>
+                <button
+                  onClick={() => navigate(pp('/locations'))}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-500 text-white rounded-lg text-sm font-medium hover:bg-primary-600 transition-colors"
+                >
+                  <Plus size={16} />
+                  Agregar Direccion
+                </button>
               </div>
             )}
 
@@ -273,13 +225,15 @@ export default function SchedulePickup() {
               />
             </div>
 
-            <button
-              onClick={() => setStep(3)}
-              disabled={!selectedLocation && !address.address_line.trim()}
-              className="w-full py-2.5 bg-primary-500 text-white rounded-lg text-sm font-medium hover:bg-primary-600 disabled:opacity-50"
-            >
-              Continuar
-            </button>
+            {savedLocations && savedLocations.length > 0 && (
+              <button
+                onClick={() => setStep(3)}
+                disabled={!selectedLocation}
+                className="w-full py-2.5 bg-primary-500 text-white rounded-lg text-sm font-medium hover:bg-primary-600 disabled:opacity-50"
+              >
+                Continuar
+              </button>
+            )}
           </div>
         )}
 
