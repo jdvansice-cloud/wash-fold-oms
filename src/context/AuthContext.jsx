@@ -174,6 +174,7 @@ export function AuthProvider({ children }) {
     isSupervisor: authUser?.role === 'supervisor' || authUser?.role === 'admin',
     isStaff: authUser ? authUser.role !== 'customer' : false,
     isCustomer: authUser?.role === 'customer',
+    isPlatformAdmin: authUser?.isPlatformAdmin === true,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -29,6 +29,10 @@ const CustomerLogin = lazy(() => import('./pages/portal/CustomerLogin'));
 const CustomerRegister = lazy(() => import('./pages/portal/CustomerRegister'));
 const PortalLayout = lazy(() => import('./components/portal/PortalLayout'));
 
+// Platform admin pages
+const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'));
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
+
 // Protected Route wrapper (staff)
 function ProtectedRoute({ children }) {
   const { slug } = useParams();
@@ -60,6 +64,33 @@ function PublicRoute({ children }) {
 
   if (user) {
     return <Navigate to={isCustomer ? `/portal/${slug}` : `/app/${slug}`} replace />;
+  }
+
+  return children;
+}
+
+// Platform Admin Protected Route
+function PlatformAdminRoute({ children }) {
+  const { user, loading, isPlatformAdmin } = useAuth();
+
+  if (loading) {
+    return <FullPageSpinner text="Verificando acceso..." />;
+  }
+
+  if (!user) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  if (!isPlatformAdmin) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+        <div className="text-center">
+          <p className="text-2xl mb-2">🔒</p>
+          <p className="text-white font-semibold">Acceso Denegado</p>
+          <p className="text-slate-400 text-sm mt-1">No tienes permisos de administrador de plataforma</p>
+        </div>
+      </div>
+    );
   }
 
   return children;
@@ -153,6 +184,20 @@ function App() {
   return (
     <Suspense fallback={<FullPageSpinner />}>
       <Routes>
+        {/* Platform Admin routes — no tenant context needed */}
+        <Route path="/admin/login" element={
+          <AuthProvider>
+            <AdminLogin />
+          </AuthProvider>
+        } />
+        <Route path="/admin/*" element={
+          <AuthProvider>
+            <PlatformAdminRoute>
+              <AdminLayout />
+            </PlatformAdminRoute>
+          </AuthProvider>
+        } />
+
         {/* Backward-compat redirects for existing users */}
         <Route path="/login" element={<Navigate to="/app/american-laundry/login" replace />} />
         <Route path="/set-password" element={<SetPasswordPage />} />

@@ -10,7 +10,9 @@ export interface StaffProfile {
   email: string;
   role: 'admin' | 'supervisor' | 'operator';
   store_id: string;
+  company_id?: string;
   is_active: boolean;
+  is_platform_admin?: boolean;
   avatar_url?: string;
 }
 
@@ -28,6 +30,7 @@ export interface AuthUser {
   id: string; // Supabase auth.uid()
   email: string;
   role: UserRole;
+  isPlatformAdmin?: boolean;
   staffProfile?: StaffProfile;
   customerProfile?: CustomerProfile;
 }
@@ -47,6 +50,7 @@ export async function resolveAuthUser(
       id: authId,
       email,
       role: staffByAuthId.role as UserRole,
+      isPlatformAdmin: staffByAuthId.is_platform_admin === true,
       staffProfile: staffByAuthId,
     };
   }
