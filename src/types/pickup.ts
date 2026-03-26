@@ -35,8 +35,15 @@ export interface PickupRequest {
   notes?: string;
   cancelled_reason?: string;
   confirmed_by?: string;
+  customer_location_id?: string;
+  latitude?: number;
+  longitude?: number;
+  route_id?: string;
   created_at: string;
   updated_at: string;
+  // Joined fields
+  customer?: { first_name: string; last_name?: string; phone?: string };
+  customer_location?: { label: string; address_line: string };
 }
 
 export interface CreatePickupRequestInput {
@@ -48,6 +55,9 @@ export interface CreatePickupRequestInput {
   district?: string;
   city?: string;
   notes?: string;
+  customer_location_id?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface TimeSlot {

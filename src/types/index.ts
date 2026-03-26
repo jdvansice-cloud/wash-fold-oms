@@ -27,3 +27,9 @@ export type {
   TimeSlot,
   DayAvailability,
 } from './pickup';
+export type {
+  CustomerLocation,
+  CreateCustomerLocationInput,
+  PickupRoute,
+  PickupRouteStatus,
+} from './location';

@@ -22,7 +22,7 @@ async function fetchStorePickupRequests(
 ): Promise<PickupRequest[]> {
   let query = supabaseStaff
     .from('pickup_requests')
-    .select('*, customer:customers(first_name, last_name, phone)')
+    .select('*, customer:customers(first_name, last_name, phone), customer_location:customer_locations(label, address_line)')
     .eq('store_id', storeId)
     .order('requested_date', { ascending: true })
     .order('requested_time_slot', { ascending: true });

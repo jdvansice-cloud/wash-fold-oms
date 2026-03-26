@@ -15,6 +15,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const EODPage = lazy(() => import('./pages/EODPage'));
+const PickupsPage = lazy(() => import('./pages/PickupsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SetPasswordPage = lazy(() => import('./pages/SetPasswordPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
@@ -133,6 +134,7 @@ function AppContent() {
           <Route path="/" element={<POSScreen />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/machines" element={<MachinesPage />} />
+          <Route path="/pickups" element={<PickupsPage />} />
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/reports" element={<ReportsPage />} />

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  X, Plus, ClipboardList, BarChart3, RefreshCw, 
+import {
+  X, Plus, ClipboardList, BarChart3, RefreshCw,
   Users, FileText, Package, Settings, LogOut,
-  ChevronDown, ChevronRight, PieChart, TrendingUp
+  ChevronDown, ChevronRight, PieChart, TrendingUp, Truck
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -66,6 +66,7 @@ function Sidebar({ isOpen, onClose }) {
           ]
         },
         { path: '/machines', label: 'Máquinas / En Proceso', icon: RefreshCw },
+        { path: '/pickups', label: 'Recogidas', icon: Truck },
         { path: '/customers', label: 'Clientes', icon: Users },
         { path: '/invoices', label: 'Facturas', icon: FileText },
       ],

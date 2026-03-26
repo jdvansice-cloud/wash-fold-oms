@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, useNavigate, Navigate } from 'react-router-dom';
-import { Package, Truck, Star, User, LogOut } from 'lucide-react';
+import { Package, Truck, Star, User, LogOut, MapPin } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { Spinner } from '../ui/Spinner';
 
@@ -10,11 +10,13 @@ const OrderDetail = lazy(() => import('../../pages/portal/OrderDetail'));
 const SchedulePickup = lazy(() => import('../../pages/portal/SchedulePickup'));
 const MyLoyalty = lazy(() => import('../../pages/portal/MyLoyalty'));
 const MyProfile = lazy(() => import('../../pages/portal/MyProfile'));
+const MyLocations = lazy(() => import('../../pages/portal/MyLocations'));
 
 const navItems = [
   { to: '/portal', icon: Package, label: 'Inicio', end: true },
   { to: '/portal/orders', icon: Package, label: 'Pedidos' },
   { to: '/portal/schedule-pickup', icon: Truck, label: 'Recoger' },
+  { to: '/portal/locations', icon: MapPin, label: 'Direcciones' },
   { to: '/portal/loyalty', icon: Star, label: 'Lealtad' },
   { to: '/portal/profile', icon: User, label: 'Perfil' },
 ];
@@ -95,6 +97,7 @@ export default function PortalLayout() {
               <Route path="orders" element={<MyOrders />} />
               <Route path="orders/:id" element={<OrderDetail />} />
               <Route path="schedule-pickup" element={<SchedulePickup />} />
+              <Route path="locations" element={<MyLocations />} />
               <Route path="loyalty" element={<MyLoyalty />} />
               <Route path="profile" element={<MyProfile />} />
               <Route path="*" element={<Navigate to="/portal" replace />} />
