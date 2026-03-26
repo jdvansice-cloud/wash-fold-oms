@@ -32,7 +32,7 @@ const PortalLayout = lazy(() => import('./components/portal/PortalLayout'));
 
 // Protected Route wrapper (staff)
 function ProtectedRoute({ children }) {
-  const { user, loading, isStaff } = useAuth();
+  const { user, loading, isStaff, isCustomer } = useAuth();
 
   if (loading) {
     return <FullPageSpinner text="Verificando sesion..." />;
@@ -40,6 +40,11 @@ function ProtectedRoute({ children }) {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Redirect customers away from staff routes
+  if (isCustomer) {
+    return <Navigate to="/portal" replace />;
   }
 
   return children;
