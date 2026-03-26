@@ -16,28 +16,33 @@ export function LoyaltyCard({ loyalty, settings, compact = false }: LoyaltyCardP
 
   if (compact) {
     return (
-      <div className="bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl p-4 text-white">
-        <div className="flex items-center gap-2 mb-2">
-          <Star size={16} className="text-accent-300" />
-          <span className="text-sm font-medium opacity-90">Lealtad</span>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4">
+        <div className="bg-amber-400 rounded-xl p-3 text-white flex-shrink-0">
+          <Star size={22} />
         </div>
-        {settings.points_enabled && (
-          <div className="text-2xl font-bold">{formatCurrency(loyalty?.points_balance || 0)}</div>
-        )}
-        {settings.punch_card_enabled && loyalty && (
-          <div className="flex items-center gap-3 mt-2 text-xs opacity-80">
-            {loyalty.pending_free_washes > 0 && (
-              <span className="flex items-center gap-1">
-                <Gift size={12} /> {loyalty.pending_free_washes} lavado gratis
-              </span>
-            )}
-            {loyalty.pending_free_drys > 0 && (
-              <span className="flex items-center gap-1">
-                <Gift size={12} /> {loyalty.pending_free_drys} secado gratis
-              </span>
-            )}
-          </div>
-        )}
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-medium text-amber-700 uppercase tracking-wide">Lealtad</span>
+          {settings.points_enabled && (
+            <div className="text-xl font-bold text-slate-900">{formatCurrency(loyalty?.points_balance || 0)}</div>
+          )}
+          {settings.punch_card_enabled && loyalty && (
+            <div className="flex items-center gap-3 text-xs text-amber-700">
+              {loyalty.pending_free_washes > 0 && (
+                <span className="flex items-center gap-1">
+                  <Gift size={12} /> {loyalty.pending_free_washes} lavado gratis
+                </span>
+              )}
+              {loyalty.pending_free_drys > 0 && (
+                <span className="flex items-center gap-1">
+                  <Gift size={12} /> {loyalty.pending_free_drys} secado gratis
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="text-amber-400">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M7.5 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </div>
       </div>
     );
   }

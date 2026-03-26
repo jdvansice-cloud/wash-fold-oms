@@ -29,22 +29,25 @@ export default function PortalDashboard() {
       {/* Schedule Pickup CTA */}
       <Link
         to="/portal/schedule-pickup"
-        className="block bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl p-5 text-white hover:from-primary-600 hover:to-primary-700 transition-all shadow-sm"
+        className="group block bg-white rounded-xl border-2 border-primary-500 p-4 hover:bg-primary-50 transition-all shadow-sm"
       >
-        <div className="flex items-center gap-3">
-          <div className="bg-white/20 rounded-lg p-2">
+        <div className="flex items-center gap-4">
+          <div className="bg-primary-500 rounded-xl p-3 text-white group-hover:bg-primary-600 transition-colors">
             <Truck size={24} />
           </div>
-          <div>
-            <h3 className="font-semibold text-lg">Programar Recogida</h3>
-            <p className="text-primary-100 text-sm">Agenda una recogida a domicilio</p>
+          <div className="flex-1">
+            <h3 className="font-semibold text-slate-900">Programar Recogida</h3>
+            <p className="text-slate-500 text-sm">Agenda una recogida a domicilio</p>
+          </div>
+          <div className="text-primary-400 group-hover:text-primary-600 transition-colors">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M7.5 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </div>
         </div>
       </Link>
 
-      {/* Loyalty Card */}
+      {/* Loyalty Points */}
       {loyaltySettings && (loyaltySettings.points_enabled || loyaltySettings.punch_card_enabled) && (
-        <Link to="/portal/loyalty">
+        <Link to="/portal/loyalty" className="block">
           <LoyaltyCard loyalty={loyalty ?? null} settings={loyaltySettings} compact />
         </Link>
       )}
