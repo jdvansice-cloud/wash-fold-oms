@@ -122,24 +122,38 @@ async function lookupStaff(authId: string, email: string): Promise<StaffProfile 
 }
 
 async function lookupCustomer(authId: string): Promise<CustomerProfile | null> {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+
+  const headers = {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+  };
+
   try {
-    const { data, error } = await supabase
-      .from('customer_auth')
-      .select('*, customer:customers(*)')
-      .eq('auth_id', authId)
-      .single();
+    // Fetch customer_auth with joined customer data
+    const response = await fetch(
+      `${url}/rest/v1/customer_auth?auth_id=eq.${authId}&select=id,auth_id,customer_id,store_id,customers(id,first_name,last_name,email,phone,store_id)`,
+      { headers },
+    );
 
-    if (error || !data) return null;
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.length) return null;
 
-    const customer = (data as { id: string; customer: Record<string, unknown> });
+    const row = data[0];
+    const customer = row.customers;
+    if (!customer) return null;
+
     return {
-      id: customer.customer.id as string,
-      customer_auth_id: customer.id,
-      first_name: customer.customer.first_name as string,
-      last_name: customer.customer.last_name as string | undefined,
-      email: customer.customer.email as string | undefined,
-      phone: customer.customer.phone as string | undefined,
-      store_id: customer.customer.store_id as string,
+      id: customer.id,
+      customer_auth_id: row.id,
+      first_name: customer.first_name,
+      last_name: customer.last_name,
+      email: customer.email,
+      phone: customer.phone,
+      store_id: customer.store_id,
     };
   } catch {
     return null;
