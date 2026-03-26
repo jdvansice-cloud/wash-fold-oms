@@ -22,7 +22,7 @@ async function fetchStorePickupRequests(
 ): Promise<PickupRequest[]> {
   let query = supabaseStaff
     .from('pickup_requests')
-    .select('*, customer:customers(first_name, last_name, phone), customer_location:customer_locations(label, address_line)')
+    .select('*, customer:customers(first_name, last_name, phone)')
     .eq('store_id', storeId)
     .order('requested_date', { ascending: true })
     .order('requested_time_slot', { ascending: true });
@@ -38,7 +38,11 @@ async function fetchStorePickupRequests(
   }
 
   const { data, error } = await query.limit(100);
-  if (error) throw error;
+  if (error) {
+    console.error('fetchStorePickupRequests error:', error);
+    throw error;
+  }
+  console.log('fetchStorePickupRequests:', storeId, filters, 'results:', data?.length);
   return (data as PickupRequest[]) || [];
 }
 
