@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
+import {
   Building, Store, Users, CreditCard, Bell, Mail, Send,
   Gift, Tag, Package, Clock, Percent, Save,
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
   GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
-  Award, Stamp, Coins, Info, Printer
+  Award, Stamp, Coins, Info, Printer, Truck
 } from 'lucide-react';
+import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
@@ -34,6 +35,7 @@ function SettingsPage() {
     { id: 'promotions', label: 'Promociones', icon: Tag, description: 'Descuentos y ofertas' },
     { id: 'giftcards', label: 'Tarjetas Regalo', icon: Gift, description: 'Gift cards' },
     { id: 'loyalty', label: 'Lealtad', icon: Award, description: 'Programas de fidelización' },
+    { id: 'pickup', label: 'Recogidas', icon: Truck, description: 'Horario de recogida a domicilio' },
   ];
 
   return (
@@ -89,6 +91,7 @@ function SettingsPage() {
           {activeSection === 'promotions' && <PromotionsSettings />}
           {activeSection === 'giftcards' && <GiftCardsSettings />}
           {activeSection === 'loyalty' && <LoyaltySettings />}
+          {activeSection === 'pickup' && <PickupScheduleSettings storeId={state.currentStore?.id} />}
         </div>
       </div>
     </div>
