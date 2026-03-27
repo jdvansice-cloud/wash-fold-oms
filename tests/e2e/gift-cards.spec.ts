@@ -16,13 +16,13 @@ test.describe('Gift Card — Header Lookup', () => {
   test('gift card lookup modal opens', async ({ staffPage }) => {
     await waitForStaff(staffPage);
     await staffPage.getByRole('banner').locator('text=Gift Card').first().click();
-    await expect(staffPage.locator('input[placeholder*="codigo"], input[placeholder*="CODIGO"], input[placeholder*="Gift"]').first()).toBeVisible({ timeout: 5_000 });
+    await expect(staffPage.locator('input[placeholder*="odigo"], input[placeholder*="Codigo"], input[placeholder*="tarjeta"]').first()).toBeVisible({ timeout: 5_000 });
   });
 
   test('lookup shows "not found" for invalid code', async ({ staffPage }) => {
     await waitForStaff(staffPage);
     await staffPage.getByRole('banner').locator('text=Gift Card').first().click();
-    const codeInput = staffPage.locator('input[placeholder*="codigo"], input[placeholder*="CODIGO"], input[placeholder*="Gift"]').first();
+    const codeInput = staffPage.locator('input[placeholder*="odigo"], input[placeholder*="Codigo"], input[placeholder*="tarjeta"]').first();
     await codeInput.waitFor({ timeout: 5_000 });
     await codeInput.fill('NONEXISTENT-CODE-XYZ');
     await codeInput.press('Enter');

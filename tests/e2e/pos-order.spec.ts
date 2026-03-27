@@ -52,7 +52,7 @@ test.describe('POS — Create Order', () => {
 
   test('weight entry modal opens for weight-based products', async ({ staffPage }) => {
     await waitForPOS(staffPage);
-    const lavaDoblaTab = staffPage.locator('button:has-text("Lava y Dobla")');
+    const lavaDoblaTab = staffPage.getByRole('button', { name: 'Lava y Dobla', exact: true });
     if (await lavaDoblaTab.count() > 0) {
       await lavaDoblaTab.click();
       await staffPage.waitForTimeout(500);

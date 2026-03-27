@@ -131,15 +131,10 @@ test.describe('Staff — Settings Sections', () => {
     await staffPage.waitForLoadState('networkidle');
     await staffPage.waitForTimeout(2_000);
 
-    // Scroll the settings sidebar to make "Recogidas" visible
-    const sidebar = staffPage.locator('aside, [class*="sidebar"], nav').first();
-    await sidebar.evaluate((el: HTMLElement) => el.scrollTop = el.scrollHeight);
-    await staffPage.waitForTimeout(500);
-
     const pickupItem = staffPage.locator('text=Recogidas').first();
     if (await pickupItem.count() > 0) {
-      await pickupItem.scrollIntoViewIfNeeded();
-      await pickupItem.click();
+      // Element may be in a fixed/overflow sidebar — use force click
+      await pickupItem.click({ force: true });
       await staffPage.waitForTimeout(1_000);
       const body = await staffPage.textContent('body');
       expect(body?.includes('Horario') || body?.includes('Lunes') || body?.includes('horario')).toBeTruthy();

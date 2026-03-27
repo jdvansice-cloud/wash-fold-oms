@@ -27,10 +27,18 @@ export const test = base.extend<AuthFixtures>({
     await page.goto(`${CONFIG.BASE_STAFF}/login`);
     await page.waitForLoadState('networkidle');
 
-    // Inject session — Supabase gotrue-js stores it directly (not nested)
+    // Inject session — Supabase gotrue-js expects this exact format
     const { session } = staffSession;
     await page.evaluate(({ session, storageKey }) => {
-      localStorage.setItem(storageKey, JSON.stringify(session));
+      // Try multiple formats to cover different gotrue-js versions
+      const data = JSON.stringify(session);
+      localStorage.setItem(storageKey, data);
+      // Also set the Supabase v2 format with project ref extracted from URL
+      const urlParts = window.location.hostname.split('.');
+      const possibleKey = `sb-${urlParts[0]}-auth-token`;
+      if (possibleKey !== storageKey) {
+        localStorage.setItem(possibleKey, data);
+      }
     }, { session, storageKey: 'sb-staff-auth-token' });
 
     await page.goto(`${CONFIG.BASE_STAFF}`);
@@ -54,7 +62,13 @@ export const test = base.extend<AuthFixtures>({
 
     const { session } = customerSession;
     await page.evaluate(({ session, storageKey }) => {
-      localStorage.setItem(storageKey, JSON.stringify(session));
+      const data = JSON.stringify(session);
+      localStorage.setItem(storageKey, data);
+      const urlParts = window.location.hostname.split('.');
+      const possibleKey = `sb-${urlParts[0]}-auth-token`;
+      if (possibleKey !== storageKey) {
+        localStorage.setItem(possibleKey, data);
+      }
     }, { session, storageKey: 'sb-portal-auth-token' });
 
     await page.goto(`${CONFIG.BASE_PORTAL}`);

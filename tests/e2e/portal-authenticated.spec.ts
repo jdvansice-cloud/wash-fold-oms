@@ -98,7 +98,7 @@ test.describe('Customer Portal — Pickup Scheduling', () => {
     await portalPage.waitForTimeout(2_000);
 
     // Find a clickable date that's not "Cerrado"
-    const availableDate = portalPage.locator('button:not(:has-text("Cerrado")):has-text(/^\\d+$/)').first();
+    const availableDate = portalPage.locator('button:not(:has-text("Cerrado"))').filter({ hasNotText: 'Cerrado' }).first();
     if (await availableDate.count() > 0) {
       await availableDate.click();
       await portalPage.waitForTimeout(1_000);
