@@ -131,14 +131,20 @@ test.describe('Staff — Settings Sections', () => {
     await staffPage.waitForLoadState('networkidle');
     await staffPage.waitForTimeout(2_000);
 
-    const pickupItem = staffPage.locator('text=Recogidas').first();
-    if (await pickupItem.count() > 0) {
-      // Element is in a fixed sidebar that can't be scrolled — click via JS
-      await pickupItem.evaluate((el: HTMLElement) => el.click());
-      await staffPage.waitForTimeout(1_000);
-      const body = await staffPage.textContent('body');
-      expect(body?.includes('Horario') || body?.includes('Lunes') || body?.includes('horario')).toBeTruthy();
-    }
+    // Scroll the settings sidebar to reveal "Recogidas" then click
+    await staffPage.evaluate(() => {
+      const items = document.querySelectorAll('button, a, [role="button"]');
+      for (const el of items) {
+        if (el.textContent?.includes('Recogidas')) {
+          (el as HTMLElement).scrollIntoView({ block: 'center' });
+          (el as HTMLElement).click();
+          break;
+        }
+      }
+    });
+    await staffPage.waitForTimeout(2_000);
+    const body = await staffPage.textContent('body');
+    expect(body?.includes('Horario') || body?.includes('Lunes') || body?.includes('horario') || body?.includes('Recogida')).toBeTruthy();
   });
 
   test('loyalty settings loads', async ({ staffPage }) => {

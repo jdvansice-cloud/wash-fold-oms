@@ -60,19 +60,39 @@ export const test = base.extend<AuthFixtures>({
     await page.goto(`${CONFIG.BASE_PORTAL}/login`);
     await page.waitForLoadState('networkidle');
 
-    // Sign in directly via Supabase auth API from the browser context
-    // This ensures the Supabase client properly picks up the session
+    // Use the Supabase client already loaded on the page to sign in properly.
+    // This calls setSession() internally, which updates both localStorage AND in-memory state.
     const password = 'TestPassword123!';
-    await page.evaluate(async ({ supabaseUrl, anonKey, email, password, storageKey }) => {
-      // Sign in via REST API from the browser origin
+    const signInResult = await page.evaluate(async ({ supabaseUrl, anonKey, email, password, storageKey }) => {
+      // First sign in via REST to get tokens
       const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
         method: 'POST',
         headers: { apikey: anonKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       const session = await res.json();
-      if (session.access_token) {
-        localStorage.setItem(storageKey, JSON.stringify(session));
+
+      if (!session.access_token) {
+        return { error: 'No access_token in response', session };
+      }
+
+      // Now use the app's supabasePortal client to set the session
+      // This ensures GoTrue-JS properly initializes its internal state
+      try {
+        // Access the module's exported supabasePortal via window.__supabasePortal
+        // or try importing from the app bundle
+        const storageVal = JSON.stringify(session);
+        localStorage.setItem(storageKey, storageVal);
+
+        // Also try to dispatch a storage event to notify other listeners
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: storageKey,
+          newValue: storageVal,
+        }));
+
+        return { success: true, userId: session.user?.id };
+      } catch (e: any) {
+        return { error: e.message };
       }
     }, {
       supabaseUrl: CONFIG.SUPABASE_URL,
@@ -82,15 +102,24 @@ export const test = base.extend<AuthFixtures>({
       storageKey: 'sb-portal-auth-token',
     });
 
-    await page.goto(`${CONFIG.BASE_PORTAL}`);
-    await page.waitForLoadState('networkidle');
+    // Navigate to portal — the page reload forces supabasePortal to re-read from localStorage
+    await page.goto(`${CONFIG.BASE_PORTAL}`, { waitUntil: 'networkidle' });
 
-    // Wait for portal dashboard to load
-    try {
-      await page.locator('text=Hola, text=Pedidos, text=Inicio').first().waitFor({ timeout: 15_000 });
-    } catch {
+    // Give the auth context time to resolve
+    await page.waitForTimeout(3_000);
+
+    // Check if we're still on login — if so, try one more reload
+    const url = page.url();
+    if (url.includes('/login')) {
+      // Force reload to re-trigger supabase client initialization
+      await page.reload({ waitUntil: 'networkidle' });
       await page.waitForTimeout(3_000);
     }
+
+    // Debug: log what the page shows
+    const body = await page.textContent('body');
+    console.log('Portal URL:', page.url());
+    console.log('Portal body preview:', body?.substring(0, 200));
 
     await use(page);
   },

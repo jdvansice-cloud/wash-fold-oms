@@ -141,33 +141,61 @@ export async function ensureCustomerUser(storeId?: string) {
     finalStoreId = store?.id;
   }
 
-  // Create customer record
-  const custRes = await adminFetch('/rest/v1/customers?on_conflict=email&select=id', {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=representation' } as any,
-    body: JSON.stringify({
-      store_id: finalStoreId,
-      first_name: CUSTOMER_FIRST_NAME,
-      last_name: CUSTOMER_LAST_NAME,
-      email: CUSTOMER_EMAIL,
-      phone: CUSTOMER_PHONE,
-      is_active: true,
-    }),
-  });
-  const customers = await custRes.json();
-  const customerId = Array.isArray(customers) ? customers[0]?.id : customers?.id;
+  // Check if customer already exists by email
+  let customerId: string;
+  const existingCustRes = await adminFetch(
+    `/rest/v1/customers?email=eq.${encodeURIComponent(CUSTOMER_EMAIL)}&store_id=eq.${finalStoreId}&select=id&limit=1`
+  );
+  const existingCusts = await existingCustRes.json();
 
-  // Create customer_auth link
-  await adminFetch('/rest/v1/customer_auth', {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=representation' } as any,
-    body: JSON.stringify({
-      auth_id: authId,
-      customer_id: customerId,
-      store_id: finalStoreId,
-      company_id: companyId,
-    }),
-  });
+  if (existingCusts?.length > 0) {
+    customerId = existingCusts[0].id;
+  } else {
+    const custRes = await adminFetch('/rest/v1/customers?select=id', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' } as any,
+      body: JSON.stringify({
+        store_id: finalStoreId,
+        first_name: CUSTOMER_FIRST_NAME,
+        last_name: CUSTOMER_LAST_NAME,
+        email: CUSTOMER_EMAIL,
+        phone: CUSTOMER_PHONE,
+        is_active: true,
+      }),
+    });
+    const customers = await custRes.json();
+    customerId = Array.isArray(customers) ? customers[0]?.id : customers?.id;
+  }
+
+  // Create customer_auth link (upsert on auth_id unique constraint)
+  const existingAuthRes = await adminFetch(
+    `/rest/v1/customer_auth?auth_id=eq.${authId}&select=id&limit=1`
+  );
+  const existingAuth = await existingAuthRes.json();
+
+  if (!existingAuth?.length) {
+    await adminFetch('/rest/v1/customer_auth', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' } as any,
+      body: JSON.stringify({
+        auth_id: authId,
+        customer_id: customerId,
+        store_id: finalStoreId,
+        company_id: companyId,
+      }),
+    });
+  } else {
+    // Update existing to ensure correct customer_id
+    await adminFetch(`/rest/v1/customer_auth?auth_id=eq.${authId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' } as any,
+      body: JSON.stringify({
+        customer_id: customerId,
+        store_id: finalStoreId,
+        company_id: companyId,
+      }),
+    });
+  }
 
   const session = await getSession(CUSTOMER_EMAIL, password);
   return { authId, session, customerId, storeId: finalStoreId, companyId };
