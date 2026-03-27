@@ -52,16 +52,15 @@ test.describe('POS — Create Order', () => {
 
   test('weight entry modal opens for weight-based products', async ({ staffPage }) => {
     await waitForPOS(staffPage);
-    const lavaDoblaTab = staffPage.getByRole('button', { name: 'Lava y Dobla', exact: true });
-    if (await lavaDoblaTab.count() > 0) {
-      await lavaDoblaTab.click();
-      await staffPage.waitForTimeout(500);
-      const weightProduct = staffPage.locator('[class*="product"], [class*="tile"], [class*="card"]')
-        .filter({ hasText: 'por kg' }).first();
-      if (await weightProduct.count() > 0) {
-        await weightProduct.click();
-        await expect(staffPage.locator('text=Peso, text=Bolsa, text=kg').first()).toBeVisible({ timeout: 5_000 });
-      }
+    // "Lava y Dobla" is usually the first section and auto-selected
+    // Click the first weight product (shows "por kg" in its tile)
+    const weightProduct = staffPage.locator('button.product-tile').filter({ hasText: /por\s*kg/i }).first();
+    if (await weightProduct.count() > 0) {
+      await weightProduct.click();
+      await staffPage.waitForTimeout(1_000);
+      // Weight entry modal shows input for weight
+      const modal = staffPage.locator('[class*="modal"], [role="dialog"], .fixed').filter({ hasText: /[Pp]eso|[Bb]olsa|kg/ });
+      await expect(modal.first()).toBeVisible({ timeout: 5_000 });
     }
   });
 });

@@ -60,26 +60,36 @@ export const test = base.extend<AuthFixtures>({
     await page.goto(`${CONFIG.BASE_PORTAL}/login`);
     await page.waitForLoadState('networkidle');
 
-    const { session } = customerSession;
-    await page.evaluate(({ session, storageKey }) => {
-      const data = JSON.stringify(session);
-      localStorage.setItem(storageKey, data);
-      const urlParts = window.location.hostname.split('.');
-      const possibleKey = `sb-${urlParts[0]}-auth-token`;
-      if (possibleKey !== storageKey) {
-        localStorage.setItem(possibleKey, data);
+    // Sign in directly via Supabase auth API from the browser context
+    // This ensures the Supabase client properly picks up the session
+    const password = 'TestPassword123!';
+    await page.evaluate(async ({ supabaseUrl, anonKey, email, password, storageKey }) => {
+      // Sign in via REST API from the browser origin
+      const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { apikey: anonKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const session = await res.json();
+      if (session.access_token) {
+        localStorage.setItem(storageKey, JSON.stringify(session));
       }
-    }, { session, storageKey: 'sb-portal-auth-token' });
+    }, {
+      supabaseUrl: CONFIG.SUPABASE_URL,
+      anonKey: CONFIG.SUPABASE_ANON_KEY,
+      email: CONFIG.CUSTOMER_EMAIL,
+      password,
+      storageKey: 'sb-portal-auth-token',
+    });
 
     await page.goto(`${CONFIG.BASE_PORTAL}`);
     await page.waitForLoadState('networkidle');
 
     // Wait for portal dashboard to load
     try {
-      await page.locator('header, nav').first().waitFor({ timeout: 15_000 });
-      await page.waitForTimeout(2_000);
+      await page.locator('text=Hola, text=Pedidos, text=Inicio').first().waitFor({ timeout: 15_000 });
     } catch {
-      await page.waitForTimeout(5_000);
+      await page.waitForTimeout(3_000);
     }
 
     await use(page);

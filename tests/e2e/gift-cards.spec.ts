@@ -78,7 +78,7 @@ test.describe('Gift Card — Settings Management', () => {
         await saveBtn.click();
         await staffPage.waitForTimeout(2_000);
 
-        await expect(staffPage.locator('text=Test Gift Card')).toBeVisible({ timeout: 5_000 });
+        await expect(staffPage.locator('text=Test Gift Card').first()).toBeVisible({ timeout: 5_000 });
       }
     }
   });
@@ -96,7 +96,7 @@ test.describe('Gift Card — POS Activation', () => {
       const giftProduct = staffPage.locator('[class*="product"], [class*="tile"], [class*="card"]').first();
       if (await giftProduct.count() > 0) {
         await giftProduct.click();
-        await expect(staffPage.locator('text=Activar Gift Card, text=Activar, text=codigo').first()).toBeVisible({ timeout: 5_000 });
+        await expect(staffPage.locator('text=Activar Gift Card').first()).toBeVisible({ timeout: 5_000 });
       }
     }
   });

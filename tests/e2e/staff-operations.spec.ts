@@ -133,8 +133,8 @@ test.describe('Staff — Settings Sections', () => {
 
     const pickupItem = staffPage.locator('text=Recogidas').first();
     if (await pickupItem.count() > 0) {
-      // Element may be in a fixed/overflow sidebar — use force click
-      await pickupItem.click({ force: true });
+      // Element is in a fixed sidebar that can't be scrolled — click via JS
+      await pickupItem.evaluate((el: HTMLElement) => el.click());
       await staffPage.waitForTimeout(1_000);
       const body = await staffPage.textContent('body');
       expect(body?.includes('Horario') || body?.includes('Lunes') || body?.includes('horario')).toBeTruthy();
