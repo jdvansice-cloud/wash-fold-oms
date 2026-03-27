@@ -11,10 +11,6 @@ type AuthFixtures = {
 
 /**
  * Extended Playwright test with authenticated fixtures.
- *
- * Usage:
- *   import { test, expect } from '../fixtures/authenticated';
- *   test('my test', async ({ staffPage }) => { ... });
  */
 export const test = base.extend<AuthFixtures>({
   staffSession: async ({}, use) => {
@@ -28,30 +24,26 @@ export const test = base.extend<AuthFixtures>({
   },
 
   staffPage: async ({ page, staffSession }, use) => {
-    // Navigate to staff login page first (sets up domain cookies)
     await page.goto(`${CONFIG.BASE_STAFF}/login`);
     await page.waitForLoadState('networkidle');
 
-    // Inject session into localStorage
+    // Inject session — Supabase gotrue-js stores it directly (not nested)
     const { session } = staffSession;
     await page.evaluate(({ session, storageKey }) => {
-      const data = {
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-        token_type: 'bearer',
-        expires_in: session.expires_in,
-        expires_at: session.expires_at,
-        user: session.user,
-      };
-      localStorage.setItem(storageKey, JSON.stringify(data));
-    }, { session: session, storageKey: 'sb-staff-auth-token' });
+      localStorage.setItem(storageKey, JSON.stringify(session));
+    }, { session, storageKey: 'sb-staff-auth-token' });
 
-    // Reload to pick up the session
     await page.goto(`${CONFIG.BASE_STAFF}`);
     await page.waitForLoadState('networkidle');
 
-    // Wait for the app to load (POS screen or loading spinner to complete)
-    await page.waitForTimeout(3_000);
+    // Wait for POS to load — check header has the app loaded
+    try {
+      await page.locator('header').first().waitFor({ timeout: 15_000 });
+      await page.waitForTimeout(2_000);
+    } catch {
+      // If header doesn't appear, we might still be on login — wait longer
+      await page.waitForTimeout(5_000);
+    }
 
     await use(page);
   },
@@ -62,20 +54,19 @@ export const test = base.extend<AuthFixtures>({
 
     const { session } = customerSession;
     await page.evaluate(({ session, storageKey }) => {
-      const data = {
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-        token_type: 'bearer',
-        expires_in: session.expires_in,
-        expires_at: session.expires_at,
-        user: session.user,
-      };
-      localStorage.setItem(storageKey, JSON.stringify(data));
-    }, { session: session, storageKey: 'sb-portal-auth-token' });
+      localStorage.setItem(storageKey, JSON.stringify(session));
+    }, { session, storageKey: 'sb-portal-auth-token' });
 
     await page.goto(`${CONFIG.BASE_PORTAL}`);
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(3_000);
+
+    // Wait for portal dashboard to load
+    try {
+      await page.locator('header, nav').first().waitFor({ timeout: 15_000 });
+      await page.waitForTimeout(2_000);
+    } catch {
+      await page.waitForTimeout(5_000);
+    }
 
     await use(page);
   },
