@@ -2227,10 +2227,10 @@ function NotificationsSettings() {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      // Load company SMTP settings and logo
+      // Load company (logo/name) and SMTP settings
       const { data: company, error } = await supabase
         .from('companies')
-        .select('id, name, logo_url, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, smtp_secure')
+        .select('id, name, logo_url')
         .limit(1)
         .single();
 
@@ -2238,14 +2238,21 @@ function NotificationsSettings() {
 
       setCompanyId(company.id);
       setLogoUrl(company.logo_url || '');
+
+      const { data: smtp } = await supabase
+        .from('company_smtp')
+        .select('smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, smtp_secure')
+        .eq('company_id', company.id)
+        .maybeSingle();
+
       setSmtpConfig({
-        smtp_host: company.smtp_host || '',
-        smtp_port: company.smtp_port || 587,
-        smtp_user: company.smtp_user || '',
-        smtp_pass: company.smtp_pass || '',
-        smtp_from_name: company.smtp_from_name || company.name || '',
-        smtp_from_email: company.smtp_from_email || '',
-        smtp_secure: company.smtp_secure !== false,
+        smtp_host: smtp?.smtp_host || '',
+        smtp_port: smtp?.smtp_port || 587,
+        smtp_user: smtp?.smtp_user || '',
+        smtp_pass: smtp?.smtp_pass || '',
+        smtp_from_name: smtp?.smtp_from_name || company.name || '',
+        smtp_from_email: smtp?.smtp_from_email || '',
+        smtp_secure: smtp?.smtp_secure !== false,
       });
 
       // Load store phone
@@ -2288,9 +2295,6 @@ function NotificationsSettings() {
   };
 
   const handleSaveSMTP = async () => {
-    console.log('=== handleSaveSMTP called ===');
-    console.log('companyId:', companyId);
-    
     if (!companyId) {
       alert('Error: No se encontró la empresa');
       return;
@@ -2298,72 +2302,30 @@ function NotificationsSettings() {
 
     setSaving(true);
     try {
-      const updateData = {
-        smtp_host: smtpConfig.smtp_host || null,
-        smtp_port: smtpConfig.smtp_port || 587,
-        smtp_user: smtpConfig.smtp_user || null,
-        smtp_pass: smtpConfig.smtp_pass || null,
-        smtp_from_name: smtpConfig.smtp_from_name || null,
-        smtp_from_email: smtpConfig.smtp_from_email || null,
-        smtp_secure: smtpConfig.smtp_secure,
-        updated_at: new Date().toISOString()
-      };
-      
-      console.log('Sending update (fire and forget)...');
+      const { error } = await supabase
+        .from('company_smtp')
+        .upsert(
+          {
+            company_id: companyId,
+            smtp_host: smtpConfig.smtp_host || null,
+            smtp_port: smtpConfig.smtp_port || 587,
+            smtp_user: smtpConfig.smtp_user || null,
+            smtp_pass: smtpConfig.smtp_pass || null,
+            smtp_from_name: smtpConfig.smtp_from_name || null,
+            smtp_from_email: smtpConfig.smtp_from_email || null,
+            smtp_secure: smtpConfig.smtp_secure,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'company_id' },
+        );
 
-      // Fire the update but don't wait for it
-      supabase
-        .from('companies')
-        .update(updateData)
-        .eq('id', companyId)
-        .then(res => console.log('Update completed:', res))
-        .catch(err => console.log('Update error:', err));
-
-      // Wait 2 seconds then verify
-      await new Promise(r => setTimeout(r, 2000));
-      
-      console.log('Verifying save...');
-      const { data: verifyData, error: verifyError } = await supabase
-        .from('companies')
-        .select('smtp_host, smtp_user, smtp_port, smtp_from_name')
-        .eq('id', companyId)
-        .single();
-      
-      console.log('Verification result:', verifyData, verifyError);
-      
-      if (verifyError) {
-        throw verifyError;
-      }
-      
-      if (verifyData?.smtp_host === smtpConfig.smtp_host && 
-          verifyData?.smtp_user === smtpConfig.smtp_user) {
-        console.log('Verified: Data was saved');
-        alert('✅ Configuración SMTP guardada correctamente');
-      } else {
-        console.log('Data mismatch. Expected:', smtpConfig.smtp_host, 'Got:', verifyData?.smtp_host);
-        // Data didn't match - maybe needs more time
-        await new Promise(r => setTimeout(r, 2000));
-        
-        // Try one more verification
-        const { data: retry } = await supabase
-          .from('companies')
-          .select('smtp_host, smtp_user')
-          .eq('id', companyId)
-          .single();
-          
-        if (retry?.smtp_host === smtpConfig.smtp_host) {
-          alert('✅ Configuración SMTP guardada correctamente');
-        } else {
-          alert('⚠️ No se pudo verificar si los datos se guardaron.\n\nRecarga la página para verificar.');
-        }
-      }
-      
+      if (error) throw error;
+      alert('✅ Configuración SMTP guardada correctamente');
     } catch (err) {
       console.error('Error:', err);
       alert('Error: ' + (err.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
-      console.log('=== handleSaveSMTP finished ===');
     }
   };
 
@@ -2380,10 +2342,12 @@ function NotificationsSettings() {
     setTesting(true);
     try {
       // Call Vercel API endpoint
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
         },
         body: JSON.stringify({
           to: testEmail,
@@ -2400,12 +2364,11 @@ function NotificationsSettings() {
               </p>
             </div>
           `,
-          company_id: companyId
         })
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         alert('✅ Email de prueba enviado correctamente a ' + testEmail);
       } else {
@@ -2528,14 +2491,17 @@ function NotificationsSettings() {
         body = body.replace(regex, testVars[key]);
       });
 
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/send-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
         body: JSON.stringify({
           to: testEmail,
           subject: `[PRUEBA] ${subject}`,
           html: body,
-          company_id: companyId
         })
       });
 

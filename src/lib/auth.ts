@@ -1,5 +1,4 @@
 // Auth user resolution — determines if an auth session belongs to staff or customer
-import { supabaseStaff as supabase } from './supabase';
 
 export type UserRole = 'admin' | 'supervisor' | 'operator' | 'customer';
 
@@ -35,84 +34,83 @@ export interface AuthUser {
   customerProfile?: CustomerProfile;
 }
 
+function restHeaders(accessToken: string, key: string) {
+  return {
+    apikey: key,
+    Authorization: `Bearer ${accessToken}`,
+  };
+}
+
 /**
  * Resolve which user (staff or customer) an auth session belongs to.
- * Checks `users` table first (staff), then `customer_auth` table (customer).
+ * `accessToken` is the session's access token — it MUST be used (not the
+ * anon key) so RLS lets the user read their own `users` / `customer_auth`
+ * row. Checks staff first, then customer.
  */
 export async function resolveAuthUser(
   authId: string,
   email: string,
+  accessToken: string,
 ): Promise<AuthUser | null> {
-  // 1. Try staff lookup by auth_id
-  const staffByAuthId = await lookupStaff(authId, email);
-  if (staffByAuthId) {
+  if (!accessToken) return null;
+
+  const staff = await lookupStaff(authId, accessToken);
+  if (staff) {
     return {
       id: authId,
       email,
-      role: staffByAuthId.role as UserRole,
-      isPlatformAdmin: staffByAuthId.is_platform_admin === true,
-      staffProfile: staffByAuthId,
+      role: staff.role as UserRole,
+      isPlatformAdmin: staff.is_platform_admin === true,
+      staffProfile: staff,
     };
   }
 
-  // 2. Try customer lookup by auth_id
-  const customerByAuthId = await lookupCustomer(authId);
-  if (customerByAuthId) {
+  const customer = await lookupCustomer(authId, accessToken);
+  if (customer) {
     return {
       id: authId,
       email,
       role: 'customer',
-      customerProfile: customerByAuthId,
+      customerProfile: customer,
     };
   }
 
   return null;
 }
 
-async function lookupStaff(authId: string, email: string): Promise<StaffProfile | null> {
+async function lookupStaff(
+  authId: string,
+  accessToken: string,
+): Promise<StaffProfile | null> {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
 
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-  };
+  const headers = restHeaders(accessToken, key);
 
   try {
-    // Try by auth_id first
+    // Normal path: the user row is already linked to this auth session.
     if (authId) {
-      const response = await fetch(`${url}/rest/v1/users?auth_id=eq.${authId}&select=*`, {
-        headers,
-      });
+      const response = await fetch(
+        `${url}/rest/v1/users?auth_id=eq.${encodeURIComponent(authId)}&select=*`,
+        { headers },
+      );
       if (response.ok) {
         const data = await response.json();
         if (data?.length > 0) return data[0] as StaffProfile;
       }
     }
 
-    // Fallback by email
-    if (email) {
-      const response = await fetch(
-        `${url}/rest/v1/users?email=eq.${encodeURIComponent(email)}&select=*`,
-        { headers },
-      );
-      if (response.ok) {
-        const data = await response.json();
-        if (data?.length > 0) {
-          const user = data[0];
-          // Link auth_id if missing
-          if (!user.auth_id && authId) {
-            await fetch(`${url}/rest/v1/users?id=eq.${user.id}`, {
-              method: 'PATCH',
-              headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-              body: JSON.stringify({ auth_id: authId }),
-            });
-            user.auth_id = authId;
-          }
-          return user as StaffProfile;
-        }
-      }
+    // Legacy staff whose `auth_id` was never set: claim the row by the
+    // verified email on the JWT via a SECURITY DEFINER RPC.
+    const linkResponse = await fetch(`${url}/rest/v1/rpc/link_staff_account`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (linkResponse.ok) {
+      const linked = await linkResponse.json();
+      if (linked?.length > 0) return linked[0] as StaffProfile;
     }
   } catch {
     // Silently fail — will try customer lookup next
@@ -121,20 +119,19 @@ async function lookupStaff(authId: string, email: string): Promise<StaffProfile 
   return null;
 }
 
-async function lookupCustomer(authId: string): Promise<CustomerProfile | null> {
+async function lookupCustomer(
+  authId: string,
+  accessToken: string,
+): Promise<CustomerProfile | null> {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
+  if (!url || !key || !authId) return null;
 
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-  };
+  const headers = restHeaders(accessToken, key);
 
   try {
-    // Fetch customer_auth with joined customer data
     const response = await fetch(
-      `${url}/rest/v1/customer_auth?auth_id=eq.${authId}&select=id,auth_id,customer_id,store_id,customers(id,first_name,last_name,email,phone,store_id)`,
+      `${url}/rest/v1/customer_auth?auth_id=eq.${encodeURIComponent(authId)}&select=id,auth_id,customer_id,store_id,customers(id,first_name,last_name,email,phone,store_id)`,
       { headers },
     );
 

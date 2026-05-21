@@ -2,15 +2,28 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isConfigured, getDefaultUser } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 
+// Build PostgREST auth headers. The Authorization bearer MUST be the
+// logged-in user's access token (not the anon key) so RLS can scope rows
+// to the user's company. Falls back to the anon key only when there is no
+// session (pre-login).
+const authHeaders = async () => {
+  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const { data: { session } } = await supabase.auth.getSession();
+  return {
+    apikey: key,
+    Authorization: `Bearer ${session?.access_token || key}`,
+  };
+};
+
 // Raw fetch helper for Supabase REST API
 const supabaseFetch = async (table, options = {}) => {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_ANON_KEY;
-  
+
   if (!url || !key) {
     return { data: null, error: { message: 'Missing Supabase config' } };
   }
-  
+
   try {
     // Build query string
     const params = new URLSearchParams();
@@ -32,12 +45,11 @@ const supabaseFetch = async (table, options = {}) => {
     }
     
     const fetchUrl = `${url}/rest/v1/${table}?${params.toString()}`;
-    
+
     const response = await fetch(fetchUrl, {
       method: 'GET',
       headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
+        ...(await authHeaders()),
         'Content-Type': 'application/json',
       }
     });
@@ -226,12 +238,17 @@ export function useDataLoader() {
       // Get company and store info
       const { data: companyData } = await supabase
         .from('companies')
-        .select('id, name, smtp_from_name, smtp_host, logo_url')
+        .select('id, name, logo_url')
         .limit(1)
         .single();
 
-      // Skip if SMTP not configured
-      if (!companyData?.smtp_host) {
+      // Skip if SMTP not configured for this company
+      const { data: smtpData } = await supabase
+        .from('company_smtp')
+        .select('smtp_host')
+        .eq('company_id', companyData?.id)
+        .maybeSingle();
+      if (!smtpData?.smtp_host) {
         console.log('SMTP not configured, skipping notification');
         return;
       }
@@ -341,14 +358,17 @@ export function useDataLoader() {
 
       // Send email via API
       console.log(`Sending ${templateId} notification to ${recipientEmail}...`);
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/send-email', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
         body: JSON.stringify({
           to: recipientEmail,
           subject,
           html,
-          company_id: companyData.id
         })
       });
 
@@ -1034,7 +1054,6 @@ export function useDataLoader() {
     
     try {
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
       
       // Search by order number, legacy order number, or customer name
       const searchQuery = query.toLowerCase();
@@ -1055,7 +1074,7 @@ export function useDataLoader() {
       }
       
       const response = await fetch(fetchUrl, {
-        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+        headers: await authHeaders()
       });
       
       if (response.ok) {
@@ -1074,12 +1093,11 @@ export function useDataLoader() {
     
     try {
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
       
       const fetchUrl = `${url}/rest/v1/orders?store_id=eq.${storeId}&order=created_at.desc&limit=${limit}&offset=${offset}`;
       
       const response = await fetch(fetchUrl, {
-        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+        headers: await authHeaders()
       });
       
       if (response.ok) {
@@ -1098,12 +1116,11 @@ export function useDataLoader() {
     
     try {
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
       
       const fetchUrl = `${url}/rest/v1/orders?store_id=eq.${storeId}&customer_id=eq.${customerId}&order=created_at.desc&limit=${limit}`;
       
       const response = await fetch(fetchUrl, {
-        headers: { 'apikey': key, 'Authorization': `Bearer ${key}` }
+        headers: await authHeaders()
       });
       
       if (response.ok) {

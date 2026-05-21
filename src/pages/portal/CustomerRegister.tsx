@@ -77,69 +77,17 @@ export default function CustomerRegister() {
       const authUser = (result as { user?: { id: string } })?.user;
       if (!authUser?.id) throw new Error('No se pudo verificar la cuenta');
 
-      // 2. Get the default store
-      const { data: store } = await supabase
-        .from('stores')
-        .select('id')
-        .eq('is_active', true)
-        .limit(1)
-        .single();
+      // 2. Resolve the tenant, create/find the customer record, and link it
+      //    to this auth session — all server-side via a SECURITY DEFINER RPC.
+      const { error: registerError } = await supabase.rpc('register_customer', {
+        p_slug: slug,
+        p_first_name: form.first_name.trim(),
+        p_last_name: form.last_name.trim(),
+        p_email: form.email.trim().toLowerCase(),
+        p_phone: form.phone,
+      });
 
-      if (!store) throw new Error('No se encontro la tienda');
-
-      // 3. Check if customer already exists for this email
-      const { data: existingCustomer } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('email', form.email.trim().toLowerCase())
-        .eq('store_id', store.id)
-        .limit(1)
-        .single();
-
-      let customerId: string;
-
-      if (existingCustomer) {
-        customerId = existingCustomer.id;
-      } else {
-        // 4. Create customer record
-        const { data: customer, error: customerError } = await supabase
-          .from('customers')
-          .insert({
-            store_id: store.id,
-            first_name: form.first_name.trim(),
-            last_name: form.last_name.trim(),
-            email: form.email.trim().toLowerCase(),
-            phone: form.phone.replace(/\D/g, ''),
-            phone_country: '+507',
-            address_district: 'Panama',
-            address_province: 'Panama',
-            is_active: true,
-          })
-          .select()
-          .single();
-
-        if (customerError) throw customerError;
-        customerId = customer.id;
-      }
-
-      // 5. Check if customer_auth bridge already exists
-      const { data: existingBridge } = await supabase
-        .from('customer_auth')
-        .select('id')
-        .eq('auth_id', authUser.id)
-        .limit(1)
-        .single();
-
-      if (!existingBridge) {
-        // 6. Create customer_auth bridge
-        const { error: bridgeError } = await supabase.from('customer_auth').insert({
-          auth_id: authUser.id,
-          customer_id: customerId,
-          store_id: store.id,
-        });
-
-        if (bridgeError) throw bridgeError;
-      }
+      if (registerError) throw registerError;
 
       // Success — auth state change will redirect
       navigate(`/portal/${slug}`);

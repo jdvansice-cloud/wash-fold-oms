@@ -38,7 +38,11 @@ export function AuthProvider({ children }) {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        const resolved = await resolveAuthUser(session.user.id, session.user.email);
+        const resolved = await resolveAuthUser(
+          session.user.id,
+          session.user.email,
+          session.access_token,
+        );
         if (mounted) setAuthUser(resolved);
       } else {
         setAuthUser(null);

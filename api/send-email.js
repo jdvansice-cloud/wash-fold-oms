@@ -1,94 +1,97 @@
-// Vercel Serverless Function: /api/send-email.js
-// This function sends emails using SMTP credentials stored in Supabase
+// Vercel Serverless Function: /api/send-email
+//
+// Sends transactional email through the caller's company SMTP settings.
+// The caller MUST present a valid Supabase session token (Authorization:
+// Bearer <access_token>). The sending company is derived from the
+// authenticated staff user — never from the request body — so a caller can
+// only ever send mail for their own company.
 
 import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 
 export default async function handler(req, res) {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
+    return res.status(500).json({
+      error: 'Server misconfigured: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.',
+    });
+  }
+
   try {
-    const { to, subject, html, text, company_id } = req.body;
-
-    if (!to || !subject || !company_id) {
-      return res.status(400).json({ error: 'Missing required fields: to, subject, company_id' });
+    // --- Authenticate the caller ---
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      return res.status(401).json({ error: 'Missing Authorization bearer token' });
     }
 
-    // Get Supabase credentials - try multiple env var names
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    // Service-role client: validates the token and reads SMTP secrets.
+    const admin = createClient(supabaseUrl, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
-    if (!supabaseUrl || !supabaseKey) {
-      return res.status(500).json({ 
-        error: 'supabaseKey is required. Add SUPABASE_URL and SUPABASE_ANON_KEY to Vercel Environment Variables.' 
-      });
+    const { data: userData, error: userError } = await admin.auth.getUser(token);
+    if (userError || !userData?.user) {
+      return res.status(401).json({ error: 'Invalid or expired session' });
     }
 
-    // Initialize Supabase client
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // --- Resolve the caller's company (staff only) ---
+    const { data: staff, error: staffError } = await admin
+      .from('users')
+      .select('company_id')
+      .eq('auth_id', userData.user.id)
+      .maybeSingle();
 
-    // Get SMTP settings from database
-    const { data: company, error: companyError } = await supabase
-      .from('companies')
-      .select('smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email, smtp_secure, name')
-      .eq('id', company_id)
-      .single();
-
-    if (companyError || !company) {
-      console.error('Company error:', companyError);
-      return res.status(404).json({ error: 'Company not found' });
+    if (staffError || !staff?.company_id) {
+      return res.status(403).json({ error: 'Not authorized to send email' });
     }
 
-    if (!company.smtp_host || !company.smtp_user || !company.smtp_pass) {
+    const { to, subject, html, text } = req.body || {};
+    if (!to || !subject) {
+      return res.status(400).json({ error: 'Missing required fields: to, subject' });
+    }
+
+    // --- Load SMTP settings for the caller's company ---
+    const { data: smtp, error: smtpError } = await admin
+      .from('company_smtp')
+      .select('smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from_name, smtp_from_email')
+      .eq('company_id', staff.company_id)
+      .maybeSingle();
+
+    if (smtpError) {
+      console.error('SMTP lookup error:', smtpError);
+      return res.status(500).json({ error: 'Could not load SMTP settings' });
+    }
+    if (!smtp || !smtp.smtp_host || !smtp.smtp_user || !smtp.smtp_pass) {
       return res.status(400).json({ error: 'SMTP not configured for this company' });
     }
 
-    // Create transporter
+    // --- Send ---
+    const port = smtp.smtp_port || 587;
     const transporter = nodemailer.createTransport({
-      host: company.smtp_host,
-      port: company.smtp_port || 587,
-      secure: company.smtp_port === 465, // true for 465, false for other ports
-      auth: {
-        user: company.smtp_user,
-        pass: company.smtp_pass,
-      },
-      tls: {
-        rejectUnauthorized: false // Allow self-signed certificates
-      }
+      host: smtp.smtp_host,
+      port,
+      secure: port === 465, // implicit TLS on 465, STARTTLS otherwise
+      auth: { user: smtp.smtp_user, pass: smtp.smtp_pass },
     });
 
-    // Send email
     const info = await transporter.sendMail({
-      from: `"${company.smtp_from_name || company.name || 'Notification'}" <${company.smtp_from_email || company.smtp_user}>`,
-      to: to,
-      subject: subject,
+      from: `"${smtp.smtp_from_name || 'Notificación'}" <${smtp.smtp_from_email || smtp.smtp_user}>`,
+      to,
+      subject,
       text: text || '',
       html: html || text || '',
     });
 
-    console.log('Email sent:', info.messageId);
-
-    return res.status(200).json({ 
-      success: true, 
-      messageId: info.messageId 
-    });
-
+    return res.status(200).json({ success: true, messageId: info.messageId });
   } catch (error) {
     console.error('Error sending email:', error);
-    return res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    return res.status(500).json({ success: false, error: error.message });
   }
 }
