@@ -257,7 +257,8 @@ describe('buildInvoiceRequest — weight-priced line (cantidad = weight)', () =>
     });
     const it0 = inv.listaItems[0];
     expect(it0.cantidadProductoServicio).toBe(1.4);
-    // precioUnitario × cantidad reconstitutes the gross line.
+    // Unit price is the 2-decimal per-kg rate.
+    expect(it0.grupoPrecios.precioUnitarioTransferencia).toBe(2.34);
     expect(it0.grupoPrecios.precioUnitarioTransferencia * 1.4).toBeCloseTo(3.28, 2);
     // DGI 2053: precioItem === (precioUnitario − descuento) × cantidad.
     const desc = it0.grupoPrecios.descuento ?? 0;
