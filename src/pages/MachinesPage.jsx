@@ -3,10 +3,12 @@ import {
   Clock, ChevronDown, GripVertical, User, Package,
   Timer, MapPin, AlertCircle, ChevronRight, PackageCheck
 } from 'lucide-react';
+import { Tag } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 import PaymentModal from '../components/modals/PaymentModal';
+import OrderLabel from '../components/OrderLabel';
 
 // Helper to display order number (legacy CC orders or new orders)
 const getOrderDisplayNumber = (order) => {
@@ -221,6 +223,7 @@ function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragE
 
 function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver }) {
   const [expanded, setExpanded] = useState(false);
+  const [showLabel, setShowLabel] = useState(false);
   
   const hoursRemaining = useMemo(() => {
     const promised = new Date(order.promised_date);
@@ -357,8 +360,17 @@ function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver })
               <ChevronRight className="w-3 h-3" />
             </button>
           )}
+          <button
+            onClick={() => setShowLabel(true)}
+            className="mt-2 w-full btn-secondary text-xs py-2"
+          >
+            <Tag className="w-3 h-3" />
+            Imprimir etiqueta
+          </button>
         </div>
       )}
+
+      {showLabel && <OrderLabel order={order} onClose={() => setShowLabel(false)} />}
     </div>
   );
 }
