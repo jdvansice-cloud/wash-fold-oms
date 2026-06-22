@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
+import { supabase } from '../lib/supabase';
 
 // Helper to display order number (legacy CC orders or new orders)
 const getOrderDisplayNumber = (order) => {
@@ -65,24 +66,48 @@ const fetchLoyaltySettings = async (storeId) => {
 
 function CustomersPage() {
   const { state, actions } = useApp();
-  const { addCustomer: dbAddCustomer, updateCustomer: dbUpdateCustomer } = useDataLoader();
+  const { addCustomer: dbAddCustomer, updateCustomer: dbUpdateCustomer, searchCustomers } = useDataLoader();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
-  
-  const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return state.customers;
-    
-    const query = searchQuery.toLowerCase();
-    return state.customers.filter(customer => {
-      const fullName = `${customer.first_name} ${customer.last_name}`.toLowerCase();
-      const phone = customer.phone?.toLowerCase() || '';
-      const email = customer.email?.toLowerCase() || '';
-      
-      return fullName.includes(query) || phone.includes(query) || email.includes(query);
-    });
+  const [results, setResults] = useState([]);
+  const [totalCustomers, setTotalCustomers] = useState(null);
+
+  // Empty query → the in-memory recent set; ≥2 chars → debounced server search.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setResults(state.customers);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const r = await searchCustomers(q, 100);
+      if (alive) setResults(r);
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
   }, [searchQuery, state.customers]);
+
+  const filteredCustomers = results;
+
+  // Total registered customers (the in-memory list is only the recent set).
+  useEffect(() => {
+    if (!state.store?.id) return;
+    let alive = true;
+    (async () => {
+      const { count } = await supabase
+        .from('customers')
+        .select('id', { count: 'exact', head: true })
+        .eq('store_id', state.store.id)
+        .eq('is_active', true);
+      if (alive && typeof count === 'number') setTotalCustomers(count);
+    })();
+    return () => { alive = false; };
+  }, [state.store?.id]);
   
   const formatCurrency = (amount) => `B/${amount?.toFixed(2) || '0.00'}`;
 
@@ -107,7 +132,7 @@ function CustomersPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-display font-bold text-slate-800">Clientes</h1>
-          <p className="text-sm text-slate-500">{state.customers.length} clientes registrados</p>
+          <p className="text-sm text-slate-500">{(totalCustomers ?? state.customers.length)} clientes registrados</p>
         </div>
         
         <button 

@@ -1,27 +1,35 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Search, Plus, User, Phone, Mail, Building, UserCheck } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { useDataLoader } from '../../hooks/useDataLoader';
 
 function CustomerSearchModal({ onClose, onSelect, onWalkIn, showWalkInPrompt = false }) {
   const { state, actions } = useApp();
-  const { addCustomer: dbAddCustomer } = useDataLoader();
+  const { addCustomer: dbAddCustomer, searchCustomers } = useDataLoader();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
-  
-  // Filter customers based on search
-  const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return state.customers.slice(0, 10);
-    
-    const query = searchQuery.toLowerCase();
-    return state.customers.filter(customer => {
-      const fullName = `${customer.first_name} ${customer.last_name}`.toLowerCase();
-      const phone = customer.phone?.toLowerCase() || '';
-      const email = customer.email?.toLowerCase() || '';
-      
-      return fullName.includes(query) || phone.includes(query) || email.includes(query);
-    });
+  const [results, setResults] = useState([]);
+
+  // Empty query → the in-memory recent set; ≥2 chars → debounced server search
+  // (covers the whole customer table, trgm-indexed).
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setResults(state.customers.slice(0, 10));
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const r = await searchCustomers(q);
+      if (alive) setResults(r);
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
   }, [searchQuery, state.customers]);
+
+  const filteredCustomers = results;
   
   const handleSelectWalkIn = () => {
     if (onWalkIn) {
