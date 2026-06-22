@@ -228,6 +228,28 @@ export async function settleB2BInvoice(invoiceId: string, tenders: SettleTender[
   if (invErr) throw invErr;
 }
 
+export interface B2BEfacturaStatus {
+  id: string;
+  status: string;
+  cufe: string | null;
+  qr_content: string | null;
+  error: string | null;
+}
+
+/** The consolidated factura electrónica for a B2B invoice, if any. */
+export async function fetchB2BEfacturaStatus(b2bInvoiceId: string): Promise<B2BEfacturaStatus | null> {
+  const { data, error } = await supabase
+    .from('electronic_invoices')
+    .select('id, status, cufe, qr_content, error')
+    .eq('b2b_invoice_id', b2bInvoiceId)
+    .eq('doc_type', '01')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) return null;
+  return (data as B2BEfacturaStatus) || null;
+}
+
 export const orderDisplayNumber = displayNo;
 
 function round2(n: number): number {

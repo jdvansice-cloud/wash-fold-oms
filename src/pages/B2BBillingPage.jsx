@@ -3,11 +3,13 @@ import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight, CreditCa
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import PaymentModal from '../components/modals/PaymentModal';
+import { emitB2BInvoice } from '../lib/efactura/client';
 import {
   fetchB2BCustomersWithOutstanding,
   fetchOutstandingOrders,
   fetchB2BInvoices,
   fetchInvoiceOrders,
+  fetchB2BEfacturaStatus,
   generateB2BInvoice,
   settleB2BInvoice,
   orderDisplayNumber,
@@ -259,6 +261,11 @@ function B2BBillingPage() {
           onComplete={async (paymentInfo) => {
             try {
               await settleB2BInvoice(payingInvoice.id, paymentInfo.payments);
+              // Emit the consolidated factura electrónica (fire-and-forget; the
+              // invoice modal shows its status and offers a manual retry).
+              emitB2BInvoice(payingInvoice.id).catch((err) =>
+                console.warn('B2B e-factura emit deferred:', err?.message || err),
+              );
               setPayingInvoice(null);
               setViewInvoice((v) => (v ? { ...v, status: 'paid', paid_at: new Date().toISOString() } : v));
               await selectCustomer(selected);
@@ -277,17 +284,35 @@ function B2BBillingPage() {
 function InvoiceModal({ invoice, customer, onClose, onPay }) {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [efactura, setEfactura] = useState(null);
+  const [emitting, setEmitting] = useState(false);
+
+  const loadEfactura = async () => setEfactura(await fetchB2BEfacturaStatus(invoice.id));
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
-        setLines(await fetchInvoiceOrders(invoice.id));
+        const [ls] = await Promise.all([fetchInvoiceOrders(invoice.id), loadEfactura()]);
+        setLines(ls);
       } finally {
         setLoading(false);
       }
     })();
   }, [invoice.id]);
+
+  const handleEmit = async () => {
+    setEmitting(true);
+    try {
+      await emitB2BInvoice(invoice.id);
+      await loadEfactura();
+    } catch (e) {
+      alert('Error al emitir la factura electrónica: ' + e.message);
+      await loadEfactura();
+    } finally {
+      setEmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 px-4 pb-4 print:p-0" onClick={onClose}>
@@ -343,6 +368,35 @@ function InvoiceModal({ invoice, customer, onClose, onPay }) {
               </tfoot>
             </table>
           )}
+
+          {/* Consolidated factura electrónica (DGI) */}
+          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">Factura electrónica</p>
+            {efactura?.status === 'authorized' ? (
+              <div className="text-sm text-emerald-700">
+                <p className="flex items-center gap-1 font-medium"><Check className="w-4 h-4" /> Autorizada por la DGI</p>
+                {efactura.cufe && <p className="mt-1 break-all text-xs text-slate-500">CUFE: {efactura.cufe}</p>}
+              </div>
+            ) : efactura?.status === 'rejected' ? (
+              <div className="text-sm">
+                <p className="text-rose-600">Rechazada{efactura.error ? `: ${efactura.error}` : ''}</p>
+                <button onClick={handleEmit} disabled={emitting} className="btn-secondary mt-2">
+                  {emitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} Reintentar
+                </button>
+              </div>
+            ) : efactura?.status === 'emitting' ? (
+              <p className="text-sm text-amber-600 inline-flex items-center gap-1"><Loader2 className="w-4 h-4 animate-spin" /> Emitiendo…</p>
+            ) : invoice.status === 'paid' ? (
+              <div className="text-sm text-slate-500">
+                <p>Aún no emitida.</p>
+                <button onClick={handleEmit} disabled={emitting} className="btn-secondary mt-2">
+                  {emitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} Emitir factura
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">Se emite al cobrar la factura.</p>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 p-4 print:hidden">

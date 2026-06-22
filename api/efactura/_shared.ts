@@ -411,6 +411,156 @@ export async function emitOrder(
 }
 
 /** Uniform error responder. */
+/**
+ * Builds the PAC InvoiceRequest for a B2B CONSOLIDATED invoice. Each constituent
+ * order becomes one invoice line ("Orden #N", net = order subtotal, ITBMS by
+ * rate). The invoice's own subtotal/tax/total drive the builder's reconciliation.
+ */
+export async function buildPayloadForB2BInvoice(
+  admin: SupabaseClient,
+  config: EFacturaConfig,
+  b2bInvoiceId: string,
+) {
+  const { data: invoice, error } = await admin
+    .from('b2b_invoices')
+    .select('*')
+    .eq('id', b2bInvoiceId)
+    .maybeSingle();
+  if (error || !invoice) throw new HttpError(404, 'B2B invoice not found');
+
+  const { data: orders } = await admin
+    .from('orders')
+    .select('order_number, legacy_order_number, subtotal, tax_amount, total')
+    .eq('b2b_invoice_id', b2bInvoiceId)
+    .order('order_number', { ascending: true });
+  const orderRows = orders || [];
+  if (!orderRows.length) throw new HttpError(409, 'La factura no tiene órdenes.');
+
+  const lines: EInvoiceLine[] = orderRows.map((o: any) => {
+    const label = o.legacy_order_number || `#${o.order_number}`;
+    const net = round2(Number(o.subtotal) || 0);
+    return {
+      description: `Orden ${label}`,
+      internalCode: String(o.legacy_order_number || o.order_number).slice(0, 20),
+      quantity: 1,
+      unitPrice: net,
+      lineTotal: net,
+      isTaxable: (Number(o.tax_amount) || 0) > 0,
+      isDiscountable: false,
+      codigoItemCodificacionPanamena: config.default_cpbs_code ?? undefined,
+      codigoItemCodificacionPanamenaAbreviada: config.default_cpbs_code_short ?? undefined,
+    };
+  });
+
+  let customer: EInvoiceReceptorCustomer | null = null;
+  if (invoice.customer_id) {
+    const { data: c } = await admin.from('customers').select('*').eq('id', invoice.customer_id).maybeSingle();
+    if (c) customer = c as EInvoiceReceptorCustomer;
+  }
+
+  const { data: company } = await admin
+    .from('companies')
+    .select('itbms_rate')
+    .eq('id', config.company_id)
+    .maybeSingle();
+  const itbmsRate = company?.itbms_rate ?? 7;
+
+  const { data: pmts } = await admin
+    .from('payments')
+    .select('payment_method, amount, change_amount')
+    .eq('b2b_invoice_id', b2bInvoiceId);
+  const payments = (pmts || []).map((p: any) => ({
+    method: p.payment_method,
+    amount: Number(p.amount) || 0,
+    change: Number(p.change_amount) || 0,
+  }));
+
+  const payload = buildInvoiceRequest({
+    docType: '01',
+    order: { discount_amount: 0, tax_amount: Number(invoice.tax_amount) || 0, total: Number(invoice.total) || 0 },
+    items: lines,
+    payments,
+    customer,
+    config: {
+      itbmsRate,
+      puntoFacturacion: config.punto_facturacion,
+      defaultCpbsCode: config.default_cpbs_code ?? undefined,
+      defaultCpbsCodeShort: config.default_cpbs_code_short ?? undefined,
+    },
+  });
+
+  return { payload, invoice };
+}
+
+/** Emits the consolidated factura for a B2B invoice and records it (mirrors emitOrder). */
+export async function emitB2BInvoice(
+  admin: SupabaseClient,
+  config: EFacturaConfig,
+  params: { b2bInvoiceId: string; existingId?: string; priorAttempts?: number },
+): Promise<EmitOutcome> {
+  const { payload, invoice } = await buildPayloadForB2BInvoice(admin, config, params.b2bInvoiceId);
+
+  let invoiceId = params.existingId;
+  if (!invoiceId) {
+    const { data: created, error: insErr } = await admin
+      .from('electronic_invoices')
+      .insert({
+        store_id: invoice.store_id,
+        b2b_invoice_id: params.b2bInvoiceId,
+        doc_type: '01',
+        environment: config.environment,
+        status: 'emitting',
+        request_payload: payload,
+        attempts: 1,
+      })
+      .select('id')
+      .single();
+    if (insErr) throw new HttpError(500, `Could not record invoice: ${insErr.message}`);
+    invoiceId = created.id;
+  } else {
+    await admin
+      .from('electronic_invoices')
+      .update({
+        status: 'emitting',
+        request_payload: payload,
+        attempts: (params.priorAttempts ?? 0) + 1,
+        error: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', invoiceId);
+  }
+
+  const pacRes = await pacRequest(config, '/Invoices', { method: 'POST', body: JSON.stringify(payload) });
+  const result = await pacRes.json().catch(() => ({}));
+  const authorized = pacRes.ok && result?.autorizada === true;
+  const error = authorized ? null : pacRejectionMessage(result, pacRes.status);
+
+  await admin
+    .from('electronic_invoices')
+    .update({
+      status: authorized ? 'authorized' : 'rejected',
+      cufe: result?.cufe || null,
+      protocolo_autorizacion: result?.protocoloAutorizacion || null,
+      fecha_autorizacion: result?.fechaAutorizacion || null,
+      qr_content: result?.qrContent || null,
+      response_payload: result,
+      error,
+      emitted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoiceId);
+
+  return {
+    invoiceId: invoiceId!,
+    authorized,
+    cufe: result?.cufe,
+    qrContent: result?.qrContent,
+    protocoloAutorizacion: result?.protocoloAutorizacion,
+    error: error || undefined,
+    pac: result,
+  };
+}
+
 export function sendError(res: { status: (n: number) => { json: (b: unknown) => void } }, err: unknown) {
   if (err instanceof HttpError) {
     res.status(err.status).json({ success: false, error: err.message });

@@ -11,6 +11,7 @@ import {
   authenticateStaff,
   assertStoreInCompany,
   emitOrder,
+  emitB2BInvoice,
   getAdmin,
   loadEfacturaConfig,
   sendError,
@@ -24,7 +25,59 @@ export default async function handler(req: any, res: any) {
     const admin = getAdmin();
     const { companyId } = await authenticateStaff(admin, req);
 
-    const { order_id, doc_type = '01', referenced_cufe } = req.body || {};
+    const { order_id, b2b_invoice_id, doc_type = '01', referenced_cufe } = req.body || {};
+
+    // --- B2B consolidated invoice path ---
+    if (b2b_invoice_id) {
+      const { data: inv } = await admin
+        .from('b2b_invoices')
+        .select('store_id')
+        .eq('id', b2b_invoice_id)
+        .maybeSingle();
+      if (!inv) throw new HttpError(404, 'B2B invoice not found');
+      await assertStoreInCompany(admin, inv.store_id, companyId);
+
+      let cfg;
+      try {
+        cfg = await loadEfacturaConfig(admin, { storeId: inv.store_id, companyId });
+      } catch (e) {
+        if (e instanceof HttpError && e.status === 400) {
+          return res.status(200).json({ success: true, skipped: true, reason: 'not configured' });
+        }
+        throw e;
+      }
+      if (!cfg.enabled) {
+        return res.status(200).json({ success: true, skipped: true, reason: 'disabled' });
+      }
+
+      const { data: existingB2b } = await admin
+        .from('electronic_invoices')
+        .select('id, status, attempts')
+        .eq('b2b_invoice_id', b2b_invoice_id)
+        .eq('doc_type', '01')
+        .in('status', ['authorized', 'emitting', 'pending', 'rejected'])
+        .maybeSingle();
+      if (existingB2b?.status === 'authorized') {
+        return res.status(200).json({ success: true, alreadyEmitted: true, invoiceId: existingB2b.id });
+      }
+
+      const out = await emitB2BInvoice(admin, cfg, {
+        b2bInvoiceId: b2b_invoice_id,
+        existingId: existingB2b?.id,
+        priorAttempts: existingB2b?.attempts,
+      });
+      if (!out.authorized) {
+        return res.status(502).json({ success: false, error: out.error, invoiceId: out.invoiceId, pac: out.pac });
+      }
+      return res.status(200).json({
+        success: true,
+        invoiceId: out.invoiceId,
+        cufe: out.cufe,
+        qrContent: out.qrContent,
+        protocoloAutorizacion: out.protocoloAutorizacion,
+      });
+    }
+
     if (!order_id) throw new HttpError(400, 'Missing order_id');
 
     // Verify the order belongs to this company before touching the PAC.

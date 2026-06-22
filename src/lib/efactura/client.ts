@@ -45,6 +45,14 @@ export function emitInvoice(orderId: string, opts?: { docType?: '01' | '06' | '0
   }) as Promise<EmitResult>;
 }
 
+/** Emits (or returns the existing) consolidated factura for a B2B invoice. */
+export function emitB2BInvoice(b2bInvoiceId: string) {
+  return authedFetch('/api/efactura/emit', {
+    method: 'POST',
+    body: JSON.stringify({ b2b_invoice_id: b2bInvoiceId }),
+  }) as Promise<EmitResult>;
+}
+
 /** Voids an authorized factura at the PAC. */
 export function cancelInvoice(params: { invoiceId?: string; cufe?: string; reason: string }) {
   return authedFetch('/api/efactura/cancel', {

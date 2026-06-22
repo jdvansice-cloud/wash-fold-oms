@@ -188,6 +188,27 @@ describe('buildInvoiceRequest — penny-accurate distribution', () => {
   });
 });
 
+describe('buildInvoiceRequest — consolidated B2B invoice (one line per order)', () => {
+  it('reconciles per-order net lines to the invoice ITBMS and total', () => {
+    // Mirrors the live B2B test: orders #3505 (9.35+0.65=10.00) and
+    // #3506 (42.06+2.94=45.00) → invoice 51.41 + 3.59 = 55.00.
+    const inv = buildInvoiceRequest({
+      order: { tax_amount: 3.59, total: 55.0 },
+      items: [
+        line({ description: 'Orden #3505', unitPrice: 9.35, lineTotal: 9.35, isTaxable: true, isDiscountable: false }),
+        line({ description: 'Orden #3506', unitPrice: 42.06, lineTotal: 42.06, isTaxable: true, isDiscountable: false }),
+      ],
+      config,
+      now: fixedNow,
+    });
+    expect(inv.listaItems).toHaveLength(2);
+    const montos = inv.listaItems.map((i) => i.grupoITBMS.montoITBMS);
+    expect(montos.reduce((a, b) => a + b, 0)).toBeCloseTo(3.59, 5);
+    expect(inv.totales.totalITBMS).toBe(3.59);
+    expect(inv.totales.valorTotalFactura).toBe(55.0);
+  });
+});
+
 describe('buildInvoiceRequest — discount distribution', () => {
   it('splits an order discount across lines and records per-unit descuento', () => {
     // gross 50 + 50 = 100, discount 50 -> net 50, tax on net (7% = 3.5), total 53.5
