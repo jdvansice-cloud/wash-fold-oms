@@ -1248,6 +1248,7 @@ function UsersSettings() {
           email: userData.email,
           role: userData.role,
           initials: userData.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+          weekly_hours: userData.weekly_hours || {},
           is_active: true
         })
         .select()
@@ -1331,6 +1332,7 @@ function UsersSettings() {
           full_name: userData.full_name,
           role: userData.role,
           initials: userData.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
+          weekly_hours: userData.weekly_hours || {},
           is_active: userData.is_active,
           updated_at: new Date().toISOString()
         })
@@ -1519,7 +1521,26 @@ function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
     email: user?.email || '',
     role: user?.role || 'operator',
     is_active: user?.is_active !== false,
+    weekly_hours: user?.weekly_hours || {},
   });
+
+  const WEEKDAYS = [
+    { key: 'mon', label: 'Lun' },
+    { key: 'tue', label: 'Mar' },
+    { key: 'wed', label: 'Mié' },
+    { key: 'thu', label: 'Jue' },
+    { key: 'fri', label: 'Vie' },
+    { key: 'sat', label: 'Sáb' },
+    { key: 'sun', label: 'Dom' },
+  ];
+  const setDayHours = (key, val) => {
+    const next = { ...formData.weekly_hours };
+    const n = parseFloat(val);
+    if (!val || isNaN(n) || n <= 0) delete next[key];
+    else next[key] = Math.min(24, n);
+    setFormData({ ...formData, weekly_hours: next });
+  };
+  const weeklyTotal = WEEKDAYS.reduce((s, d) => s + (Number(formData.weekly_hours[d.key]) || 0), 0);
 
   const handleSubmit = () => {
     if (!formData.full_name.trim()) {
@@ -1598,6 +1619,36 @@ function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
               {formData.role === 'supervisor' && 'Puede gestionar órdenes y ver reportes'}
               {formData.role === 'operator' && 'Puede crear y procesar órdenes'}
             </p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-slate-700">
+                Horario semanal
+              </label>
+              <span className="text-xs text-slate-500">
+                {weeklyTotal > 0 ? `${weeklyTotal % 1 === 0 ? weeklyTotal : weeklyTotal.toFixed(1)} h / semana` : 'Sin horario'}
+              </span>
+            </div>
+            <div className="grid grid-cols-7 gap-1.5">
+              {WEEKDAYS.map((d) => (
+                <div key={d.key} className="text-center">
+                  <div className="text-[11px] text-slate-500 mb-1">{d.label}</div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="24"
+                    step="0.5"
+                    inputMode="decimal"
+                    value={formData.weekly_hours[d.key] ?? ''}
+                    onChange={(e) => setDayHours(d.key, e.target.value)}
+                    className="input px-1 py-1.5 text-center text-sm"
+                    placeholder="0"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Horas programadas por día (deja en blanco los días libres).</p>
           </div>
 
           {isEditing && (
