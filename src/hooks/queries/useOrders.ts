@@ -95,22 +95,12 @@ export function useCreateOrder() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateOrderInput) => {
-      // Get next order number
-      const { data: maxOrder } = await supabase
-        .from('orders')
-        .select('order_number')
-        .eq('store_id', input.store_id)
-        .order('order_number', { ascending: false })
-        .limit(1)
-        .single();
-
-      const orderNumber = (maxOrder?.order_number || 0) + 1;
-
-      // Create order
+      // order_number is a Postgres SERIAL — let the DB assign it atomically.
+      // (Never read-max-then-insert: that races and is client-settable.)
       const { items, payments, ...orderData } = input;
       const { data: order, error: orderError } = await supabase
         .from('orders')
-        .insert({ ...orderData, order_number: orderNumber, status: 'pending' })
+        .insert({ ...orderData, status: 'pending' })
         .select()
         .single();
 
