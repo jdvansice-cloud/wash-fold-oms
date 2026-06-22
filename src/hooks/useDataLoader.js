@@ -178,7 +178,10 @@ export function useDataLoader() {
       ] = await Promise.all([
         supabaseFetch('sections', { eq: { store_id: currentStoreId }, order: 'display_order' }),
         supabaseFetch('products', { eq: { store_id: currentStoreId }, order: 'display_order' }),
-        supabaseFetch('customers', { eq: { store_id: currentStoreId, is_active: true }, order: 'first_name' }),
+        // Only the most recent customers are kept in memory (the working set for
+        // quick-select + the Clientes landing view). Older customers are reached
+        // via server-side searchCustomers(), so we don't ship the whole table.
+        supabaseFetch('customers', { eq: { store_id: currentStoreId, is_active: true }, order: 'created_at', ascending: false, limit: 200 }),
         supabaseFetch('orders', { eq: { store_id: currentStoreId }, order: 'created_at', ascending: false, limit: 500 }),
         supabaseFetch('payment_methods', { eq: { store_id: currentStoreId, is_active: true }, order: 'display_order' }),
       ]);
@@ -1205,6 +1208,29 @@ export function useDataLoader() {
     }
   };
 
+  // Server-side customer search (trgm-indexed). Replaces filtering the full
+  // eagerly-loaded customer list in memory — only ~recent customers are kept in
+  // state; this covers the whole table on demand.
+  const searchCustomers = async (query, limit = 25) => {
+    if (!storeId || !query || query.trim().length < 2) return [];
+    const q = sanitizeSearchTerm(query).trim();
+    if (!q) return [];
+    try {
+      // RPC matches the concatenated "first last company" + phone, so multi-word
+      // full-name queries work (trgm-indexed). RLS still scopes to the store.
+      const { data, error } = await supabase.rpc('search_customers', {
+        p_store_id: storeId,
+        p_q: q,
+        p_limit: limit,
+      });
+      if (error) throw error;
+      return data || [];
+    } catch (err) {
+      console.error('Error searching customers:', err);
+      return [];
+    }
+  };
+
   // Load more orders (pagination) - returns orders for caller to merge
   const loadMoreOrders = async (offset = 0, limit = 500) => {
     if (!storeId) return [];
@@ -1277,6 +1303,7 @@ export function useDataLoader() {
     deleteSection,
     // Order search and pagination
     searchOrders,
+    searchCustomers,
     loadMoreOrders,
     loadCustomerOrders,
   };
