@@ -15,9 +15,15 @@ export interface B2BCustomerSummary {
   customer_id: string;
   name: string;
   company_name: string | null;
-  order_count: number;
-  outstanding_total: number;
+  order_count: number; // un-invoiced credit orders
+  outstanding_total: number; // their value
+  open_invoice_count: number; // issued, unpaid invoices
+  open_invoice_total: number; // their value
+  balance: number; // outstanding_total + open_invoice_total
 }
+
+const customerName = (c: any) =>
+  c?.company_name || `${c?.first_name || ''} ${c?.last_name || ''}`.trim() || 'Cliente';
 
 export interface B2BInvoice {
   id: string;
@@ -49,31 +55,57 @@ export async function fetchOutstandingOrders(customerId: string): Promise<Outsta
   return (data as OutstandingOrder[]) || [];
 }
 
-/** B2B customers (in a store) with at least one un-invoiced credit order. */
+/**
+ * B2B accounts with activity in a store: customers that have un-invoiced credit
+ * orders (to bill) and/or open invoices (to collect). Both feed the balance.
+ */
 export async function fetchB2BCustomersWithOutstanding(storeId: string): Promise<B2BCustomerSummary[]> {
-  const { data, error } = await supabase
+  const blank = (customer_id: string, c: any): B2BCustomerSummary => ({
+    customer_id,
+    name: customerName(c),
+    company_name: c?.company_name || null,
+    order_count: 0,
+    outstanding_total: 0,
+    open_invoice_count: 0,
+    open_invoice_total: 0,
+    balance: 0,
+  });
+  const byCustomer = new Map<string, B2BCustomerSummary>();
+
+  // Un-invoiced credit orders.
+  const { data: orders, error: ordErr } = await supabase
     .from('orders')
     .select('customer_id, total, customers(first_name, last_name, company_name)')
     .eq('store_id', storeId)
     .eq('billing_type', 'account')
     .is('b2b_invoice_id', null);
-  if (error) throw error;
-  const byCustomer = new Map<string, B2BCustomerSummary>();
-  for (const row of (data as any[]) || []) {
+  if (ordErr) throw ordErr;
+  for (const row of (orders as any[]) || []) {
     if (!row.customer_id) continue;
-    const c = row.customers || {};
-    const cur = byCustomer.get(row.customer_id) || {
-      customer_id: row.customer_id,
-      name: c.company_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Cliente',
-      company_name: c.company_name || null,
-      order_count: 0,
-      outstanding_total: 0,
-    };
+    const cur = byCustomer.get(row.customer_id) || blank(row.customer_id, row.customers);
     cur.order_count += 1;
     cur.outstanding_total += Math.abs(Number(row.total) || 0);
     byCustomer.set(row.customer_id, cur);
   }
-  return [...byCustomer.values()].sort((a, b) => b.outstanding_total - a.outstanding_total);
+
+  // Open (issued, unpaid) invoices.
+  const { data: invoices, error: invErr } = await supabase
+    .from('b2b_invoices')
+    .select('customer_id, total, customers(first_name, last_name, company_name)')
+    .eq('store_id', storeId)
+    .eq('status', 'open');
+  if (invErr) throw invErr;
+  for (const row of (invoices as any[]) || []) {
+    if (!row.customer_id) continue;
+    const cur = byCustomer.get(row.customer_id) || blank(row.customer_id, row.customers);
+    cur.open_invoice_count += 1;
+    cur.open_invoice_total += Math.abs(Number(row.total) || 0);
+    byCustomer.set(row.customer_id, cur);
+  }
+
+  return [...byCustomer.values()]
+    .map((c) => ({ ...c, balance: c.outstanding_total + c.open_invoice_total }))
+    .sort((a, b) => b.balance - a.balance);
 }
 
 /**
@@ -156,8 +188,34 @@ export async function fetchInvoiceOrders(invoiceId: string): Promise<Outstanding
   return (data as OutstandingOrder[]) || [];
 }
 
-/** Mark an invoice paid: settle it and mark its orders paid. */
-export async function markB2BInvoicePaid(invoiceId: string): Promise<void> {
+export interface SettleTender {
+  method: string;
+  amount: number;
+  reference?: string;
+  changeGiven?: number;
+}
+
+/**
+ * Settle a B2B invoice with real tenders (cash/card/ACH/Yappy from the payment
+ * screen). Records the payments against the invoice, marks it and its orders
+ * paid. The payments carry b2b_invoice_id (order_id null) so they show in the
+ * EOD on the collection day without being attributed to a single order.
+ */
+export async function settleB2BInvoice(invoiceId: string, tenders: SettleTender[]): Promise<void> {
+  const rows = (tenders || [])
+    .filter((t) => (Number(t.amount) || 0) > 0)
+    .map((t) => ({
+      order_id: null,
+      b2b_invoice_id: invoiceId,
+      payment_method: t.method,
+      amount: t.amount,
+      reference: t.reference || null,
+      change_amount: t.changeGiven || 0,
+    }));
+  if (rows.length) {
+    const { error } = await supabase.from('payments').insert(rows);
+    if (error) throw error;
+  }
   const { error: ordErr } = await supabase
     .from('orders')
     .update({ payment_status: 'paid', updated_at: new Date().toISOString() })

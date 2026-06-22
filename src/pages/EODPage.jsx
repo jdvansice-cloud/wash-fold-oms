@@ -136,32 +136,35 @@ function EODPage() {
       const dateEnd = new Date(`${selectedDate}T23:59:59.999`);
 
       try {
-        // Get order IDs for the day
-        const orderIds = dailyStats.orders.map(o => o.id);
-        
-        if (orderIds.length === 0) {
-          setPaymentBreakdown({});
-          return;
-        }
-        
-        // Get payments for these orders
-        const { data: payments, error } = await supabase
-          .from('payments')
-          .select('*')
-          .in('order_id', orderIds);
-        
-        if (error) throw error;
-        
-        // Group by payment method
         const breakdown = {};
-        (payments || []).forEach(payment => {
-          const method = payment.payment_method || 'Otro';
-          if (!breakdown[method]) {
-            breakdown[method] = 0;
-          }
-          breakdown[method] += Math.abs(payment.amount || 0);
-        });
-        
+        const add = (method, amount) => {
+          const m = method || 'Otro';
+          breakdown[m] = (breakdown[m] || 0) + Math.abs(amount || 0);
+        };
+
+        // Payments on orders created this day (immediate sales + pickup settles).
+        const orderIds = dailyStats.orders.map((o) => o.id);
+        if (orderIds.length) {
+          const { data: payments, error } = await supabase
+            .from('payments')
+            .select('payment_method, amount')
+            .in('order_id', orderIds);
+          if (error) throw error;
+          (payments || []).forEach((p) => add(p.payment_method, p.amount));
+        }
+
+        // B2B consolidated-invoice payments COLLECTED this day (attributed to the
+        // collection date, not the orders' creation dates).
+        const { data: b2bPayments, error: b2bErr } = await supabase
+          .from('payments')
+          .select('payment_method, amount, b2b_invoices!inner(store_id)')
+          .not('b2b_invoice_id', 'is', null)
+          .gte('created_at', dateStart.toISOString())
+          .lte('created_at', dateEnd.toISOString())
+          .eq('b2b_invoices.store_id', state.store.id);
+        if (b2bErr) throw b2bErr;
+        (b2bPayments || []).forEach((p) => add(p.payment_method, p.amount));
+
         setPaymentBreakdown(breakdown);
       } catch (err) {
         console.error('Error loading payment breakdown:', err);

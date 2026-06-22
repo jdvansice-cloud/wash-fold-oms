@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight } from 'lucide-react';
+import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight, CreditCard } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import PaymentModal from '../components/modals/PaymentModal';
 import {
   fetchB2BCustomersWithOutstanding,
   fetchOutstandingOrders,
   fetchB2BInvoices,
   fetchInvoiceOrders,
   generateB2BInvoice,
-  markB2BInvoicePaid,
+  settleB2BInvoice,
   orderDisplayNumber,
 } from '../hooks/queries/useB2BBilling';
 
@@ -29,6 +30,7 @@ function B2BBillingPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [viewInvoice, setViewInvoice] = useState(null);
+  const [payingInvoice, setPayingInvoice] = useState(null);
 
   const loadCustomers = async () => {
     if (!storeId) return;
@@ -130,10 +132,14 @@ function B2BBillingPage() {
                 >
                   <div className="min-w-0">
                     <p className="font-medium text-slate-700 truncate">{c.name}</p>
-                    <p className="text-xs text-slate-400">{c.order_count} orden(es)</p>
+                    <p className="text-xs text-slate-400">
+                      {c.order_count > 0 && `${c.order_count} sin facturar`}
+                      {c.order_count > 0 && c.open_invoice_count > 0 && ' · '}
+                      {c.open_invoice_count > 0 && `${c.open_invoice_count} factura(s) por cobrar`}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-indigo-600">{fmt(c.outstanding_total)}</span>
+                    <span className="font-semibold text-indigo-600">{fmt(c.balance)}</span>
                     <ChevronRight className="w-4 h-4 text-slate-300" />
                   </div>
                 </button>
@@ -234,11 +240,32 @@ function B2BBillingPage() {
           invoice={viewInvoice}
           customer={selected}
           onClose={() => setViewInvoice(null)}
-          onPaid={async () => {
-            await markB2BInvoicePaid(viewInvoice.id);
-            setViewInvoice((v) => ({ ...v, status: 'paid', paid_at: new Date().toISOString() }));
-            await selectCustomer(selected);
-            await loadCustomers();
+          onPay={() => setPayingInvoice(viewInvoice)}
+        />
+      )}
+
+      {/* Pay the invoice through the regular payment screen, restricted to
+          cash/card/ACH/Yappy (no pickup, credit, gift card or loyalty). */}
+      {payingInvoice && (
+        <PaymentModal
+          total={payingInvoice.total}
+          subtotal={payingInvoice.subtotal}
+          taxAmount={payingInvoice.tax_amount}
+          paymentMethods={(state.paymentMethods || []).filter((m) => m.is_active)}
+          storeId={storeId}
+          allowPickup={false}
+          allowGiftCard={false}
+          onClose={() => setPayingInvoice(null)}
+          onComplete={async (paymentInfo) => {
+            try {
+              await settleB2BInvoice(payingInvoice.id, paymentInfo.payments);
+              setPayingInvoice(null);
+              setViewInvoice((v) => (v ? { ...v, status: 'paid', paid_at: new Date().toISOString() } : v));
+              await selectCustomer(selected);
+              await loadCustomers();
+            } catch (e) {
+              alert('Error al cobrar la factura: ' + e.message);
+            }
           }}
         />
       )}
@@ -247,10 +274,9 @@ function B2BBillingPage() {
 }
 
 // Invoice / estado de cuenta — line items are the orders.
-function InvoiceModal({ invoice, customer, onClose, onPaid }) {
+function InvoiceModal({ invoice, customer, onClose, onPay }) {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -328,22 +354,8 @@ function InvoiceModal({ invoice, customer, onClose, onPaid }) {
               <Check className="w-4 h-4" /> Pagada {invoice.paid_at ? `· ${fmtDate(invoice.paid_at)}` : ''}
             </span>
           ) : (
-            <button
-              onClick={async () => {
-                setPaying(true);
-                try {
-                  await onPaid();
-                } catch (e) {
-                  alert('Error al marcar pagada: ' + e.message);
-                } finally {
-                  setPaying(false);
-                }
-              }}
-              disabled={paying}
-              className="btn-primary disabled:opacity-50"
-            >
-              {paying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Marcar pagada
+            <button onClick={onPay} className="btn-primary">
+              <CreditCard className="w-4 h-4" /> Cobrar {fmt(invoice.total)}
             </button>
           )}
         </div>
