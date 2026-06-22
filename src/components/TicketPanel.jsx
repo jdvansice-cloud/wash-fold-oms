@@ -889,6 +889,21 @@ function TicketPanel() {
       lineTotal: newQuantity * item.unitPrice,
     });
   };
+
+  // Per-line manual discount (amount or % of the line gross).
+  const lineDiscountAmount = (item) => {
+    const d = item.discount;
+    if (!d || !d.value) return 0;
+    const gross = item.lineTotal || 0;
+    const amt = d.mode === 'pct' ? gross * (d.value / 100) : d.value;
+    return Math.min(Math.max(0, amt), gross);
+  };
+
+  const handleItemDiscount = (index, patch) => {
+    const item = ticket.items[index];
+    const current = item.discount || { mode: 'amount', value: 0 };
+    actions.updateItem(index, { discount: { ...current, ...patch } });
+  };
   
   // Require both items AND customer confirmation to process
   const canProcess = ticket.items.length > 0 && ticket.customerConfirmed;
@@ -1032,23 +1047,21 @@ function TicketPanel() {
         ) : (
           <div className="space-y-3">
             {/* Product Items (non-delivery) */}
-            {calculations.productItems.map((item, index) => {
+            {calculations.productItems.map((item) => {
               const actualIndex = ticket.items.findIndex(i => i === item);
+              const isWeight = item.product.pricing_type === 'weight';
+              const taxable = item.product.is_taxable !== false;
+              const lineDisc = lineDiscountAmount(item);
+              const net = (item.lineTotal || 0) - lineDisc;
+              const disc = item.discount || { mode: 'amount', value: 0 };
               return (
                 <div key={actualIndex} className="bg-slate-50 rounded-xl p-3 animate-slide-up">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        {item.product.pricing_type === 'weight' && (
-                          <span className="text-sm font-semibold text-primary-600">
-                            {item.totalWeight?.toFixed(2)}kg
-                          </span>
-                        )}
-                        <span className="font-medium text-slate-800 truncate">
-                          {item.product.name}
-                        </span>
-                      </div>
-                      
+                      <span className="font-medium text-slate-800 truncate block">
+                        {item.product.name}
+                      </span>
+
                       {/* Weight entries breakdown */}
                       {item.weightEntries && item.weightEntries.length > 0 && (
                         <div className="mt-1 space-y-0.5">
@@ -1060,33 +1073,30 @@ function TicketPanel() {
                           ))}
                         </div>
                       )}
-                      
-                      {/* Quantity controls for quantity-based products */}
-                      {item.product.pricing_type === 'quantity' && (
-                        <div className="flex items-center gap-2 mt-2">
-                          <button
-                            onClick={() => handleQuantityChange(actualIndex, -1)}
-                            className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
-                          >
-                            -
-                          </button>
-                          <span className="w-8 text-center font-medium text-slate-700">
-                            {item.quantity}
-                          </span>
-                          <button
-                            onClick={() => handleQuantityChange(actualIndex, 1)}
-                            className="w-7 h-7 flex items-center justify-center bg-white border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
-                          >
-                            +
-                          </button>
-                        </div>
-                      )}
+
+                      {/* Unit price · discount · tax */}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                        <span>
+                          {isWeight
+                            ? `${item.totalWeight?.toFixed(2)}kg × ${formatCurrency(item.unitPrice)}/kg`
+                            : `${item.quantity} × ${formatCurrency(item.unitPrice)}`}
+                        </span>
+                        {lineDisc > 0 && (
+                          <span className="text-error-500">− {formatCurrency(lineDisc)} desc.</span>
+                        )}
+                        <span className="text-slate-400">{taxable ? 'ITBMS' : 'exento'}</span>
+                      </div>
                     </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800">
-                        {formatCurrency(item.lineTotal)}
-                      </span>
+
+                    <div className="flex items-start gap-2">
+                      <div className="text-right">
+                        {lineDisc > 0 && (
+                          <span className="block text-xs text-slate-400 line-through">
+                            {formatCurrency(item.lineTotal)}
+                          </span>
+                        )}
+                        <span className="font-semibold text-slate-800">{formatCurrency(net)}</span>
+                      </div>
                       <button
                         onClick={() => handleRemoveItem(actualIndex)}
                         className="p-1.5 text-slate-400 hover:text-error-500 hover:bg-error-50 rounded-lg transition-colors"
@@ -1094,6 +1104,47 @@ function TicketPanel() {
                         <X className="w-4 h-4" />
                       </button>
                     </div>
+                  </div>
+
+                  {/* Quantity stepper + per-line discount */}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {!isWeight && (
+                      <span className="flex items-center rounded-lg border border-slate-200 bg-white">
+                        <button
+                          onClick={() => handleQuantityChange(actualIndex, -1)}
+                          className="px-2.5 py-1 text-slate-600 hover:bg-slate-100 rounded-l-lg"
+                        >
+                          −
+                        </button>
+                        <span className="w-7 text-center text-sm font-medium text-slate-700">{item.quantity}</span>
+                        <button
+                          onClick={() => handleQuantityChange(actualIndex, 1)}
+                          className="px-2.5 py-1 text-slate-600 hover:bg-slate-100 rounded-r-lg"
+                        >
+                          +
+                        </button>
+                      </span>
+                    )}
+                    <label className="flex items-center gap-1 text-xs text-slate-500">
+                      Desc.
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={disc.value || ''}
+                        onChange={(e) => handleItemDiscount(actualIndex, { value: Number(e.target.value) || 0 })}
+                        placeholder="0"
+                        className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-sm text-right outline-none focus:border-primary-500"
+                      />
+                      <select
+                        value={disc.mode}
+                        onChange={(e) => handleItemDiscount(actualIndex, { mode: e.target.value })}
+                        className="rounded-lg border border-slate-200 bg-white px-1.5 py-1 text-sm"
+                      >
+                        <option value="amount">B/.</option>
+                        <option value="pct">%</option>
+                      </select>
+                    </label>
                   </div>
                 </div>
               );
@@ -1403,6 +1454,44 @@ function TicketPanel() {
           </div>
         )}
         
+        {/* Always-visible summary */}
+        {ticket.items.length > 0 && (
+          <div className="space-y-1 border-t border-slate-100 pt-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Subtotal</span>
+              <span className="text-slate-700">
+                {formatCurrency(calculations.productsTotal + calculations.deliveryTotal)}
+              </span>
+            </div>
+            {calculations.productDiscountAmount > 0 && (
+              <div className="flex justify-between text-error-500">
+                <span>Descuentos y promociones</span>
+                <span>− {formatCurrency(calculations.productDiscountAmount)}</span>
+              </div>
+            )}
+            {calculations.deliveryDiscountAmount > 0 && (
+              <div className="flex justify-between text-success-600">
+                <span>Entrega gratis</span>
+                <span>− {formatCurrency(calculations.deliveryDiscountAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-slate-500">ITBMS ({state.settings?.itbms_rate ?? 7}%)</span>
+              <span className="text-slate-700">{formatCurrency(calculations.taxAmount)}</span>
+            </div>
+            {(freeServicesApplied.totalDiscount || 0) > 0 && (
+              <div className="flex justify-between text-success-600">
+                <span>Servicios gratis</span>
+                <span>− {formatCurrency(freeServicesApplied.totalDiscount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t border-slate-200 pt-1 text-base font-bold text-slate-800">
+              <span>Total</span>
+              <span>{formatCurrency(adjustedTotal)}</span>
+            </div>
+          </div>
+        )}
+
         {/* Customer Required Warning */}
         {ticket.items.length > 0 && !ticket.customerConfirmed && (
           <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-center">
