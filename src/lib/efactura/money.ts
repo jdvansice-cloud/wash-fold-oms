@@ -15,6 +15,12 @@ export function round2(amount: number): number {
   return Math.round(amount * 100) / 100;
 }
 
+/** Rounds to 6 dp — used for unit prices / per-unit discounts so that
+ * (precioUnitario − descuento) × cantidad reconstitutes the 2-dp line total. */
+export function round6(amount: number): number {
+  return Math.round(amount * 1e6) / 1e6;
+}
+
 /**
  * Splits `totalCents` across buckets in proportion to `weights`, returning
  * integer cents that sum exactly to `totalCents`. Leftover cents from flooring
