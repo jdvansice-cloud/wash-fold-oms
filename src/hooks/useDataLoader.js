@@ -415,6 +415,7 @@ export function useDataLoader() {
         total_pieces: orderData.total_pieces,
         notes: orderData.notes,
         promised_date: orderData.promised_date,
+        payment_status: orderData.payment_status || 'paid',
       })
       .select()
       .single();
@@ -492,8 +493,11 @@ export function useDataLoader() {
       // Auto-emit the electronic invoice (factura electrónica) for paid sales.
       // Fire-and-forget so it never blocks checkout; the /api/efactura/retry
       // cron re-emits if the PAC is unavailable, and it no-ops when E-Factura
-      // is not enabled for the company.
-      if ((order.total ?? 0) > 0) {
+      // is not enabled for the company. Pay-on-pickup sales are deferred (money
+      // collected at pickup), so no invoice is emitted now — it's billed when
+      // the order is actually paid. The emit endpoint enforces this too.
+      const isUnpaid = (orderData.payment_status || order.payment_status) === 'unpaid';
+      if (!isUnpaid && (order.total ?? 0) > 0) {
         emitInvoice(order.id).catch((err) =>
           console.warn('E-Factura auto-emit deferred:', err?.message || err),
         );
@@ -533,13 +537,65 @@ export function useDataLoader() {
     }
   };
 
+  // Settle an unpaid (pay-on-pickup) order: record the payment(s), mark it paid,
+  // and emit the electronic invoice now that money has actually been collected.
+  const settleOrder = async (orderId, paymentInfo) => {
+    try {
+      const rows = (paymentInfo.payments || []).map((p) => ({
+        order_id: orderId,
+        payment_method: p.method,
+        amount: p.amount,
+        reference: p.reference || null,
+        change_amount: p.changeGiven || 0,
+      }));
+      if (rows.length) {
+        const { error } = await supabase.from('payments').insert(rows);
+        if (error) throw error;
+      }
+
+      const { error: upErr } = await supabase
+        .from('orders')
+        .update({ payment_status: 'paid', updated_at: new Date().toISOString() })
+        .eq('id', orderId);
+      if (upErr) throw upErr;
+
+      actions.updateOrder({ id: orderId, payment_status: 'paid' });
+
+      // Now that it's paid, emit the invoice (fire-and-forget; retry cron covers
+      // PAC outages; no-ops when e-factura isn't enabled).
+      emitInvoice(orderId).catch((err) =>
+        console.warn('E-Factura emit (settle) deferred:', err?.message || err),
+      );
+
+      return true;
+    } catch (err) {
+      console.error('Error settling order:', err);
+      throw err;
+    }
+  };
+
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      const updates = { 
+      // Gate: an order can't be handed to the customer (marked "completed")
+      // until it's paid. Pay-on-pickup orders are unpaid until settled.
+      if (newStatus === 'completed') {
+        const { data: ord } = await supabase
+          .from('orders')
+          .select('payment_status')
+          .eq('id', orderId)
+          .maybeSingle();
+        if (ord?.payment_status === 'unpaid') {
+          const e = new Error('La orden debe pagarse antes de entregarse al cliente.');
+          e.code = 'PAYMENT_REQUIRED';
+          throw e;
+        }
+      }
+
+      const updates = {
         status: newStatus,
         updated_at: new Date().toISOString()
       };
-      
+
       if (newStatus === 'completed') {
         updates.completed_at = new Date().toISOString();
       }
@@ -1202,6 +1258,7 @@ export function useDataLoader() {
       loadData();
     },
     addOrder,
+    settleOrder,
     updateOrderStatus,
     getOrderDetails,
     createRefund,

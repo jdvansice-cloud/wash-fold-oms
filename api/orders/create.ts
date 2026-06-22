@@ -111,10 +111,14 @@ export default async function handler(req: any, res: any) {
     if (tax > grossAll * maxRate + 0.02) {
       throw new HttpError(409, 'ITBMS excede la tasa máxima');
     }
-    // Tendered payments must cover the total.
-    const paid = (Array.isArray(o.payments) ? o.payments : []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
-    if (round2(paid) + 0.02 < total) {
-      throw new HttpError(409, 'Los pagos no cubren el total');
+    // Pay-on-pickup orders are created UNPAID (collected at pickup), so they
+    // legitimately carry no payments. Every other order's tenders must cover it.
+    const paymentStatus = o.payment_status === 'unpaid' ? 'unpaid' : 'paid';
+    if (paymentStatus !== 'unpaid') {
+      const paid = (Array.isArray(o.payments) ? o.payments : []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+      if (round2(paid) + 0.02 < total) {
+        throw new HttpError(409, 'Los pagos no cubren el total');
+      }
     }
 
     // --- Insert (service-role). order_number from SERIAL. ---
@@ -132,6 +136,7 @@ export default async function handler(req: any, res: any) {
         total_weight: round2(o.total_weight), total_bags: o.total_bags || 0, total_pieces: o.total_pieces || 0,
         notes: o.notes || null,
         promised_date: o.promised_date || null,
+        payment_status: paymentStatus,
       })
       .select()
       .single();

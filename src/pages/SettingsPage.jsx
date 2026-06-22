@@ -1735,7 +1735,7 @@ function PaymentMethodsSettings() {
           { name: 'Yappy', icon: '📱', payment_type: 'other', is_active: true, display_order: 2 },
           { name: 'ACH', icon: '🏦', payment_type: 'other', is_active: true, display_order: 3 },
           { name: 'Facturar', icon: '📄', payment_type: 'other', is_active: true, display_order: 4 },
-          { name: 'Pagar al Recoger', icon: '🛒', payment_type: 'other', is_active: true, display_order: 5 },
+          { name: 'Pagar al Recoger', icon: '🛒', payment_type: 'pickup', is_active: true, display_order: 5 },
         ];
         setMethods(defaultMethods.map((m, i) => ({ ...m, id: `temp-${i}`, store_id: store.id })));
       } else {
@@ -1848,6 +1848,7 @@ function PaymentMethodsSettings() {
               <option value="cash">Efectivo</option>
               <option value="card">Tarjeta</option>
               <option value="other">Otro</option>
+              <option value="pickup">Pagar al recoger</option>
             </select>
             <label className="relative inline-flex items-center cursor-pointer">
               <input 

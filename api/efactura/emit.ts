@@ -36,6 +36,25 @@ export default async function handler(req: any, res: any) {
     if (!order) throw new HttpError(404, 'Order not found');
     await assertStoreInCompany(admin, order.store_id, companyId);
 
+    // Pay-on-pickup is a deferred term (collected at pickup), so it must not be
+    // invoiced now — it's billed when actually paid. Detect by payment_type so a
+    // renamed method still works; skip when every payment on the order is pickup.
+    const { data: orderPayments } = await admin
+      .from('payments')
+      .select('payment_method')
+      .eq('order_id', order_id);
+    if (orderPayments && orderPayments.length) {
+      const { data: pickupMethods } = await admin
+        .from('payment_methods')
+        .select('name')
+        .eq('store_id', order.store_id)
+        .eq('payment_type', 'pickup');
+      const pickupNames = new Set((pickupMethods || []).map((m: any) => m.name));
+      if (pickupNames.size && orderPayments.every((p: any) => pickupNames.has(p.payment_method))) {
+        return res.status(200).json({ success: true, skipped: true, reason: 'pay_on_pickup' });
+      }
+    }
+
     // Load the store's E-Factura config; no-op cleanly when not configured/enabled.
     let config;
     try {
