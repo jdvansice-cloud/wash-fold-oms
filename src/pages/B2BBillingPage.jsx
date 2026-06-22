@@ -136,72 +136,81 @@ function B2BBillingPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Customers with outstanding credit orders */}
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 space-y-3">
-            <h2 className="font-semibold text-slate-800">{searchResults ? 'Resultados' : 'Clientes con saldo'}</h2>
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Buscar cliente B2B…"
-                className="input pl-9 py-2 text-sm"
-              />
+        {/* Left column: search on top, balances always visible below. */}
+        <div className="space-y-4">
+          {/* Search any B2B customer (e.g. to view paid invoice history) */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-3">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar cliente B2B…"
+                  className="input pl-9 py-2 text-sm"
+                />
+              </div>
             </div>
+            {searchResults && (
+              searchResults.length === 0 ? (
+                <div className="px-5 pb-4 text-sm text-slate-400">Sin resultados.</div>
+              ) : (
+                <div className="divide-y divide-slate-50 border-t border-slate-100">
+                  {searchResults.map((c) => (
+                    <button
+                      key={c.customer_id}
+                      onClick={() => { selectCustomer(c); setSearch(''); }}
+                      className={`w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-50 ${
+                        selected?.customer_id === c.customer_id ? 'bg-indigo-50' : ''
+                      }`}
+                    >
+                      <span className="font-medium text-slate-700 truncate">{c.name}</span>
+                      <ChevronRight className="w-4 h-4 text-slate-300" />
+                    </button>
+                  ))}
+                </div>
+              )
+            )}
           </div>
 
-          {searchResults ? (
-            searchResults.length === 0 ? (
-              <div className="p-6 text-center text-sm text-slate-400">Sin resultados.</div>
+          {/* Clientes con saldo — always visible */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800">Clientes con saldo</h2>
+            </div>
+            {loading ? (
+              <div className="p-5 text-sm text-slate-400">Cargando…</div>
+            ) : customers.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-400">
+                No hay órdenes a crédito pendientes de facturar.
+              </div>
             ) : (
               <div className="divide-y divide-slate-50">
-                {searchResults.map((c) => (
+                {customers.map((c) => (
                   <button
                     key={c.customer_id}
-                    onClick={() => { selectCustomer(c); setSearch(''); }}
+                    onClick={() => selectCustomer(c)}
                     className={`w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-50 ${
                       selected?.customer_id === c.customer_id ? 'bg-indigo-50' : ''
                     }`}
                   >
-                    <span className="font-medium text-slate-700 truncate">{c.name}</span>
-                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-700 truncate">{c.name}</p>
+                      <p className="text-xs text-slate-400">
+                        {c.order_count > 0 && `${c.order_count} sin facturar`}
+                        {c.order_count > 0 && c.open_invoice_count > 0 && ' · '}
+                        {c.open_invoice_count > 0 && `${c.open_invoice_count} factura(s) por cobrar`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-indigo-600">{fmt(c.balance)}</span>
+                      <ChevronRight className="w-4 h-4 text-slate-300" />
+                    </div>
                   </button>
                 ))}
               </div>
-            )
-          ) : loading ? (
-            <div className="p-5 text-sm text-slate-400">Cargando…</div>
-          ) : customers.length === 0 ? (
-            <div className="p-8 text-center text-sm text-slate-400">
-              No hay órdenes a crédito pendientes de facturar.
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-50">
-              {customers.map((c) => (
-                <button
-                  key={c.customer_id}
-                  onClick={() => selectCustomer(c)}
-                  className={`w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-50 ${
-                    selected?.customer_id === c.customer_id ? 'bg-indigo-50' : ''
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-slate-700 truncate">{c.name}</p>
-                    <p className="text-xs text-slate-400">
-                      {c.order_count > 0 && `${c.order_count} sin facturar`}
-                      {c.order_count > 0 && c.open_invoice_count > 0 && ' · '}
-                      {c.open_invoice_count > 0 && `${c.open_invoice_count} factura(s) por cobrar`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-indigo-600">{fmt(c.balance)}</span>
-                    <ChevronRight className="w-4 h-4 text-slate-300" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Detail: outstanding orders + invoices */}
