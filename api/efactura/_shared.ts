@@ -10,8 +10,8 @@ import {
   buildInvoiceRequest,
   type EInvoiceLine,
   type EInvoiceReceptorCustomer,
-} from '../../src/lib/efactura/buildInvoice';
-import { round2 } from '../../src/lib/efactura/money';
+} from '../../src/lib/efactura/buildInvoice.js';
+import { round2 } from '../../src/lib/efactura/money.js';
 
 export const PAC_BASE = 'https://api.efacturapty.com/api/v1';
 

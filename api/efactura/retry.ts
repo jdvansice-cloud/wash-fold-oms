@@ -13,7 +13,7 @@ import {
   loadEfacturaConfig,
   HttpError,
   type EFacturaConfig,
-} from './_shared';
+} from './_shared.js';
 
 const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 25;
