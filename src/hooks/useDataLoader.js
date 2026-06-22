@@ -114,14 +114,22 @@ export function useDataLoader() {
     try {
       const startTime = Date.now();
       
-      // Fetch store
+      // Fetch the active store. Honor the store chosen via the top-bar switcher
+      // (TenantContext persists it under tenant-store-<slug>); else the first.
       console.log('1. Fetching store...');
-      const { data: storeData, error: storeError } = await supabaseFetch('stores', {
+      const slug = (() => {
+        const seg = window.location.pathname.split('/').filter(Boolean);
+        return seg[0] === 'app' ? seg[1] : seg[0];
+      })();
+      const savedStoreId = slug ? localStorage.getItem(`tenant-store-${slug}`) : null;
+      const { data: storesData } = await supabaseFetch('stores', {
         eq: { is_active: true },
-        limit: 1,
-        single: true
+        order: 'name',
       });
-      console.log('1. Store query completed in', Date.now() - startTime, 'ms');
+      const storeList = Array.isArray(storesData) ? storesData : storesData ? [storesData] : [];
+      const storeData = storeList.find((s) => s.id === savedStoreId) || storeList[0] || null;
+      const storeError = storeData ? null : { message: 'No se encontró una tienda activa' };
+      console.log('1. Store query completed in', Date.now() - startTime, 'ms', '| store:', storeData?.name);
       
       if (storeError || !storeData) {
         console.error('Store error:', storeError);
