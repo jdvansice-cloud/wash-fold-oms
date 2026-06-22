@@ -35,7 +35,11 @@ const initialState = {
     promotion: null,
     freeDelivery: false,
   },
-  
+
+  // Last customer served (for the quick re-select button). Not part of the
+  // ticket, so it survives clearTicket.
+  lastCustomer: null,
+
   // UI State
   activeSection: null,
   currentView: 'pos',
@@ -68,6 +72,8 @@ const actionTypes = {
   UPDATE_ITEM: 'UPDATE_ITEM',
   REMOVE_ITEM: 'REMOVE_ITEM',
   CLEAR_TICKET: 'CLEAR_TICKET',
+  RESTORE_TICKET: 'RESTORE_TICKET',
+  SET_LAST_CUSTOMER: 'SET_LAST_CUSTOMER',
   SET_NOTES: 'SET_NOTES',
   SET_DELIVERY: 'SET_DELIVERY',
   SET_MANUAL_DISCOUNT: 'SET_MANUAL_DISCOUNT',
@@ -115,6 +121,8 @@ function appReducer(state, action) {
     case actionTypes.SET_CUSTOMER:
       return {
         ...state,
+        // Remember the last real (non-walk-in) customer for quick re-select.
+        lastCustomer: action.payload?.id ? action.payload : state.lastCustomer,
         ticket: {
           ...state.ticket,
           customer: action.payload,
@@ -243,7 +251,13 @@ function appReducer(state, action) {
           promotionCode: null,
         },
       };
-      
+
+    case actionTypes.RESTORE_TICKET:
+      return { ...state, ticket: { ...action.payload } };
+
+    case actionTypes.SET_LAST_CUSTOMER:
+      return { ...state, lastCustomer: action.payload };
+
     case actionTypes.SET_NOTES:
       return {
         ...state,
@@ -566,6 +580,8 @@ export function AppProvider({ children }) {
     updateItem: (index, updates) => dispatch({ type: actionTypes.UPDATE_ITEM, payload: { index, updates } }),
     removeItem: (index) => dispatch({ type: actionTypes.REMOVE_ITEM, payload: index }),
     clearTicket: () => dispatch({ type: actionTypes.CLEAR_TICKET }),
+    restoreTicket: (ticket) => dispatch({ type: actionTypes.RESTORE_TICKET, payload: ticket }),
+    setLastCustomer: (customer) => dispatch({ type: actionTypes.SET_LAST_CUSTOMER, payload: customer }),
     setNotes: (notes) => dispatch({ type: actionTypes.SET_NOTES, payload: notes }),
     setDelivery: (product) => dispatch({ type: actionTypes.SET_DELIVERY, payload: product }),
     setManualDiscount: (discount) => dispatch({ type: actionTypes.SET_MANUAL_DISCOUNT, payload: discount }),
