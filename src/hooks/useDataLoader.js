@@ -461,7 +461,12 @@ export function useDataLoader() {
           },
           body: JSON.stringify({ ...orderData, store_id: storeId }),
         });
-        if (response.status === 404) throw { routeMissing: true };
+        // Under `vite dev` the /api route isn't served and returns the SPA HTML
+        // (200, text/html); treat any non-JSON / 404 response as route-missing.
+        const contentType = response.headers.get('content-type') || '';
+        if (response.status === 404 || !contentType.includes('application/json')) {
+          throw { routeMissing: true };
+        }
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result?.success) {
           throw new Error(result?.error || `No se pudo crear la orden (HTTP ${response.status})`);
