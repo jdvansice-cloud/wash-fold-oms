@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift, Award, Coins, Stamp, Calendar } from 'lucide-react';
+import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift, Award, Coins, Stamp, Calendar, Tag } from 'lucide-react';
+import OrderLabel from '../components/OrderLabel';
 import { useApp } from '../context/AppContext';
 import { usePermission } from '../hooks/usePermission';
 import { useDataLoader } from '../hooks/useDataLoader';
@@ -570,6 +571,7 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, canRefundRole,
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [processingRefund, setProcessingRefund] = useState(false);
+  const [showLabel, setShowLabel] = useState(false);
 
   const formatCurrency = (amount) => `B/${(amount || 0).toFixed(2)}`;
   const config = statusConfig[order.status] || statusConfig.pending;
@@ -899,7 +901,15 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, canRefundRole,
             <button onClick={onClose} className="btn-secondary flex-1">
               Cerrar
             </button>
-            
+
+            {/* Print a scannable garment/order tag */}
+            {order.status !== 'refund' && (
+              <button onClick={() => setShowLabel(true)} className="btn-secondary flex-1">
+                <Tag className="w-4 h-4" />
+                Etiqueta
+              </button>
+            )}
+
             {/* Refund Button (Admin Only) */}
             {canRefund && (
               <button 
@@ -1001,6 +1011,8 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, canRefundRole,
           </div>
         </div>
       )}
+
+      {showLabel && <OrderLabel order={order} onClose={() => setShowLabel(false)} />}
     </div>
   );
 }
