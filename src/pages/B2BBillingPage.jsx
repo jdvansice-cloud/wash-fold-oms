@@ -221,10 +221,21 @@ function B2BBillingPage() {
             </div>
           ) : (
             <>
+              {/* Selected customer — so staff know whose data is shown */}
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                  <Building2 className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold text-slate-800 truncate">{selected.name}</h2>
+                  <p className="text-xs text-slate-400">Cuenta B2B · facturación a crédito</p>
+                </div>
+              </div>
+
               {/* Generate invoice from outstanding orders */}
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <h2 className="font-semibold text-slate-800">{selected.name} — órdenes a crédito</h2>
+                  <h2 className="font-semibold text-slate-800">Órdenes a crédito</h2>
                   <span className="text-sm text-slate-500">{orders.length} pendiente(s)</span>
                 </div>
                 {loadingDetail ? (
@@ -284,11 +295,12 @@ function B2BBillingPage() {
                           <p className="font-medium text-slate-700">Factura #{inv.invoice_number}</p>
                           <p className="text-xs text-slate-400">{fmtDate(inv.created_at)}</p>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <span className={`badge ${inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                             {inv.status === 'paid' ? 'Pagada' : 'Pendiente'}
                           </span>
-                          <span className="font-semibold text-slate-700">{fmt(inv.total)}</span>
+                          <EfacturaBadge status={inv.efactura_status} paid={inv.status === 'paid'} />
+                          <span className="w-16 text-right font-semibold text-slate-700">{fmt(inv.total)}</span>
                         </div>
                       </button>
                     ))}
@@ -344,6 +356,18 @@ function B2BBillingPage() {
 }
 
 // Invoice / estado de cuenta — line items are the orders.
+// Compact factura-electrónica indicator for an invoice row.
+function EfacturaBadge({ status, paid }) {
+  if (status === 'authorized')
+    return <span className="badge bg-emerald-50 text-emerald-700 inline-flex items-center gap-1"><Check className="w-3 h-3" /> FE</span>;
+  if (status === 'emitting' || status === 'pending')
+    return <span className="badge bg-blue-50 text-blue-600">FE…</span>;
+  if (status === 'rejected')
+    return <span className="badge bg-rose-50 text-rose-600">FE ✗</span>;
+  if (paid) return <span className="badge bg-slate-100 text-slate-400">sin FE</span>;
+  return null;
+}
+
 function InvoiceModal({ invoice, customer, onClose, onPay }) {
   const [lines, setLines] = useState([]);
   const [loading, setLoading] = useState(true);

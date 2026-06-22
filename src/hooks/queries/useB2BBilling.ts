@@ -37,6 +37,8 @@ export interface B2BInvoice {
   notes: string | null;
   created_at: string;
   paid_at: string | null;
+  /** Status of the consolidated factura electrónica (doc_type 01), if any. */
+  efactura_status?: string | null;
 }
 
 const displayNo = (o: { order_number: number; legacy_order_number: string | null }) =>
@@ -191,15 +193,22 @@ export async function generateB2BInvoice(args: {
   return invoice as B2BInvoice;
 }
 
-/** A customer's consolidated invoices (most recent first). */
+/** A customer's consolidated invoices (most recent first), each with its
+ *  factura electrónica status (doc_type 01) when one exists. */
 export async function fetchB2BInvoices(customerId: string): Promise<B2BInvoice[]> {
   const { data, error } = await supabase
     .from('b2b_invoices')
-    .select('*')
+    .select('*, electronic_invoices(status, doc_type, created_at)')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data as B2BInvoice[]) || [];
+  return ((data as any[]) || []).map((inv) => {
+    const fe = (inv.electronic_invoices || [])
+      .filter((e: any) => e.doc_type === '01')
+      .sort((a: any, b: any) => (a.created_at < b.created_at ? 1 : -1))[0];
+    const { electronic_invoices, ...rest } = inv;
+    return { ...rest, efactura_status: fe?.status || null } as B2BInvoice;
+  });
 }
 
 /** The orders that make up an invoice (its line items). */
