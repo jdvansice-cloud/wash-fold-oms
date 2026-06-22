@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  Menu, Search, Gift, User, Settings, LogOut, 
-  ClipboardList, BarChart3, FileText, Key
+import {
+  Menu, Search, Gift, User, Settings, LogOut,
+  ClipboardList, BarChart3, FileText, Key, Clock, Loader2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../hooks/useTenant';
+import { useOpenTimeEntry, useClockToggle, workedMinutes } from '../hooks/queries/useTimeClock';
 import StoreSwitcher from './StoreSwitcher';
 
 function Header() {
@@ -30,8 +31,13 @@ function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const { company, slug } = useTenant();
+  const { company, slug, activeStore } = useTenant();
   const p = (path) => `/app/${slug}${path}`;
+
+  // Real-time attendance (clock in/out) for the signed-in staff member.
+  const { data: openEntry } = useOpenTimeEntry(appUser?.id);
+  const clockToggle = useClockToggle(appUser?.id, activeStore?.id || state.store?.id);
+  const clockedIn = !!openEntry;
 
   const handleLogout = async () => {
     setUserMenuOpen(false);
@@ -139,7 +145,37 @@ function Header() {
                     <p className="text-xs text-slate-500">{roleLabels[displayRole] || displayRole}</p>
                     <p className="text-xs text-slate-400 mt-1">{user?.email}</p>
                   </div>
-                  
+
+                  {/* Clock in / out (real-time attendance) */}
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <button
+                      onClick={() => clockToggle.mutate(openEntry || null)}
+                      disabled={clockToggle.isPending}
+                      className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-60 ${
+                        clockedIn
+                          ? 'bg-error-50 text-error-600 hover:bg-error-100'
+                          : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {clockToggle.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Clock className="w-4 h-4" />
+                      )}
+                      {clockedIn ? 'Marcar Salida' : 'Marcar Entrada'}
+                    </button>
+                    {clockedIn && (
+                      <p className="text-xs text-slate-400 text-center mt-1.5">
+                        Entrada{' '}
+                        {new Date(openEntry.clock_in).toLocaleTimeString('es-PA', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}{' '}
+                        · {Math.floor(workedMinutes(openEntry) / 60)}h {workedMinutes(openEntry) % 60}m
+                      </p>
+                    )}
+                  </div>
+
                   {/* Menu Items */}
                   <div className="py-1">
                     <Link 
