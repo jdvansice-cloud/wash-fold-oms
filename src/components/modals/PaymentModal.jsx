@@ -11,7 +11,7 @@ import {
 } from '../../utils/payment';
 
 // Quick-add cash denominations (Balboa / USD), largest first.
-const DENOMS = [100, 50, 20, 10, 5, 1, 0.25, 0.1];
+const DENOMS = [100, 50, 20, 10, 5, 1, 0.5, 0.25];
 
 const DEFAULT_METHODS = [
   { id: 'default-cash', name: 'Efectivo', payment_type: 'cash' },
@@ -108,7 +108,7 @@ function PaymentModal({
   function addCashPartial() {
     const applied = capAmount(cashTendered, remaining);
     if (applied <= 0) return;
-    addTender({ method: 'cash', methodName: selected.name, type: 'cash', amount: applied, changeGiven: 0 });
+    addTender({ method: 'cash', methodName: selected.name, type: 'cash', amount: applied, changeGiven: 0, note: note.trim() || undefined });
   }
 
   // --- Card / Other (generic amount) ---
@@ -200,6 +200,18 @@ function PaymentModal({
     });
   }
 
+  // A partial amount pending in the active form — surfaced as a pinned action
+  // in the footer so "Agregar al ticket" is always visible.
+  const pendingAdd = cashPartial
+    ? { amount: cash.applied, fn: addCashPartial }
+    : amtPartial
+      ? { amount: amtApplied, fn: addAmount }
+      : gcPartial
+        ? { amount: gcAppliedCap, fn: addGift }
+        : loyaltyPartial
+          ? { amount: loyaltyApplied, fn: addLoyalty }
+          : null;
+
   // --- Completion ---
   const canComplete =
     (remaining === 0 && tenders.length > 0) || cashFull || amtFull || gcFull || loyaltyFull;
@@ -207,7 +219,7 @@ function PaymentModal({
   function complete() {
     let finalTenders = [...tenders];
     if (cashFull) {
-      finalTenders.push(buildCashTender(selected.name, remaining, Number(cashTendered) || 0));
+      finalTenders.push({ ...buildCashTender(selected.name, remaining, Number(cashTendered) || 0), note: note.trim() || undefined });
     } else if (amtFull && selected) {
       finalTenders.push({
         method: selected.payment_type === 'cash' ? 'cash' : selected.name,
@@ -393,14 +405,12 @@ function PaymentModal({
                     <p className="text-xs uppercase tracking-wide text-slate-400">Cambio</p>
                     <p className="text-3xl font-bold text-emerald-600">{fmt(cash.change)}</p>
                   </div>
-                  {cashPartial && (
-                    <button onClick={addCashPartial} className="btn-primary w-full mt-3">
-                      Agregar {fmt(cash.applied)} al ticket
-                    </button>
-                  )}
-                  {cashFull && (
-                    <p className="mt-3 text-center text-xs text-slate-400">Presiona “Cobrar” abajo para completar.</p>
-                  )}
+                  <input
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Nota (opcional)"
+                    className="input mt-3"
+                  />
                 </div>
               )}
 
@@ -430,11 +440,6 @@ function PaymentModal({
                     placeholder="Ej. 123456"
                     className="input"
                   />
-                  {amtPartial && (
-                    <button onClick={addAmount} className="btn-primary w-full mt-3">
-                      Agregar {fmt(amtApplied)} al ticket
-                    </button>
-                  )}
                   {amtFull && (
                     <p className="mt-3 text-center text-xs text-slate-400">Presiona “Cobrar” abajo para completar.</p>
                   )}
@@ -480,11 +485,6 @@ function PaymentModal({
                           className="input pl-10"
                         />
                       </div>
-                      {gcPartial && (
-                        <button onClick={addGift} className="btn-primary w-full mt-3">
-                          Agregar {fmt(gcAppliedCap)} al ticket
-                        </button>
-                      )}
                       {gcFull && (
                         <p className="mt-3 text-center text-xs text-slate-400">Presiona “Cobrar” abajo para completar.</p>
                       )}
@@ -514,11 +514,6 @@ function PaymentModal({
                   {!loyaltyOk && (Number(amount) || 0) > 0 && (
                     <p className="mt-1 text-xs text-amber-600">El mínimo es {fmt(minRedemption)}</p>
                   )}
-                  {loyaltyPartial && (
-                    <button onClick={addLoyalty} className="btn-primary w-full mt-3">
-                      Agregar {fmt(loyaltyApplied)} al ticket
-                    </button>
-                  )}
                   {loyaltyFull && (
                     <p className="mt-3 text-center text-xs text-slate-400">Presiona “Cobrar” abajo para completar.</p>
                   )}
@@ -535,8 +530,14 @@ function PaymentModal({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex-shrink-0 border-t border-slate-100 p-4">
+        {/* Footer — always visible. Shows the partial "add to ticket" action
+            (pinned) plus the primary complete button. */}
+        <div className="flex-shrink-0 border-t border-slate-100 p-4 space-y-2">
+          {pendingAdd && (
+            <button onClick={pendingAdd.fn} className="btn-secondary w-full py-3 font-medium">
+              Agregar {fmt(pendingAdd.amount)} al ticket
+            </button>
+          )}
           <button onClick={complete} disabled={!canComplete || processing} className="btn-primary w-full py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed">
             {processing ? 'Procesando…' : canComplete ? `Cobrar ${fmt(total)}` : `Faltan ${fmt(remaining)}`}
           </button>
