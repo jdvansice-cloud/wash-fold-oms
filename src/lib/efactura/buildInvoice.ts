@@ -25,7 +25,7 @@ import {
   mapPaymentForma,
   type DocType,
 } from './constants.js';
-import { distributeCents, fromCents, round2, toCents } from './money.js';
+import { distributeCents, fromCents, round6, toCents } from './money.js';
 import type {
   InformacionReceptor,
   InvoiceRequest,
@@ -253,9 +253,12 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
           }
         : {}),
       grupoPrecios: {
-        precioUnitarioTransferencia: round2(it.unitPrice),
+        // Derive the unit price from the gross line so that
+        // precioUnitario × cantidad === the line total. The stored unit_price is
+        // per-kg for weight items (cantidad 1), which would fail DGI rule 2053.
+        precioUnitarioTransferencia: round6(fromCents(grossCents[i]) / it.quantity),
         ...(lineDiscountCents > 0
-          ? { descuento: round2(fromCents(lineDiscountCents) / it.quantity) }
+          ? { descuento: round6(fromCents(lineDiscountCents) / it.quantity) }
           : {}),
         precioItem: fromCents(netCents[i]),
         sumaPrecioItem: fromCents(sumaCents),

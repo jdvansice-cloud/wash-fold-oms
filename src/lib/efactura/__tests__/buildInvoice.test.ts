@@ -246,6 +246,28 @@ describe('buildInvoiceRequest — absorbs sub-cent rounding drift', () => {
   });
 });
 
+describe('buildInvoiceRequest — weight-priced line (cantidad = weight)', () => {
+  it('derives a per-kg unit price so DGI rule 2053 holds (order #3501 item)', () => {
+    // Lava y Dobla: 1.40 kg @ 2.34/kg = 3.28. cantidad is the weight, not bags.
+    const inv = buildInvoiceRequest({
+      order: { tax_amount: 0.23, total: 3.51 },
+      items: [line({ description: 'Lava y Dobla', quantity: 1.4, unitPrice: 2.34, lineTotal: 3.28 })],
+      config,
+      now: fixedNow,
+    });
+    const it0 = inv.listaItems[0];
+    expect(it0.cantidadProductoServicio).toBe(1.4);
+    // precioUnitario × cantidad reconstitutes the gross line.
+    expect(it0.grupoPrecios.precioUnitarioTransferencia * 1.4).toBeCloseTo(3.28, 2);
+    // DGI 2053: precioItem === (precioUnitario − descuento) × cantidad.
+    const desc = it0.grupoPrecios.descuento ?? 0;
+    expect(it0.grupoPrecios.precioItem).toBeCloseTo(
+      (it0.grupoPrecios.precioUnitarioTransferencia - desc) * it0.cantidadProductoServicio,
+      2,
+    );
+  });
+});
+
 describe('buildInvoiceRequest — guards', () => {
   it('throws when items do not reconcile to order.total', () => {
     expect(() =>

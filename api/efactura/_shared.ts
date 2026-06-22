@@ -128,6 +128,7 @@ interface OrderItemRow {
   quantity: number;
   unit_price: number;
   line_total: number;
+  total_weight: number | null;
 }
 interface PaymentRow {
   payment_method: string;
@@ -162,16 +163,17 @@ export async function buildPayloadForOrder(
   const items = o.order_items || [];
   const productIds = [...new Set(items.map((i) => i.product_id).filter(Boolean))] as string[];
 
-  const productMeta = new Map<string, { is_taxable: boolean; product_type: string; cpbs_code: number | null; cpbs_code_short: number | null; sku: string | null }>();
+  const productMeta = new Map<string, { is_taxable: boolean; product_type: string; pricing_type: string; cpbs_code: number | null; cpbs_code_short: number | null; sku: string | null }>();
   if (productIds.length) {
     const { data: products } = await admin
       .from('products')
-      .select('id, is_taxable, product_type, cpbs_code, cpbs_code_short, sku')
+      .select('id, is_taxable, product_type, pricing_type, cpbs_code, cpbs_code_short, sku')
       .in('id', productIds);
     for (const p of products || []) {
       productMeta.set(p.id, {
         is_taxable: p.is_taxable !== false,
         product_type: p.product_type || 'service',
+        pricing_type: p.pricing_type || 'quantity',
         cpbs_code: p.cpbs_code ?? null,
         cpbs_code_short: p.cpbs_code_short ?? null,
         sku: p.sku || null,
@@ -203,10 +205,15 @@ export async function buildPayloadForOrder(
 
   const lines: EInvoiceLine[] = productItems.map((i) => {
     const meta = i.product_id ? productMeta.get(i.product_id) : undefined;
+    // For weight-priced products the DGI quantity is the weight (e.g. 1.40 kg),
+    // not the number of bags. precioUnitario is then the per-unit (per-kg) rate
+    // derived by the builder as lineTotal / cantidad.
+    const isWeight = meta?.pricing_type === 'weight' && (i.total_weight ?? 0) > 0;
+    const cantidad = isWeight ? abs(i.total_weight as number) : abs(i.quantity);
     return {
       description: i.product_name || 'Producto/Servicio',
       internalCode: internalCodeFor(i),
-      quantity: abs(i.quantity),
+      quantity: cantidad,
       unitPrice: abs(i.unit_price),
       lineTotal: abs(i.line_total ?? i.unit_price * i.quantity),
       isTaxable: meta ? meta.is_taxable : true,
