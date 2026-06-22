@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 import { InvoiceStatus } from '../components/efactura/InvoiceStatus';
+import PaymentModal from '../components/modals/PaymentModal';
 
 // Helper to get date X days ago in YYYY-MM-DD format
 const getDateDaysAgo = (days) => {
@@ -53,7 +54,8 @@ const getOrderDisplayNumber = (order) => {
 function OrdersPage() {
   const { state, actions } = useApp();
   const { isAdmin } = useAuth();
-  const { updateOrderStatus: dbUpdateOrderStatus, getOrderDetails, createRefund, reload, searchOrders, loadMoreOrders } = useDataLoader();
+  const { updateOrderStatus: dbUpdateOrderStatus, settleOrder, getOrderDetails, createRefund, reload, searchOrders, loadMoreOrders } = useDataLoader();
+  const [settlingOrder, setSettlingOrder] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedOrder, setSelectedOrder] = useState(null);
@@ -402,6 +404,11 @@ function OrdersPage() {
                       {order.status === 'refund' && (
                         <RotateCcw className="w-4 h-4 text-rose-500" />
                       )}
+                      {order.payment_status === 'unpaid' && (
+                        <span className="badge bg-amber-100 text-amber-700 text-xs inline-flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Pendiente
+                        </span>
+                      )}
                     </div>
                     {originalOrder && (
                       <p className="text-xs text-rose-500 mt-0.5">
@@ -493,6 +500,7 @@ function OrdersPage() {
               alert('Error al actualizar estado: ' + err.message);
             }
           }}
+          onSettle={() => setSettlingOrder(selectedOrder)}
           onRefund={async (reason) => {
             try {
               const refundOrder = await createRefund(orderDetails, reason);
@@ -507,18 +515,43 @@ function OrdersPage() {
           }}
         />
       )}
+
+      {/* Settle an unpaid (pay-on-pickup) order: reuse the checkout payment
+          screen bound to this order. On completion it's marked paid + invoiced. */}
+      {settlingOrder && (
+        <PaymentModal
+          total={settlingOrder.total}
+          subtotal={settlingOrder.subtotal}
+          taxAmount={settlingOrder.tax_amount}
+          paymentMethods={(state.paymentMethods || []).filter((m) => m.is_active)}
+          storeId={state.store?.id}
+          allowPickup={false}
+          onClose={() => setSettlingOrder(null)}
+          onComplete={async (paymentInfo) => {
+            try {
+              await settleOrder(settlingOrder.id, paymentInfo);
+              setSelectedOrder((o) => (o ? { ...o, payment_status: 'paid' } : o));
+              setSettlingOrder(null);
+            } catch (err) {
+              alert('Error al cobrar la orden: ' + err.message);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // Order Details Modal
-function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOrders, onClose, onStatusChange, onRefund }) {
+function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOrders, onClose, onStatusChange, onSettle, onRefund }) {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [processingRefund, setProcessingRefund] = useState(false);
-  
+
   const formatCurrency = (amount) => `B/${(amount || 0).toFixed(2)}`;
   const config = statusConfig[order.status] || statusConfig.pending;
+  // Pay-on-pickup orders are unpaid until settled; they can't be handed over.
+  const isUnpaid = order.payment_status === 'unpaid';
   
   const statusOrder = ['pending', 'washing', 'drying', 'folding', 'ready', 'completed'];
   const currentStatusIndex = statusOrder.indexOf(order.status);
@@ -561,6 +594,11 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
               </span>
               {order.is_express && (
                 <span className="badge bg-warning-100 text-warning-700">Express</span>
+              )}
+              {isUnpaid && (
+                <span className="badge bg-amber-100 text-amber-700 inline-flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Pendiente de pago
+                </span>
               )}
             </div>
             <p className="text-sm text-slate-500">{order.customer_name}</p>
@@ -838,8 +876,21 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
               </button>
             )}
             
-            {nextStatus && order.status !== 'refunded' && order.status !== 'refund' && (
-              <button 
+            {/* Unpaid (pay-on-pickup): must be cobrado before it can be handed
+                to the customer. Offer "Cobrar" instead of advancing to entrega. */}
+            {isUnpaid && order.status !== 'refunded' && order.status !== 'refund' && (
+              <button
+                onClick={onSettle}
+                className="btn-primary flex-1 bg-amber-500 hover:bg-amber-600"
+              >
+                <CreditCard className="w-4 h-4" />
+                Cobrar {formatCurrency(order.total)}
+              </button>
+            )}
+
+            {nextStatus && order.status !== 'refunded' && order.status !== 'refund'
+              && !(nextStatus === 'completed' && isUnpaid) && (
+              <button
                 onClick={() => onStatusChange(nextStatus)}
                 className="btn-primary flex-1"
               >

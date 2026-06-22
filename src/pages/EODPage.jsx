@@ -171,6 +171,26 @@ function EODPage() {
     loadPaymentBreakdown();
   }, [dailyStats.orders, state.store?.id, selectedDate]);
   
+  // Money actually collected = the recorded payments. Pay-on-pickup orders are
+  // unpaid (no payment rows), so they never appear here; their total is shown
+  // separately as pending and must NOT count toward the close.
+  const collectedEntries = useMemo(
+    () => Object.entries(paymentBreakdown),
+    [paymentBreakdown],
+  );
+  const totalCollected = useMemo(
+    () => collectedEntries.reduce((a, [, amount]) => a + amount, 0),
+    [collectedEntries],
+  );
+  // Pending = unpaid orders created on this day (will be collected at pickup).
+  const pendingTotal = useMemo(
+    () =>
+      dailyStats.orders
+        .filter((o) => o.payment_status === 'unpaid')
+        .reduce((s, o) => s + Math.abs(o.total || 0), 0),
+    [dailyStats.orders],
+  );
+
   // Expected cash = starting cash + cash sales - cash refunds
   const expectedCash = useMemo(() => {
     const cashSales = paymentBreakdown['Efectivo'] || paymentBreakdown['Cash'] || 0;
@@ -435,11 +455,11 @@ function EODPage() {
               <h2 className="font-semibold text-slate-800">Desglose de Pagos</h2>
             </div>
             <div className="p-5">
-              {Object.keys(paymentBreakdown).length === 0 ? (
+              {totalCollected === 0 && pendingTotal === 0 ? (
                 <p className="text-slate-500 text-center py-4">No hay pagos registrados para esta fecha</p>
               ) : (
                 <div className="space-y-3">
-                  {Object.entries(paymentBreakdown)
+                  {collectedEntries
                     .filter(([_, amount]) => amount > 0)
                     .sort((a, b) => b[1] - a[1])
                     .map(([method, amount]) => (
@@ -474,9 +494,20 @@ function EODPage() {
                   <div className="flex items-center justify-between pt-3 border-t border-slate-200">
                     <span className="font-semibold text-slate-700">Total Cobrado</span>
                     <span className="font-bold text-lg text-primary-600">
-                      {formatCurrency(Object.values(paymentBreakdown).reduce((a, b) => a + b, 0))}
+                      {formatCurrency(totalCollected)}
                     </span>
                   </div>
+
+                  {/* Pay-on-pickup — deferred, not collected */}
+                  {pendingTotal > 0 && (
+                    <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2 font-medium text-amber-700">
+                        <Clock className="w-4 h-4" />
+                        Pendiente (pagar al recoger)
+                      </span>
+                      <span className="font-semibold text-amber-700">{formatCurrency(pendingTotal)}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Banknote, CreditCard, Gift, Award, Wallet, X } from 'lucide-react';
+import { Banknote, CreditCard, Gift, Award, Wallet, Clock, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
   sumApplied,
@@ -35,6 +35,7 @@ function PaymentModal({
   customerLoyalty = null,
   loyaltySettings = null,
   freeServicesApplied = null,
+  allowPickup = true,
   onClose,
   onComplete,
 }) {
@@ -56,6 +57,7 @@ function PaymentModal({
   const paid = sumApplied(tenders);
   const remaining = remainingDue(total, tenders);
   const change = totalChange(tenders);
+  const hasPickup = tenders.some((t) => t.type === 'pickup');
 
   // Available methods: configured (or a sane default), then built-ins.
   const methods = paymentMethods.length ? paymentMethods : DEFAULT_METHODS;
@@ -125,6 +127,22 @@ function PaymentModal({
       type: selected.payment_type,
       amount: amtApplied,
       reference: reference.trim() || undefined,
+    });
+  }
+
+  // --- Pay on pickup (deferred) ---
+  // An EXCLUSIVE term: the whole sale is pay-on-pickup or it isn't. It can't be
+  // combined with other tenders, the money is collected later (not now), and no
+  // electronic invoice is emitted at checkout. Modeled as a single tender for
+  // the full total so the order records what's pending under this term.
+  const isPickup = selected?.payment_type === 'pickup';
+
+  function addPickup() {
+    addTender({
+      method: selected.name,
+      methodName: selected.name,
+      type: 'pickup',
+      amount: total,
     });
   }
 
@@ -249,6 +267,19 @@ function PaymentModal({
     }
 
     setProcessing(true);
+    // Pay-on-pickup is an UNPAID order: nothing is collected now and no payment
+    // rows are recorded — just the order itself, marked unpaid.
+    if (hasPickup) {
+      onComplete({
+        payments: [],
+        totalPaid: 0,
+        change: 0,
+        payOnPickup: true,
+        timestamp: new Date().toISOString(),
+        freeServicesApplied,
+      });
+      return;
+    }
     onComplete({
       payments: finalTenders,
       totalPaid: sumApplied(finalTenders),
@@ -263,18 +294,22 @@ function PaymentModal({
     : m.special === 'loyalty' ? Award
     : m.payment_type === 'cash' ? Banknote
     : m.payment_type === 'card' ? CreditCard
+    : m.payment_type === 'pickup' ? Clock
     : Wallet;
 
   const gridMethods = useMemo(() => {
-    const list = methods.map((m) => ({
-      ...m,
-      payment_type: m.payment_type || 'other',
-      key: m.id || m.name,
-    }));
+    const list = methods
+      // In settle mode (paying an existing order) pay-on-pickup isn't offerable.
+      .filter((m) => allowPickup || m.payment_type !== 'pickup')
+      .map((m) => ({
+        ...m,
+        payment_type: m.payment_type || 'other',
+        key: m.id || m.name,
+      }));
     list.push({ key: 'gift_card', name: 'Tarjeta Regalo', special: 'gift_card' });
     if (canUseLoyalty) list.push({ key: 'loyalty', name: 'Puntos de Lealtad', special: 'loyalty' });
     return list;
-  }, [methods, canUseLoyalty]);
+  }, [methods, canUseLoyalty, allowPickup]);
 
   const isSelected = (m) => selected && (selected.key === m.key);
 
@@ -322,6 +357,7 @@ function PaymentModal({
                 <div key={i} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                   <span className="text-sm font-medium text-slate-700">
                     {t.methodName}
+                    {t.type === 'pickup' ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">pendiente</span> : null}
                     {t.reference ? <span className="ml-2 text-xs text-slate-400">#{t.reference}</span> : null}
                     {(t.changeGiven ?? 0) > 0 ? <span className="ml-2 text-xs text-slate-400">cambio {fmt(t.changeGiven)}</span> : null}
                   </span>
@@ -347,15 +383,19 @@ function PaymentModal({
               <div className="mb-4 grid grid-cols-3 gap-2">
                 {gridMethods.map((m) => {
                   const Icon = iconFor(m);
+                  // Pay-on-pickup is exclusive: only offerable as the sole term.
+                  const disabled = m.payment_type === 'pickup' && tenders.length > 0;
                   return (
                     <button
                       key={m.key}
                       onClick={() => selectMethod(m)}
+                      disabled={disabled}
+                      title={disabled ? 'Pagar al recoger debe ser el único pago de la transacción' : undefined}
                       className={`flex flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
                         isSelected(m)
                           ? 'border-primary-500 bg-primary-50 text-primary-700'
                           : 'border-slate-200 text-slate-600 hover:border-primary-300'
-                      }`}
+                      } ${disabled ? 'opacity-40 cursor-not-allowed hover:border-slate-200' : ''}`}
                     >
                       <Icon className="w-5 h-5" />
                       <span className="text-xs text-center leading-tight">{m.name}</span>
@@ -446,6 +486,25 @@ function PaymentModal({
                 </div>
               )}
 
+              {/* Pay on pickup (deferred) */}
+              {isPickup && (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
+                  <div className="flex items-start gap-3">
+                    <Clock className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
+                    <div className="text-sm text-amber-800">
+                      <p className="font-medium">Pago al recoger</p>
+                      <p className="mt-1 text-amber-700">
+                        El cliente pagará al retirar la orden. No se cobra ahora, no se emite
+                        factura y el monto queda <span className="font-semibold">pendiente</span>.
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={addPickup} className="btn-primary mt-4 w-full py-3">
+                    Marcar {fmt(total)} como pendiente
+                  </button>
+                </div>
+              )}
+
               {/* Gift card */}
               {isGift && (
                 <div className="rounded-xl bg-slate-50 p-4">
@@ -523,10 +582,16 @@ function PaymentModal({
           )}
 
           {remaining === 0 && tenders.length > 0 && (
-            <div className="rounded-xl bg-emerald-50 p-4 text-center">
-              <p className="text-sm text-emerald-700">Pago completo.</p>
-              {change > 0 && <p className="mt-1 text-2xl font-bold text-emerald-600">Cambio {fmt(change)}</p>}
-            </div>
+            hasPickup ? (
+              <div className="rounded-xl bg-amber-50 p-4 text-center">
+                <p className="text-sm text-amber-700">Pago al recoger — pendiente de cobro.</p>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-emerald-50 p-4 text-center">
+                <p className="text-sm text-emerald-700">Pago completo.</p>
+                {change > 0 && <p className="mt-1 text-2xl font-bold text-emerald-600">Cambio {fmt(change)}</p>}
+              </div>
+            )
           )}
         </div>
 
@@ -539,7 +604,7 @@ function PaymentModal({
             </button>
           )}
           <button onClick={complete} disabled={!canComplete || processing} className="btn-primary w-full py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed">
-            {processing ? 'Procesando…' : canComplete ? `Cobrar ${fmt(total)}` : `Faltan ${fmt(remaining)}`}
+            {processing ? 'Procesando…' : !canComplete ? `Faltan ${fmt(remaining)}` : hasPickup ? `Registrar orden — ${fmt(total)} pendiente` : `Cobrar ${fmt(total)}`}
           </button>
         </div>
       </div>

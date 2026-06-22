@@ -1668,6 +1668,10 @@ function TicketPanel() {
                 payments: paymentInfo.payments, // Now an array of payments
                 total_paid: paymentInfo.totalPaid,
                 change_given: paymentInfo.change,
+                // Pay-on-pickup creates an UNPAID order: no money collected, no
+                // payment rows, no invoice. It's settled (paid + invoiced) when
+                // the customer picks up — and staff can't hand items over until then.
+                payment_status: paymentInfo.payOnPickup ? 'unpaid' : 'paid',
               };
               
               const newOrder = await dbAddOrder(orderData);
