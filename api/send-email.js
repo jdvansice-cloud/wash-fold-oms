@@ -15,11 +15,12 @@ export default async function handler(req, res) {
   }
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Prefer the new secret key (sb_secret_…); fall back to the legacy service-role key.
+  const serviceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({
-      error: 'Server misconfigured: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.',
+      error: 'Server misconfigured: SUPABASE_URL and SUPABASE_SECRET_KEY are required.',
     });
   }
 

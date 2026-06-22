@@ -6,7 +6,7 @@ const AuthContext = createContext(null);
 // Raw fetch helper for user lookup
 const fetchAppUser = async (authId, email) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key) return null;
   

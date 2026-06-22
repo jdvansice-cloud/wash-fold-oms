@@ -90,7 +90,7 @@ function OrgSearchModal({ open, onClose }: { open: boolean; onClose: () => void 
     setSearching(true);
     try {
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
       if (!url || !key) {
         console.error('Missing Supabase config for org search');
         setResults([]);

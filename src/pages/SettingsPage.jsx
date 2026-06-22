@@ -4583,7 +4583,7 @@ function LoyaltySettings() {
   // Raw fetch helper
   const supabaseFetch = async (table, options = {}) => {
     const url = import.meta.env.SUPABASE_URL;
-    const key = import.meta.env.SUPABASE_ANON_KEY;
+    const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
     
     if (!url || !key) return { data: null, error: { message: 'Missing config' } };
     
@@ -4659,7 +4659,7 @@ function LoyaltySettings() {
     
     try {
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
       const storeId = state.store?.id;
       
       const settingsData = {

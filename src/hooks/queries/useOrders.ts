@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+import { sanitizeSearchTerm } from '@/lib/validation';
 import type { Order, OrderWithDetails, OrderStatus, CreateOrderInput } from '@/types';
 
 // --- Queries ---
@@ -47,12 +48,16 @@ async function fetchOrderDetails(orderId: string): Promise<OrderWithDetails> {
 }
 
 async function searchOrders(storeId: string, query: string): Promise<Order[]> {
-  // Search by order number or customer name
+  // Sanitize before interpolating into the PostgREST .or() filter (injection).
+  const q = sanitizeSearchTerm(query);
+  if (!q) return [];
+  const conditions = [`customer_name.ilike.%${q}%`, `legacy_order_number.ilike.%${q}%`];
+  if (/^\d+$/.test(q)) conditions.unshift(`order_number.eq.${q}`);
   const { data, error } = await supabase
     .from('orders')
     .select('*')
     .eq('store_id', storeId)
-    .or(`order_number.eq.${query},customer_name.ilike.%${query}%,legacy_order_number.ilike.%${query}%`)
+    .or(conditions.join(','))
     .order('created_at', { ascending: false })
     .limit(100);
 

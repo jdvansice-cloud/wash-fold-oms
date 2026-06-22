@@ -83,7 +83,7 @@ async function lookupStaff(
   accessToken: string,
 ): Promise<StaffProfile | null> {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return null;
 
   const headers = restHeaders(accessToken, key);
@@ -124,7 +124,7 @@ async function lookupCustomer(
   accessToken: string,
 ): Promise<CustomerProfile | null> {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || !authId) return null;
 
   const headers = restHeaders(accessToken, key);

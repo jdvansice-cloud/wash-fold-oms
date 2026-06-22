@@ -1,3 +1,14 @@
+-- ============================================================
+-- ⚠️  SUPERSEDED MIGRATION — DO NOT APPLY  ⚠️
+-- This file disables RLS or uses USING(true) / GRANT ALL TO anon and would
+-- RE-OPEN cross-tenant access. Kept for history only. The single source of
+-- truth for RLS is supabase-fix-rls-tenant-isolation.sql.
+-- The guard below aborts the script if it is pasted into the SQL editor.
+-- ============================================================
+DO $$ BEGIN
+  RAISE EXCEPTION 'SUPERSEDED RLS migration — do not apply. Use supabase-fix-rls-tenant-isolation.sql.';
+END $$;
+
 -- =============================================
 -- Fix RLS Policies for American Laundry OMS
 -- Run this ENTIRE script in Supabase SQL Editor

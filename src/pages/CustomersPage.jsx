@@ -18,7 +18,7 @@ const getOrderDisplayNumber = (order) => {
 // Helper to fetch customer loyalty data
 const fetchCustomerLoyalty = async (customerId) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !customerId) return null;
   
@@ -42,7 +42,7 @@ const fetchCustomerLoyalty = async (customerId) => {
 // Helper to fetch loyalty settings
 const fetchLoyaltySettings = async (storeId) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !storeId) return null;
   
@@ -311,7 +311,7 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders: initialOrders
       setLoadingOrders(true);
       try {
         const url = import.meta.env.SUPABASE_URL;
-        const key = import.meta.env.SUPABASE_ANON_KEY;
+        const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
         
         if (!url || !key || !customer.id) {
           setCustomerOrders(initialOrders || []);

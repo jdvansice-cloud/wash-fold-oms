@@ -101,7 +101,7 @@ function AnalyticsPage() {
       setLoadingCompare(true);
       try {
         const url = import.meta.env.SUPABASE_URL;
-        const key = import.meta.env.SUPABASE_ANON_KEY;
+        const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
         
         if (!url || !key) {
           setCompareOrdersFromDB([]);

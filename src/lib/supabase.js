@@ -2,7 +2,10 @@ import { createClient } from '@supabase/supabase-js'
 
 // Environment variables are exposed via vite.config.js
 const supabaseUrl = import.meta.env.SUPABASE_URL
-const supabaseKey = import.meta.env.SUPABASE_ANON_KEY
+// Browser client key — resolves to the new publishable key (sb_publishable_…)
+// when set, otherwise the legacy anon key (fallback handled in vite.config.js).
+// Always an RLS-scoped key — never a secret key.
+const supabaseKey = import.meta.env.SUPABASE_PUBLISHABLE_KEY
 
 if (!supabaseUrl || !supabaseKey) {
   console.error('Missing Supabase environment variables!')
