@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Plus, X, User, Zap, ChevronDown, ChevronUp, 
+  Plus, X, User, Zap, ChevronDown, ChevronUp,
   Trash2, Tag, Truck, MessageSquare, AlertCircle,
-  Award, Coins, Stamp, Gift
+  Award, Coins, Stamp, Gift, RotateCcw, Save
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
@@ -907,9 +907,64 @@ function TicketPanel() {
   
   // Require both items AND customer confirmation to process
   const canProcess = ticket.items.length > 0 && ticket.customerConfirmed;
-  
+
+  // --- Park / hold + recall ONE ticket (per store, localStorage) ---
+  const heldKey = `held-ticket-${state.store?.id || 'default'}`;
+  const [heldTicket, setHeldTicket] = useState(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(heldKey);
+      setHeldTicket(raw ? JSON.parse(raw) : null);
+    } catch {
+      setHeldTicket(null);
+    }
+  }, [heldKey]);
+
+  const parkTicket = () => {
+    if (ticket.items.length === 0) return;
+    try {
+      localStorage.setItem(heldKey, JSON.stringify(ticket));
+      setHeldTicket(ticket);
+    } catch (e) {
+      console.warn('Could not park ticket:', e);
+    }
+    actions.clearTicket();
+  };
+  const recallTicket = () => {
+    if (!heldTicket) return;
+    actions.restoreTicket(heldTicket);
+    localStorage.removeItem(heldKey);
+    setHeldTicket(null);
+  };
+  const discardHeld = () => {
+    localStorage.removeItem(heldKey);
+    setHeldTicket(null);
+  };
+  const heldCount = heldTicket?.items?.length || 0;
+  const lastCustomer = state.lastCustomer;
+
   return (
     <div className="ticket-sidebar h-full flex flex-col bg-white">
+      {/* Held-ticket recall banner */}
+      {heldTicket && ticket.items.length === 0 && (
+        <div className="m-3 mb-0 flex items-center justify-between gap-2 rounded-xl border border-primary-200 bg-primary-50 px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-primary-700">Ticket guardado</p>
+            <p className="text-xs text-primary-500 truncate">
+              {heldTicket.customer ? `${heldTicket.customer.first_name} ${heldTicket.customer.last_name || ''}` : 'Walk-in'} · {heldCount} artículo{heldCount === 1 ? '' : 's'}
+            </p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button onClick={recallTicket} className="px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm font-medium hover:bg-primary-600">
+              Retomar
+            </button>
+            <button onClick={discardHeld} className="p-1.5 rounded-lg text-primary-400 hover:bg-primary-100" title="Descartar">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Customer Selection */}
       <div className="p-4 border-b border-slate-100">
         <div className="flex items-center gap-2">
@@ -956,7 +1011,23 @@ function TicketPanel() {
             <Plus className="w-5 h-5" />
           </button>
         </div>
-        
+
+        {/* Last customer quick re-select */}
+        {lastCustomer && ticket.customer?.id !== lastCustomer.id && (
+          <button
+            onClick={() => actions.setCustomer(lastCustomer)}
+            className="mt-2 w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-left transition-colors"
+          >
+            <RotateCcw className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-sm text-slate-600 truncate">
+              Último:{' '}
+              <span className="font-medium text-slate-700">
+                {lastCustomer.first_name} {lastCustomer.last_name || ''}
+              </span>
+            </span>
+          </button>
+        )}
+
         {/* Express Toggle */}
         <div className="flex items-center mt-3">
           <label className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg cursor-pointer">
@@ -1501,6 +1572,18 @@ function TicketPanel() {
           </div>
         )}
         
+        {/* Park ticket for later (one held ticket per store) */}
+        {ticket.items.length > 0 && (
+          <button
+            onClick={parkTicket}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-medium transition-colors"
+            title={heldTicket ? 'Reemplaza el ticket guardado actual' : 'Guarda el ticket para retomarlo después'}
+          >
+            <Save className="w-4 h-4" />
+            Guardar para después
+          </button>
+        )}
+
         {/* Process Button - Always Visible */}
         <button
           onClick={() => setPaymentModalOpen(true)}
