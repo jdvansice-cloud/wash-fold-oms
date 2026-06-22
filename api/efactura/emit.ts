@@ -27,10 +27,19 @@ export default async function handler(req: any, res: any) {
     const { order_id, doc_type = '01', referenced_cufe } = req.body || {};
     if (!order_id) throw new HttpError(400, 'Missing order_id');
 
-    // Gracefully no-op when the company hasn't enabled E-Factura.
+    // Verify the order belongs to this company before touching the PAC.
+    const { data: order } = await admin
+      .from('orders')
+      .select('store_id')
+      .eq('id', order_id)
+      .maybeSingle();
+    if (!order) throw new HttpError(404, 'Order not found');
+    await assertStoreInCompany(admin, order.store_id, companyId);
+
+    // Load the store's E-Factura config; no-op cleanly when not configured/enabled.
     let config;
     try {
-      config = await loadEfacturaConfig(admin, companyId);
+      config = await loadEfacturaConfig(admin, { storeId: order.store_id, companyId });
     } catch (e) {
       if (e instanceof HttpError && e.status === 400) {
         return res.status(200).json({ success: true, skipped: true, reason: 'not configured' });
@@ -40,15 +49,6 @@ export default async function handler(req: any, res: any) {
     if (!config.enabled) {
       return res.status(200).json({ success: true, skipped: true, reason: 'disabled' });
     }
-
-    // Verify the order belongs to this company before touching the PAC.
-    const { data: order } = await admin
-      .from('orders')
-      .select('store_id')
-      .eq('id', order_id)
-      .maybeSingle();
-    if (!order) throw new HttpError(404, 'Order not found');
-    await assertStoreInCompany(admin, order.store_id, companyId);
 
     // Idempotency: reuse the existing active row; return an authorized one as-is.
     const { data: existing } = await admin

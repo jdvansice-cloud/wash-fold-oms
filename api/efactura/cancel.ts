@@ -19,7 +19,6 @@ export default async function handler(req: any, res: any) {
   try {
     const admin = getAdmin();
     const { companyId } = await authenticateStaff(admin, req);
-    const config = await loadEfacturaConfig(admin, companyId);
 
     const { invoice_id, cufe, reason } = req.body || {};
     if (!invoice_id && !cufe) throw new HttpError(400, 'Provide invoice_id or cufe');
@@ -36,6 +35,8 @@ export default async function handler(req: any, res: any) {
     if (invoice.status !== 'authorized') {
       throw new HttpError(409, `Only authorized invoices can be cancelled (status: ${invoice.status})`);
     }
+
+    const config = await loadEfacturaConfig(admin, { storeId: invoice.store_id, companyId });
 
     const pacRes = await pacRequest(config, '/InvoiceEvents/CreateCancellation', {
       method: 'POST',
