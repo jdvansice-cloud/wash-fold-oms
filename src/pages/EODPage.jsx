@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useFeature } from '../hooks/useFeature';
 import { supabase } from '../lib/supabase';
 import EFacturaReconciliation from '../components/efactura/EFacturaReconciliation';
+import AttendanceCard from '../components/AttendanceCard';
 
 function EODPage() {
   const { state } = useApp();
@@ -72,11 +73,11 @@ function EODPage() {
   
   // Calculate daily stats from orders
   const dailyStats = useMemo(() => {
-    const dateStart = new Date(selectedDate);
-    dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(selectedDate);
-    dateEnd.setHours(23, 59, 59, 999);
-    
+    // Local (wall-clock) day bounds. `new Date('YYYY-MM-DD')` parses as UTC and
+    // shifts the day in -05:00, so build from the local-time string instead.
+    const dateStart = new Date(`${selectedDate}T00:00:00`);
+    const dateEnd = new Date(`${selectedDate}T23:59:59.999`);
+
     // Filter orders for selected date
     const dayOrders = state.orders.filter(order => {
       const orderDate = new Date(order.created_at);
@@ -131,11 +132,9 @@ function EODPage() {
     const loadPaymentBreakdown = async () => {
       if (!state.store?.id) return;
       
-      const dateStart = new Date(selectedDate);
-      dateStart.setHours(0, 0, 0, 0);
-      const dateEnd = new Date(selectedDate);
-      dateEnd.setHours(23, 59, 59, 999);
-      
+      const dateStart = new Date(`${selectedDate}T00:00:00`);
+      const dateEnd = new Date(`${selectedDate}T23:59:59.999`);
+
       try {
         // Get order IDs for the day
         const orderIds = dailyStats.orders.map(o => o.id);
@@ -487,6 +486,9 @@ function EODPage() {
           {hasInvoices && (
             <EFacturaReconciliation orders={dailyStats.orders} formatCurrency={formatCurrency} />
           )}
+
+          {/* Staff attendance (worked vs scheduled hours) */}
+          <AttendanceCard storeId={state.store?.id} selectedDate={selectedDate} />
         </div>
 
         {/* Right Column - Cash Reconciliation */}
