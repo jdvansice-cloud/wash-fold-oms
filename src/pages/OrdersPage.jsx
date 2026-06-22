@@ -404,9 +404,9 @@ function OrdersPage() {
                       {order.status === 'refund' && (
                         <RotateCcw className="w-4 h-4 text-rose-500" />
                       )}
-                      {order.payment_status === 'unpaid' && order.billing_type === 'account' ? (
+                      {order.billing_type === 'account' ? (
                         <span className="badge bg-indigo-100 text-indigo-700 text-xs inline-flex items-center gap-1">
-                          <FileText className="w-3 h-3" /> A crédito
+                          <FileText className="w-3 h-3" /> B2B{order.payment_status === 'unpaid' ? ' · a crédito' : ''}
                         </span>
                       ) : order.payment_status === 'unpaid' ? (
                         <span className="badge bg-amber-100 text-amber-700 text-xs inline-flex items-center gap-1">
@@ -607,9 +607,9 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
                   <Clock className="w-3 h-3" /> Pendiente de pago
                 </span>
               )}
-              {isAccountUnpaid && (
+              {order.billing_type === 'account' && (
                 <span className="badge bg-indigo-100 text-indigo-700 inline-flex items-center gap-1">
-                  <FileText className="w-3 h-3" /> A crédito
+                  <FileText className="w-3 h-3" /> B2B{isAccountUnpaid ? ' · a crédito' : ''}
                 </span>
               )}
             </div>
@@ -791,17 +791,23 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
                 </div>
               </div>
 
-              {/* Electronic invoice — factura for sales, nota de crédito for refunds */}
-              {order.total > 0 && order.status !== 'refund' && (
+              {/* Electronic invoice — factura for sales, nota de crédito for
+                  refunds. B2B credit orders are NOT invoiced individually; they
+                  are billed on a consolidated B2B invoice, so no factura section. */}
+              {order.billing_type === 'account' ? (
+                <div className="bg-indigo-50 rounded-xl p-4 flex items-center gap-2 text-sm text-indigo-700">
+                  <FileText className="w-4 h-4 flex-shrink-0" />
+                  <span>Orden B2B a crédito — se factura en la factura consolidada del cliente, no individualmente.</span>
+                </div>
+              ) : order.total > 0 && order.status !== 'refund' ? (
                 <div className="bg-slate-50 rounded-xl p-4">
                   <InvoiceStatus orderId={order.id} staff />
                 </div>
-              )}
-              {order.status === 'refund' && (
+              ) : order.status === 'refund' ? (
                 <div className="bg-slate-50 rounded-xl p-4">
                   <InvoiceStatus orderId={order.id} staff canEmit={false} />
                 </div>
-              )}
+              ) : null}
 
               {/* Notes */}
               {order.notes && (
