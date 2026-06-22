@@ -271,19 +271,20 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
   const totalNetoCents = netCents.reduce((s, c) => s + c, 0);
   const totalItbmsCents = itbmsPerLine.reduce((s, c) => s + c, 0);
 
-  const payments = input.payments ?? [];
-  const receivedCents = payments.length
-    ? payments.reduce((s, p) => s + toCents(p.amount), 0)
-    : totalCents;
-  const changeCents = payments.reduce((s, p) => s + toCents(p.change ?? 0), 0);
+  // DGI rule: vueltoEntregado === sumaValoresRecibidos − valorTotalFactura.
+  // The stored payment.amount is the amount APPLIED to the order; the value the
+  // customer actually tendered (reported as "received") is amount + change.
+  const effectivePayments = (input.payments?.length
+    ? input.payments
+    : [{ method: 'efectivo', amount: order.total, change: 0 }]
+  ).map((p) => ({ method: p.method, received: toCents(p.amount) + toCents(p.change ?? 0) }));
 
-  const grupoFormasPago = (payments.length
-    ? payments
-    : [{ method: 'efectivo', amount: order.total }]
-  ).map((p) => ({
+  const grupoFormasPago = effectivePayments.map((p) => ({
     formaPago: mapPaymentForma(p.method),
-    valorCuotaPagada: round2(p.amount),
+    valorCuotaPagada: fromCents(p.received),
   }));
+  const receivedCents = effectivePayments.reduce((s, p) => s + p.received, 0);
+  const changeCents = Math.max(0, receivedCents - totalCents);
 
   const totales: Totales = {
     totalNeto: fromCents(totalNetoCents),
