@@ -201,12 +201,42 @@ describe('buildInvoiceRequest — discount distribution', () => {
       now: fixedNow,
     });
     expect(inv.totales.totalNeto).toBe(50);
-    expect(inv.totales.totalDescuento).toBe(50);
+    expect(inv.totales.totalDescuento).toBeUndefined(); // per-item discount model
     expect(inv.totales.valorTotalFactura).toBe(53.5);
     // Each line discounted by 25 -> net 25
     expect(inv.listaItems[0].grupoPrecios.precioItem).toBe(25);
     expect(inv.listaItems[0].grupoPrecios.descuento).toBe(2.5); // 25 / 10 units
     expect(inv.listaItems[1].grupoPrecios.descuento).toBe(25); // 25 / 1 unit
+  });
+});
+
+describe('buildInvoiceRequest — absorbs sub-cent rounding drift', () => {
+  it('reconciles an order whose subtotal+tax differs from total by a cent (order #3498)', () => {
+    // Real case: gross 5.61 + 9.35, discount 1.50 -> net 13.46, tax 0.94,
+    // but total was charged as 14.41 (13.46 + 0.94 = 14.40). Total is king.
+    const inv = buildInvoiceRequest({
+      order: { discount_amount: 1.5, tax_amount: 0.94, total: 14.41 },
+      items: [
+        line({ description: 'Gorras', unitPrice: 5.61, quantity: 1, lineTotal: 5.61 }),
+        line({ description: 'Zapatillas', unitPrice: 9.35, quantity: 1, lineTotal: 9.35 }),
+      ],
+      config,
+      now: fixedNow,
+    });
+    expect(inv.totales.valorTotalFactura).toBe(14.41);
+    expect(inv.totales.totalNeto + (inv.totales.totalITBMS ?? 0)).toBeCloseTo(14.41, 5);
+    // Each line stays self-consistent: precioItem == unitPrice - descuento (qty 1).
+    for (const it of inv.listaItems) {
+      const desc = it.grupoPrecios.descuento ?? 0;
+      expect(it.grupoPrecios.precioItem).toBeCloseTo(
+        it.grupoPrecios.precioUnitarioTransferencia - desc * it.cantidadProductoServicio,
+        5,
+      );
+      expect(it.grupoPrecios.sumaPrecioItem).toBeCloseTo(
+        it.grupoPrecios.precioItem + it.grupoITBMS.montoITBMS,
+        5,
+      );
+    }
   });
 });
 
