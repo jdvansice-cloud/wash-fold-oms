@@ -220,11 +220,17 @@ describe('buildInvoiceRequest — absorbs sub-cent rounding drift', () => {
         line({ description: 'Gorras', unitPrice: 5.61, quantity: 1, lineTotal: 5.61 }),
         line({ description: 'Zapatillas', unitPrice: 9.35, quantity: 1, lineTotal: 9.35 }),
       ],
+      payments: [{ method: 'Efectivo', amount: 14.41, change: 5.59 }], // tendered 20.00
       config,
       now: fixedNow,
     });
     expect(inv.totales.valorTotalFactura).toBe(14.41);
     expect(inv.totales.totalNeto + (inv.totales.totalITBMS ?? 0)).toBeCloseTo(14.41, 5);
+    // DGI vuelto invariant holds even with the absorbed rounding cent.
+    expect(inv.totales.vueltoEntregado).toBeCloseTo(
+      inv.totales.sumaValoresRecibidos - inv.totales.valorTotalFactura,
+      5,
+    );
     // Each line stays self-consistent: precioItem == unitPrice - descuento (qty 1).
     for (const it of inv.listaItems) {
       const desc = it.grupoPrecios.descuento ?? 0;
@@ -260,18 +266,28 @@ describe('buildInvoiceRequest — guards', () => {
 });
 
 describe('buildInvoiceRequest — payments', () => {
-  it('maps multiple payments and reports change', () => {
+  it('reports tendered value and change per the DGI vuelto rule', () => {
+    // Applied 10.70, customer tendered 20.00 (change 9.30).
     const inv = buildInvoiceRequest({
       order: { tax_amount: 0.7, total: 10.7 },
       items: [line()],
-      payments: [
-        { method: 'Efectivo', amount: 20, change: 9.3 },
-      ],
+      payments: [{ method: 'Efectivo', amount: 10.7, change: 9.3 }],
       config,
       now: fixedNow,
     });
     expect(inv.totales.grupoFormasPago).toEqual([{ formaPago: '02', valorCuotaPagada: 20 }]);
     expect(inv.totales.sumaValoresRecibidos).toBe(20);
     expect(inv.totales.vueltoEntregado).toBe(9.3);
+    // DGI invariant: dVuelto === dTotRec − dVTot
+    expect(inv.totales.vueltoEntregado).toBeCloseTo(
+      inv.totales.sumaValoresRecibidos - inv.totales.valorTotalFactura,
+      5,
+    );
+  });
+
+  it('reports no change when the exact amount is tendered', () => {
+    const inv = build({ payments: [{ method: 'Tarjeta', amount: 10.7 }] });
+    expect(inv.totales.sumaValoresRecibidos).toBe(10.7);
+    expect(inv.totales.vueltoEntregado).toBeUndefined();
   });
 });
