@@ -43,6 +43,19 @@ const paymentMethodNames = {
   gift_card: 'Tarjeta Regalo',
 };
 
+// Payment state of an order — SEPARATE from its workflow "estado". A B2B credit
+// order counts as paid once it's been placed on a consolidated invoice
+// (b2b_invoice_id), even before that invoice is collected.
+const paymentDisplay = (order) => {
+  const paid =
+    order.payment_status === 'paid' ||
+    (order.billing_type === 'account' && !!order.b2b_invoice_id);
+  if (paid) return { label: 'Pagado', cls: 'bg-emerald-100 text-emerald-700', paid: true };
+  if (order.billing_type === 'account') return { label: 'A crédito', cls: 'bg-indigo-100 text-indigo-700', paid: false };
+  if (order.billing_type === 'pickup') return { label: 'Por cobrar', cls: 'bg-amber-100 text-amber-700', paid: false };
+  return { label: 'Pendiente', cls: 'bg-amber-100 text-amber-700', paid: false };
+};
+
 // Helper to display order number (legacy CC orders or new orders)
 const getOrderDisplayNumber = (order) => {
   if (order.legacy_order_number) {
@@ -362,6 +375,9 @@ function OrdersPage() {
                   Estado
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Pago
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Peso
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -404,15 +420,11 @@ function OrdersPage() {
                       {order.status === 'refund' && (
                         <RotateCcw className="w-4 h-4 text-rose-500" />
                       )}
-                      {order.billing_type === 'account' ? (
+                      {order.billing_type === 'account' && (
                         <span className="badge bg-indigo-100 text-indigo-700 text-xs inline-flex items-center gap-1">
-                          <FileText className="w-3 h-3" /> B2B{order.payment_status === 'unpaid' ? ' · a crédito' : ''}
+                          <FileText className="w-3 h-3" /> B2B
                         </span>
-                      ) : order.payment_status === 'unpaid' ? (
-                        <span className="badge bg-amber-100 text-amber-700 text-xs inline-flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> Pendiente
-                        </span>
-                      ) : null}
+                      )}
                     </div>
                     {originalOrder && (
                       <p className="text-xs text-rose-500 mt-0.5">
@@ -428,6 +440,13 @@ function OrdersPage() {
                   </td>
                   <td className="px-4 py-4">
                     {getStatusBadge(order.status)}
+                  </td>
+                  <td className="px-4 py-4">
+                    {order.status === 'refund' ? (
+                      <span className="text-slate-400">—</span>
+                    ) : (
+                      <span className={`badge ${paymentDisplay(order).cls}`}>{paymentDisplay(order).label}</span>
+                    )}
                   </td>
                   <td className="px-4 py-4 text-slate-600">
                     {order.total_weight?.toFixed(2) || '0.00'} kg
@@ -558,8 +577,7 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
   // B2B credit/"account" (delivered on account, billed later — NOT gated).
   const isUnpaid = order.payment_status === 'unpaid';
   const isPickupUnpaid = isUnpaid && order.billing_type === 'pickup';
-  const isAccountUnpaid = isUnpaid && order.billing_type === 'account';
-  
+
   const statusOrder = ['pending', 'washing', 'drying', 'folding', 'ready', 'completed'];
   const currentStatusIndex = statusOrder.indexOf(order.status);
   const nextStatus = currentStatusIndex >= 0 && currentStatusIndex < statusOrder.length - 1 
@@ -602,15 +620,14 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
               {order.is_express && (
                 <span className="badge bg-warning-100 text-warning-700">Express</span>
               )}
-              {isPickupUnpaid && (
-                <span className="badge bg-amber-100 text-amber-700 inline-flex items-center gap-1">
-                  <Clock className="w-3 h-3" /> Pendiente de pago
-                </span>
-              )}
               {order.billing_type === 'account' && (
                 <span className="badge bg-indigo-100 text-indigo-700 inline-flex items-center gap-1">
-                  <FileText className="w-3 h-3" /> B2B{isAccountUnpaid ? ' · a crédito' : ''}
+                  <FileText className="w-3 h-3" /> B2B
                 </span>
+              )}
+              {/* Payment state — separate from the workflow estado above. */}
+              {order.status !== 'refund' && (
+                <span className={`badge ${paymentDisplay(order).cls}`}>{paymentDisplay(order).label}</span>
               )}
             </div>
             <p className="text-sm text-slate-500">{order.customer_name}</p>
