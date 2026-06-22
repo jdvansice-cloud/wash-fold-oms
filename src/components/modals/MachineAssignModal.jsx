@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Wrench, Loader2, AlertTriangle } from 'lucide-react';
-import { fetchActiveMachines } from '../../hooks/queries/useMachines';
+import { fetchActiveMachines, fetchProductMachineMap } from '../../hooks/queries/useMachines';
 
 const typeLabel = { washer: 'Lavadora', dryer: 'Secadora' };
 
@@ -11,6 +11,7 @@ const typeLabel = { washer: 'Lavadora', dryer: 'Secadora' };
  */
 function MachineAssignModal({ storeId, machineItems, onClose, onConfirm }) {
   const [machines, setMachines] = useState([]);
+  const [linkMap, setLinkMap] = useState({}); // productId -> [machineId] allowed
   const [loading, setLoading] = useState(true);
   const [assign, setAssign] = useState({}); // idx -> machineId
 
@@ -18,8 +19,12 @@ function MachineAssignModal({ storeId, machineItems, onClose, onConfirm }) {
     let alive = true;
     (async () => {
       try {
-        const ms = await fetchActiveMachines(storeId);
-        if (alive) setMachines(ms);
+        const productIds = [...new Set(machineItems.map((x) => x.it.product?.id).filter(Boolean))];
+        const [ms, map] = await Promise.all([
+          fetchActiveMachines(storeId),
+          fetchProductMachineMap(productIds),
+        ]);
+        if (alive) { setMachines(ms); setLinkMap(map); }
       } catch (e) {
         console.error(e);
       } finally {
@@ -29,7 +34,12 @@ function MachineAssignModal({ storeId, machineItems, onClose, onConfirm }) {
     return () => { alive = false; };
   }, [storeId]);
 
-  const machinesOfType = (t) => machines.filter((m) => m.machine_type === t);
+  // The machines a product line may use: its explicit links, else any of its type.
+  const optionsFor = (it) => {
+    const links = linkMap[it.product?.id];
+    if (links && links.length) return machines.filter((m) => links.includes(m.id));
+    return machines.filter((m) => m.machine_type === it.product.machine_type);
+  };
   const allAssigned = machineItems.every((x) => assign[x.idx]);
 
   return (
@@ -49,7 +59,7 @@ function MachineAssignModal({ storeId, machineItems, onClose, onConfirm }) {
           ) : (
             machineItems.map(({ it, idx }) => {
               const type = it.product.machine_type;
-              const options = machinesOfType(type);
+              const options = optionsFor(it);
               return (
                 <div key={idx}>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
