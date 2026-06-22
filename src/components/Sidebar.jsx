@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   X, Plus, ClipboardList, BarChart3, RefreshCw,
   Users, FileText, Package, Settings, LogOut,
-  ChevronDown, ChevronRight, PieChart, TrendingUp, Truck
+  ChevronDown, ChevronRight, PieChart, TrendingUp, Truck, Building2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -73,6 +73,7 @@ function Sidebar({ isOpen, onClose }) {
         { path: p('/machines'), label: 'Maquinas / En Proceso', icon: RefreshCw },
         has('pickups') && { path: p('/pickups'), label: 'Recogidas', icon: Truck },
         { path: p('/customers'), label: 'Clientes', icon: Users },
+        { path: p('/b2b'), label: 'Facturación B2B', icon: Building2 },
         has('invoices') && { path: p('/invoices'), label: 'Facturas', icon: FileText },
       ].filter(Boolean),
     },
