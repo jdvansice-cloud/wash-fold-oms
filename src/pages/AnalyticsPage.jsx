@@ -6,6 +6,7 @@ import {
   ChevronDown, X, ArrowLeftRight, RotateCcw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import AnalyticsCockpit from '../components/analytics/AnalyticsCockpit';
 
 function AnalyticsPage() {
   const { state } = useApp();
@@ -514,7 +515,16 @@ function AnalyticsPage() {
           </div>
         </div>
       </div>
-      
+
+      {/* Owner cockpit — DB-aggregated trend, top services, payment mix, B2B A/R */}
+      <div className="mb-6">
+        <AnalyticsCockpit
+          storeId={state.store?.id}
+          startDate={dateRanges.startDate}
+          endDate={dateRanges.endDate}
+        />
+      </div>
+
       {/* View Toggle */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-slate-800">Detalle de Ventas</h2>
