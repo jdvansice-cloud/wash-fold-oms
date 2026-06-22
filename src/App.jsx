@@ -17,6 +17,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const EODPage = lazy(() => import('./pages/EODPage'));
+const B2BBillingPage = lazy(() => import('./pages/B2BBillingPage'));
 const PickupsPage = lazy(() => import('./pages/PickupsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SetPasswordPage = lazy(() => import('./pages/SetPasswordPage'));
@@ -152,6 +153,7 @@ function AppContent() {
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/eod" element={<EODPage />} />
+          <Route path="/b2b" element={<B2BBillingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Routes>
