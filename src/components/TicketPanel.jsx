@@ -1463,6 +1463,8 @@ function TicketPanel() {
           total={adjustedTotal}
           subtotal={calculations.subtotal}
           taxAmount={calculations.taxAmount}
+          paymentMethods={(state.paymentMethods || []).filter((m) => m.is_active)}
+          storeId={state.store?.id}
           customerLoyalty={customerLoyalty}
           loyaltySettings={loyaltySettings}
           freeServicesApplied={freeServicesApplied}

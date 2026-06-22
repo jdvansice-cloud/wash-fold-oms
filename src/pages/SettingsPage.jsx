@@ -1679,12 +1679,12 @@ function PaymentMethodsSettings() {
       // If no methods exist, create defaults
       if (!data || data.length === 0) {
         const defaultMethods = [
-          { name: 'Efectivo', icon: '💵', is_active: true, display_order: 0 },
-          { name: 'Tarjeta', icon: '💳', is_active: true, display_order: 1 },
-          { name: 'Yappy', icon: '📱', is_active: true, display_order: 2 },
-          { name: 'ACH', icon: '🏦', is_active: true, display_order: 3 },
-          { name: 'Facturar', icon: '📄', is_active: true, display_order: 4 },
-          { name: 'Pagar al Recoger', icon: '🛒', is_active: true, display_order: 5 },
+          { name: 'Efectivo', icon: '💵', payment_type: 'cash', is_active: true, display_order: 0 },
+          { name: 'Tarjeta', icon: '💳', payment_type: 'card', is_active: true, display_order: 1 },
+          { name: 'Yappy', icon: '📱', payment_type: 'other', is_active: true, display_order: 2 },
+          { name: 'ACH', icon: '🏦', payment_type: 'other', is_active: true, display_order: 3 },
+          { name: 'Facturar', icon: '📄', payment_type: 'other', is_active: true, display_order: 4 },
+          { name: 'Pagar al Recoger', icon: '🛒', payment_type: 'other', is_active: true, display_order: 5 },
         ];
         setMethods(defaultMethods.map((m, i) => ({ ...m, id: `temp-${i}`, store_id: store.id })));
       } else {
@@ -1698,9 +1698,13 @@ function PaymentMethodsSettings() {
   };
 
   const toggleMethod = (id) => {
-    setMethods(methods.map(m => 
+    setMethods(methods.map(m =>
       m.id === id ? { ...m, is_active: !m.is_active } : m
     ));
+  };
+
+  const setMethodType = (id, payment_type) => {
+    setMethods(methods.map(m => (m.id === id ? { ...m, payment_type } : m)));
   };
 
   const handleSave = async () => {
@@ -1721,6 +1725,7 @@ function PaymentMethodsSettings() {
               store_id: storeId,
               name: method.name,
               icon: method.icon,
+              payment_type: method.payment_type || 'other',
               is_active: method.is_active,
               display_order: method.display_order
             });
@@ -1729,7 +1734,7 @@ function PaymentMethodsSettings() {
           // Update existing method
           const { error } = await supabase
             .from('payment_methods')
-            .update({ is_active: method.is_active })
+            .update({ is_active: method.is_active, payment_type: method.payment_type || 'other' })
             .eq('id', method.id);
           if (error) throw error;
         }
@@ -1783,6 +1788,16 @@ function PaymentMethodsSettings() {
           <div key={method.id} className="flex items-center gap-4 p-4 bg-slate-50 rounded-xl">
             <span className="text-2xl">{method.icon}</span>
             <span className="flex-1 font-medium text-slate-700">{method.name}</span>
+            <select
+              value={method.payment_type || 'other'}
+              onChange={(e) => setMethodType(method.id, e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600"
+              title="Tipo de pantalla en el cobro"
+            >
+              <option value="cash">Efectivo</option>
+              <option value="card">Tarjeta</option>
+              <option value="other">Otro</option>
+            </select>
             <label className="relative inline-flex items-center cursor-pointer">
               <input 
                 type="checkbox" 
