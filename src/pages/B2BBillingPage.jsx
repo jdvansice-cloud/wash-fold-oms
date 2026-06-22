@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight, CreditCard } from 'lucide-react';
+import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight, CreditCard, Download, Search } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import PaymentModal from '../components/modals/PaymentModal';
 import { emitB2BInvoice } from '../lib/efactura/client';
+import { downloadCafe, printCafe } from '../hooks/queries/useElectronicInvoice';
 import {
   fetchB2BCustomersWithOutstanding,
   fetchOutstandingOrders,
   fetchB2BInvoices,
   fetchInvoiceOrders,
   fetchB2BEfacturaStatus,
+  searchB2BCustomers,
   generateB2BInvoice,
   settleB2BInvoice,
   orderDisplayNumber,
@@ -33,6 +35,8 @@ function B2BBillingPage() {
   const [generating, setGenerating] = useState(false);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [payingInvoice, setPayingInvoice] = useState(null);
+  const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
 
   const loadCustomers = async () => {
     if (!storeId) return;
@@ -49,6 +53,27 @@ function B2BBillingPage() {
   useEffect(() => {
     loadCustomers();
   }, [storeId]);
+
+  // Debounced B2B customer search (to reach customers with no current balance).
+  useEffect(() => {
+    if (!storeId || search.trim().length < 2) {
+      setSearchResults(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(async () => {
+      try {
+        const res = await searchB2BCustomers(storeId, search);
+        if (alive) setSearchResults(res);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [search, storeId]);
 
   const selectCustomer = async (c) => {
     setSelected(c);
@@ -113,10 +138,39 @@ function B2BBillingPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Customers with outstanding credit orders */}
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100">
-            <h2 className="font-semibold text-slate-800">Clientes con saldo</h2>
+          <div className="px-5 py-4 border-b border-slate-100 space-y-3">
+            <h2 className="font-semibold text-slate-800">{searchResults ? 'Resultados' : 'Clientes con saldo'}</h2>
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar cliente B2B…"
+                className="input pl-9 py-2 text-sm"
+              />
+            </div>
           </div>
-          {loading ? (
+
+          {searchResults ? (
+            searchResults.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-400">Sin resultados.</div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {searchResults.map((c) => (
+                  <button
+                    key={c.customer_id}
+                    onClick={() => { selectCustomer(c); setSearch(''); }}
+                    className={`w-full flex items-center justify-between px-5 py-3 text-left hover:bg-slate-50 ${
+                      selected?.customer_id === c.customer_id ? 'bg-indigo-50' : ''
+                    }`}
+                  >
+                    <span className="font-medium text-slate-700 truncate">{c.name}</span>
+                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                  </button>
+                ))}
+              </div>
+            )
+          ) : loading ? (
             <div className="p-5 text-sm text-slate-400">Cargando…</div>
           ) : customers.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-400">
@@ -286,6 +340,7 @@ function InvoiceModal({ invoice, customer, onClose, onPay }) {
   const [loading, setLoading] = useState(true);
   const [efactura, setEfactura] = useState(null);
   const [emitting, setEmitting] = useState(false);
+  const [cafeBusy, setCafeBusy] = useState(null);
 
   const loadEfactura = async () => setEfactura(await fetchB2BEfacturaStatus(invoice.id));
 
@@ -376,6 +431,40 @@ function InvoiceModal({ invoice, customer, onClose, onPay }) {
               <div className="text-sm text-emerald-700">
                 <p className="flex items-center gap-1 font-medium"><Check className="w-4 h-4" /> Autorizada por la DGI</p>
                 {efactura.cufe && <p className="mt-1 break-all text-xs text-slate-500">CUFE: {efactura.cufe}</p>}
+                <div className="mt-3 flex gap-2 print:hidden">
+                  <button
+                    onClick={async () => {
+                      setCafeBusy('download');
+                      try {
+                        await downloadCafe({ invoiceId: efactura.id }, `factura-b2b-${invoice.invoice_number}.pdf`);
+                      } catch (e) {
+                        alert('No se pudo descargar el CAFE: ' + e.message);
+                      } finally {
+                        setCafeBusy(null);
+                      }
+                    }}
+                    disabled={!!cafeBusy}
+                    className="btn-secondary text-sm"
+                  >
+                    {cafeBusy === 'download' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} CAFE
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setCafeBusy('print');
+                      try {
+                        await printCafe({ invoiceId: efactura.id });
+                      } catch (e) {
+                        alert('No se pudo imprimir el CAFE: ' + e.message);
+                      } finally {
+                        setCafeBusy(null);
+                      }
+                    }}
+                    disabled={!!cafeBusy}
+                    className="btn-secondary text-sm"
+                  >
+                    {cafeBusy === 'print' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />} Imprimir CAFE
+                  </button>
+                </div>
               </div>
             ) : efactura?.status === 'rejected' ? (
               <div className="text-sm">

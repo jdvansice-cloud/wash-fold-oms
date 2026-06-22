@@ -42,6 +42,31 @@ export interface B2BInvoice {
 const displayNo = (o: { order_number: number; legacy_order_number: string | null }) =>
   o.legacy_order_number || `#${o.order_number}`;
 
+/** Search B2B customers (can_be_invoiced) by name/company — to reach a customer
+ *  with no current balance (e.g. to view their paid invoice history). */
+export async function searchB2BCustomers(
+  storeId: string,
+  query: string,
+): Promise<Pick<B2BCustomerSummary, 'customer_id' | 'name' | 'company_name'>[]> {
+  const q = (query || '').trim();
+  if (q.length < 2) return [];
+  const like = `%${q}%`;
+  const { data, error } = await supabase
+    .from('customers')
+    .select('id, first_name, last_name, company_name')
+    .eq('store_id', storeId)
+    .eq('can_be_invoiced', true)
+    .or(`first_name.ilike.${like},last_name.ilike.${like},company_name.ilike.${like}`)
+    .order('company_name', { ascending: true })
+    .limit(15);
+  if (error) throw error;
+  return ((data as any[]) || []).map((c) => ({
+    customer_id: c.id,
+    name: customerName(c),
+    company_name: c.company_name || null,
+  }));
+}
+
 /** B2B credit orders not yet placed on a consolidated invoice. */
 export async function fetchOutstandingOrders(customerId: string): Promise<OutstandingOrder[]> {
   const { data, error } = await supabase
