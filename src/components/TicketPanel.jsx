@@ -1637,6 +1637,7 @@ function TicketPanel() {
           taxAmount={calculations.taxAmount}
           paymentMethods={(state.paymentMethods || []).filter((m) => m.is_active)}
           storeId={state.store?.id}
+          customer={state.ticket.customer}
           customerLoyalty={customerLoyalty}
           loyaltySettings={loyaltySettings}
           freeServicesApplied={freeServicesApplied}
@@ -1668,10 +1669,12 @@ function TicketPanel() {
                 payments: paymentInfo.payments, // Now an array of payments
                 total_paid: paymentInfo.totalPaid,
                 change_given: paymentInfo.change,
-                // Pay-on-pickup creates an UNPAID order: no money collected, no
-                // payment rows, no invoice. It's settled (paid + invoiced) when
-                // the customer picks up — and staff can't hand items over until then.
-                payment_status: paymentInfo.payOnPickup ? 'unpaid' : 'paid',
+                // Deferred terms create UNPAID orders (no money collected, no
+                // payment rows, no per-order invoice):
+                //  - pay-on-pickup: settled when the customer picks up (delivery gated)
+                //  - B2B credit ("Factura"): delivered on account, billed later as a group
+                payment_status: (paymentInfo.payOnPickup || paymentInfo.onAccount) ? 'unpaid' : 'paid',
+                billing_type: paymentInfo.onAccount ? 'account' : paymentInfo.payOnPickup ? 'pickup' : 'immediate',
               };
               
               const newOrder = await dbAddOrder(orderData);

@@ -416,6 +416,7 @@ export function useDataLoader() {
         notes: orderData.notes,
         promised_date: orderData.promised_date,
         payment_status: orderData.payment_status || 'paid',
+        billing_type: orderData.billing_type || 'immediate',
       })
       .select()
       .single();
@@ -576,15 +577,16 @@ export function useDataLoader() {
 
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      // Gate: an order can't be handed to the customer (marked "completed")
-      // until it's paid. Pay-on-pickup orders are unpaid until settled.
+      // Gate: a pay-on-pickup order can't be handed to the customer (marked
+      // "completed") until it's paid. B2B credit ("account") orders are
+      // delivered on account, so they are NOT gated.
       if (newStatus === 'completed') {
         const { data: ord } = await supabase
           .from('orders')
-          .select('payment_status')
+          .select('payment_status, billing_type')
           .eq('id', orderId)
           .maybeSingle();
-        if (ord?.payment_status === 'unpaid') {
+        if (ord?.payment_status === 'unpaid' && ord?.billing_type === 'pickup') {
           const e = new Error('La orden debe pagarse antes de entregarse al cliente.');
           e.code = 'PAYMENT_REQUIRED';
           throw e;
