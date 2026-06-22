@@ -5,9 +5,12 @@ import {
   TrendingUp, TrendingDown, Percent
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useFeature } from '../hooks/useFeature';
+import ElectronicInvoicesReport from '../components/efactura/ElectronicInvoicesReport';
 
 function ReportsPage() {
   const { state } = useApp();
+  const hasInvoices = useFeature('invoices');
   
   // Date Range State
   const [dateRange, setDateRange] = useState('month'); // today, week, month, custom
@@ -27,6 +30,7 @@ function ReportsPage() {
   
   const reportTypes = [
     { value: 'sales-by-day', label: 'Ventas por Día', icon: Calendar },
+    ...(hasInvoices ? [{ value: 'efactura', label: 'Facturas Electrónicas', icon: FileText }] : []),
     // Future reports can be added here
     // { value: 'sales-by-product', label: 'Ventas por Producto', icon: Package },
     // { value: 'sales-by-customer', label: 'Ventas por Cliente', icon: Users },
@@ -445,12 +449,21 @@ function ReportsPage() {
       
       {/* Report Content */}
       {selectedReport === 'sales-by-day' && (
-        <SalesByDayReport 
+        <SalesByDayReport
           data={salesByDayData}
           compareEnabled={compareEnabled}
           formatCurrency={formatCurrency}
           formatDateFull={formatDateFull}
           calcGrowth={calcGrowth}
+        />
+      )}
+
+      {selectedReport === 'efactura' && (
+        <ElectronicInvoicesReport
+          storeId={state.store?.id}
+          startISO={dateRanges.startDate?.toISOString()}
+          endISO={dateRanges.endDate?.toISOString()}
+          formatCurrency={formatCurrency}
         />
       )}
     </div>

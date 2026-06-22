@@ -7,3 +7,9 @@ dist/
 test-results/
 playwright-report/
 .DS_Store
+
+# Secrets — never commit PAC / E-Factura credentials
+efactura Api key.rtf
+*.key
+secrets/
+Efactura PAC/

@@ -8,11 +8,14 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { useFeature } from '../hooks/useFeature';
 import { supabase } from '../lib/supabase';
+import EFacturaReconciliation from '../components/efactura/EFacturaReconciliation';
 
 function EODPage() {
   const { state } = useApp();
   const { appUser } = useAuth();
+  const hasInvoices = useFeature('invoices');
   const [searchParams] = useSearchParams();
   
   // Check if user is admin
@@ -479,8 +482,13 @@ function EODPage() {
               )}
             </div>
           </div>
+
+          {/* Electronic Invoicing Reconciliation */}
+          {hasInvoices && (
+            <EFacturaReconciliation orders={dailyStats.orders} formatCurrency={formatCurrency} />
+          )}
         </div>
-        
+
         {/* Right Column - Cash Reconciliation */}
         <div className="space-y-6">
           {/* Cash Counting */}

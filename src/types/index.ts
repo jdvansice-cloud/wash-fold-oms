@@ -33,3 +33,10 @@ export type {
   PickupRoute,
   PickupRouteStatus,
 } from './location';
+export type {
+  CompanyEFacturaConfig,
+  ElectronicInvoice,
+  EInvoiceStatus,
+  EInvoiceDocType,
+  EFacturaEnvironment,
+} from './efactura';
