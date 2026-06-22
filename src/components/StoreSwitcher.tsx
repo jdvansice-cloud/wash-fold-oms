@@ -7,9 +7,6 @@ export default function StoreSwitcher() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Don't render if single store
-  if (!stores || stores.length <= 1) return null;
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -19,6 +16,9 @@ export default function StoreSwitcher() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Don't render if single store (hooks above must run unconditionally).
+  if (!stores || stores.length <= 1) return null;
 
   const handleSelect = (storeId: string) => {
     setActiveStore(storeId);
