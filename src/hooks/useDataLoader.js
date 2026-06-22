@@ -604,6 +604,12 @@ export function useDataLoader() {
       if (newStatus === 'completed') {
         updates.completed_at = new Date().toISOString();
       }
+      // Stamp when it became ready (for the awaiting-pickup view + reminders);
+      // clear the reminder so a re-ready order can be reminded again.
+      if (newStatus === 'ready') {
+        updates.ready_at = new Date().toISOString();
+        updates.pickup_reminder_at = null;
+      }
 
       const { error } = await supabase
         .from('orders')
@@ -636,6 +642,36 @@ export function useDataLoader() {
       return true;
     } catch (err) {
       console.error('Error updating order status:', err);
+      throw err;
+    }
+  };
+
+  // Manually nudge a customer that their order is waiting for pickup. Reuses the
+  // order_ready template and stamps pickup_reminder_at so the UI/cron know.
+  const sendPickupReminder = async (order) => {
+    try {
+      let email = order.customer_email;
+      if (!email && order.customer_id) {
+        const { data: c } = await supabase
+          .from('customers')
+          .select('email, first_name, last_name')
+          .eq('id', order.customer_id)
+          .maybeSingle();
+        email = c?.email;
+      }
+      if (email) {
+        await sendNotificationEmail('order_ready', email, {
+          customer_name: order.customer_name,
+          order_number: order.order_number,
+          total: order.total?.toFixed(2),
+        });
+      }
+      const nowIso = new Date().toISOString();
+      await supabase.from('orders').update({ pickup_reminder_at: nowIso }).eq('id', order.id);
+      actions.updateOrder({ id: order.id, pickup_reminder_at: nowIso });
+      return { sent: !!email };
+    } catch (err) {
+      console.error('Error sending pickup reminder:', err);
       throw err;
     }
   };
@@ -1288,6 +1324,7 @@ export function useDataLoader() {
     addOrder,
     settleOrder,
     updateOrderStatus,
+    sendPickupReminder,
     getOrderDetails,
     createRefund,
     addCustomer,
