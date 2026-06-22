@@ -137,6 +137,7 @@ export default async function handler(req: any, res: any) {
         notes: o.notes || null,
         promised_date: o.promised_date || null,
         payment_status: paymentStatus,
+        billing_type: ['immediate', 'pickup', 'account'].includes(o.billing_type) ? o.billing_type : 'immediate',
       })
       .select()
       .single();

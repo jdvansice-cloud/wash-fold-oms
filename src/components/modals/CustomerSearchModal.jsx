@@ -181,6 +181,7 @@ function AddCustomerForm({ onCancel, onSave }) {
     company_name: '',
     ruc: '',
     dv: '',
+    can_be_invoiced: false,
   });
   
   const [errors, setErrors] = useState({});
@@ -209,7 +210,9 @@ function AddCustomerForm({ onCancel, onSave }) {
       id: `cust-${Date.now()}`,
       store_id: 'store-001',
       ...formData,
-      can_be_invoiced: formData.id_type === 'ruc',
+      // B2B = can be invoiced on account ("Factura" credit term). RUC holders
+      // qualify automatically; the toggle lets any customer be enabled too.
+      can_be_invoiced: formData.can_be_invoiced || formData.id_type === 'ruc',
       account_balance: 0,
       loyalty_points: 0,
       preferences: { scent: 'Sin preferencia', softener: 'Sin preferencia' },
@@ -430,8 +433,23 @@ function AddCustomerForm({ onCancel, onSave }) {
             </div>
           </>
         )}
+
+        {/* B2B credit account */}
+        <label className="mt-4 flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={formData.can_be_invoiced}
+            onChange={(e) => handleChange('can_be_invoiced', e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-11 h-6 bg-slate-200 peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500 relative"></div>
+          <span className="text-sm text-slate-700">
+            Cliente B2B — permitir <span className="font-medium">factura a crédito</span>
+            <span className="block text-xs text-slate-400">Habilita el término de pago “Factura” (se cobra después).</span>
+          </span>
+        </label>
       </div>
-      
+
       {/* Actions */}
       <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
         <button onClick={onCancel} className="btn-secondary flex-1">

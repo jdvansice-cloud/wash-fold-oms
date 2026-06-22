@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Banknote, CreditCard, Gift, Award, Wallet, Clock, X } from 'lucide-react';
+import { Banknote, CreditCard, Gift, Award, Wallet, Clock, FileText, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import {
   sumApplied,
@@ -36,6 +36,7 @@ function PaymentModal({
   loyaltySettings = null,
   freeServicesApplied = null,
   allowPickup = true,
+  customer = null,
   onClose,
   onComplete,
 }) {
@@ -58,6 +59,9 @@ function PaymentModal({
   const remaining = remainingDue(total, tenders);
   const change = totalChange(tenders);
   const hasPickup = tenders.some((t) => t.type === 'pickup');
+  const hasCredit = tenders.some((t) => t.type === 'credit');
+  // The "Factura" credit term is only offered to B2B customers (can_be_invoiced).
+  const canUseCredit = !!customer?.can_be_invoiced;
 
   // Available methods: configured (or a sane default), then built-ins.
   const methods = paymentMethods.length ? paymentMethods : DEFAULT_METHODS;
@@ -142,6 +146,21 @@ function PaymentModal({
       method: selected.name,
       methodName: selected.name,
       type: 'pickup',
+      amount: total,
+    });
+  }
+
+  // --- B2B credit ("Factura") ---
+  // Like pickup, an EXCLUSIVE deferred term: the order is delivered on the
+  // customer's account, created unpaid, and billed later as a consolidated
+  // invoice. B2B-only (gated by canUseCredit). No payment is collected now.
+  const isCredit = selected?.payment_type === 'credit';
+
+  function addCredit() {
+    addTender({
+      method: selected.name,
+      methodName: selected.name,
+      type: 'credit',
       amount: total,
     });
   }
@@ -267,14 +286,15 @@ function PaymentModal({
     }
 
     setProcessing(true);
-    // Pay-on-pickup is an UNPAID order: nothing is collected now and no payment
-    // rows are recorded — just the order itself, marked unpaid.
-    if (hasPickup) {
+    // Pay-on-pickup and B2B credit are UNPAID orders: nothing is collected now
+    // and no payment rows are recorded — just the order itself, marked unpaid.
+    if (hasPickup || hasCredit) {
       onComplete({
         payments: [],
         totalPaid: 0,
         change: 0,
-        payOnPickup: true,
+        payOnPickup: hasPickup,
+        onAccount: hasCredit,
         timestamp: new Date().toISOString(),
         freeServicesApplied,
       });
@@ -295,12 +315,15 @@ function PaymentModal({
     : m.payment_type === 'cash' ? Banknote
     : m.payment_type === 'card' ? CreditCard
     : m.payment_type === 'pickup' ? Clock
+    : m.payment_type === 'credit' ? FileText
     : Wallet;
 
   const gridMethods = useMemo(() => {
     const list = methods
       // In settle mode (paying an existing order) pay-on-pickup isn't offerable.
       .filter((m) => allowPickup || m.payment_type !== 'pickup')
+      // "Factura" credit is shown only for B2B customers (can_be_invoiced).
+      .filter((m) => m.payment_type !== 'credit' || canUseCredit)
       .map((m) => ({
         ...m,
         payment_type: m.payment_type || 'other',
@@ -309,7 +332,7 @@ function PaymentModal({
     list.push({ key: 'gift_card', name: 'Tarjeta Regalo', special: 'gift_card' });
     if (canUseLoyalty) list.push({ key: 'loyalty', name: 'Puntos de Lealtad', special: 'loyalty' });
     return list;
-  }, [methods, canUseLoyalty, allowPickup]);
+  }, [methods, canUseLoyalty, allowPickup, canUseCredit]);
 
   const isSelected = (m) => selected && (selected.key === m.key);
 
@@ -358,6 +381,7 @@ function PaymentModal({
                   <span className="text-sm font-medium text-slate-700">
                     {t.methodName}
                     {t.type === 'pickup' ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">pendiente</span> : null}
+                    {t.type === 'credit' ? <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-700">a crédito</span> : null}
                     {t.reference ? <span className="ml-2 text-xs text-slate-400">#{t.reference}</span> : null}
                     {(t.changeGiven ?? 0) > 0 ? <span className="ml-2 text-xs text-slate-400">cambio {fmt(t.changeGiven)}</span> : null}
                   </span>
@@ -383,14 +407,16 @@ function PaymentModal({
               <div className="mb-4 grid grid-cols-3 gap-2">
                 {gridMethods.map((m) => {
                   const Icon = iconFor(m);
-                  // Pay-on-pickup is exclusive: only offerable as the sole term.
-                  const disabled = m.payment_type === 'pickup' && tenders.length > 0;
+                  // Pay-on-pickup and B2B credit are exclusive: only offerable
+                  // as the sole term of the transaction.
+                  const disabled =
+                    (m.payment_type === 'pickup' || m.payment_type === 'credit') && tenders.length > 0;
                   return (
                     <button
                       key={m.key}
                       onClick={() => selectMethod(m)}
                       disabled={disabled}
-                      title={disabled ? 'Pagar al recoger debe ser el único pago de la transacción' : undefined}
+                      title={disabled ? 'Este término debe ser el único pago de la transacción' : undefined}
                       className={`flex flex-col items-center gap-1 rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
                         isSelected(m)
                           ? 'border-primary-500 bg-primary-50 text-primary-700'
@@ -505,6 +531,25 @@ function PaymentModal({
                 </div>
               )}
 
+              {/* B2B credit ("Factura") */}
+              {isCredit && (
+                <div className="rounded-xl bg-indigo-50 border border-indigo-200 p-4">
+                  <div className="flex items-start gap-3">
+                    <FileText className="w-5 h-5 flex-shrink-0 text-indigo-600 mt-0.5" />
+                    <div className="text-sm text-indigo-800">
+                      <p className="font-medium">Factura a crédito{customer?.company_name ? ` · ${customer.company_name}` : ''}</p>
+                      <p className="mt-1 text-indigo-700">
+                        Se carga a la cuenta del cliente. La orden se entrega ahora y se
+                        <span className="font-semibold"> factura después</span> junto con otras órdenes.
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={addCredit} className="btn-primary mt-4 w-full py-3">
+                    Cargar {fmt(total)} a la cuenta
+                  </button>
+                </div>
+              )}
+
               {/* Gift card */}
               {isGift && (
                 <div className="rounded-xl bg-slate-50 p-4">
@@ -586,6 +631,10 @@ function PaymentModal({
               <div className="rounded-xl bg-amber-50 p-4 text-center">
                 <p className="text-sm text-amber-700">Pago al recoger — pendiente de cobro.</p>
               </div>
+            ) : hasCredit ? (
+              <div className="rounded-xl bg-indigo-50 p-4 text-center">
+                <p className="text-sm text-indigo-700">A crédito — se factura después.</p>
+              </div>
             ) : (
               <div className="rounded-xl bg-emerald-50 p-4 text-center">
                 <p className="text-sm text-emerald-700">Pago completo.</p>
@@ -604,7 +653,7 @@ function PaymentModal({
             </button>
           )}
           <button onClick={complete} disabled={!canComplete || processing} className="btn-primary w-full py-4 text-base disabled:opacity-50 disabled:cursor-not-allowed">
-            {processing ? 'Procesando…' : !canComplete ? `Faltan ${fmt(remaining)}` : hasPickup ? `Registrar orden — ${fmt(total)} pendiente` : `Cobrar ${fmt(total)}`}
+            {processing ? 'Procesando…' : !canComplete ? `Faltan ${fmt(remaining)}` : hasPickup ? `Registrar orden — ${fmt(total)} pendiente` : hasCredit ? `Registrar orden a crédito — ${fmt(total)}` : `Cobrar ${fmt(total)}`}
           </button>
         </div>
       </div>

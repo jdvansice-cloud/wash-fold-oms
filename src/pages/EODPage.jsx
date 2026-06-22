@@ -182,14 +182,20 @@ function EODPage() {
     () => collectedEntries.reduce((a, [, amount]) => a + amount, 0),
     [collectedEntries],
   );
-  // Pending = unpaid orders created on this day (will be collected at pickup).
-  const pendingTotal = useMemo(
-    () =>
-      dailyStats.orders
-        .filter((o) => o.payment_status === 'unpaid')
-        .reduce((s, o) => s + Math.abs(o.total || 0), 0),
-    [dailyStats.orders],
-  );
+  // Unpaid orders created this day, split by why they're deferred:
+  //  - pickup:  collected at pickup
+  //  - account: B2B credit, billed later as a consolidated invoice
+  const { pickupPending, accountPending, pendingTotal } = useMemo(() => {
+    let pickup = 0;
+    let account = 0;
+    dailyStats.orders.forEach((o) => {
+      if (o.payment_status !== 'unpaid') return;
+      const amt = Math.abs(o.total || 0);
+      if (o.billing_type === 'account') account += amt;
+      else pickup += amt;
+    });
+    return { pickupPending: pickup, accountPending: account, pendingTotal: pickup + account };
+  }, [dailyStats.orders]);
 
   // Expected cash = starting cash + cash sales - cash refunds
   const expectedCash = useMemo(() => {
@@ -498,14 +504,23 @@ function EODPage() {
                     </span>
                   </div>
 
-                  {/* Pay-on-pickup — deferred, not collected */}
-                  {pendingTotal > 0 && (
+                  {/* Deferred amounts — not collected today */}
+                  {pickupPending > 0 && (
                     <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
                       <span className="flex items-center gap-2 font-medium text-amber-700">
                         <Clock className="w-4 h-4" />
                         Pendiente (pagar al recoger)
                       </span>
-                      <span className="font-semibold text-amber-700">{formatCurrency(pendingTotal)}</span>
+                      <span className="font-semibold text-amber-700">{formatCurrency(pickupPending)}</span>
+                    </div>
+                  )}
+                  {accountPending > 0 && (
+                    <div className="flex items-center justify-between rounded-lg bg-indigo-50 px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2 font-medium text-indigo-700">
+                        <FileText className="w-4 h-4" />
+                        A crédito (B2B, factura posterior)
+                      </span>
+                      <span className="font-semibold text-indigo-700">{formatCurrency(accountPending)}</span>
                     </div>
                   )}
                 </div>

@@ -404,11 +404,15 @@ function OrdersPage() {
                       {order.status === 'refund' && (
                         <RotateCcw className="w-4 h-4 text-rose-500" />
                       )}
-                      {order.payment_status === 'unpaid' && (
+                      {order.payment_status === 'unpaid' && order.billing_type === 'account' ? (
+                        <span className="badge bg-indigo-100 text-indigo-700 text-xs inline-flex items-center gap-1">
+                          <FileText className="w-3 h-3" /> A crédito
+                        </span>
+                      ) : order.payment_status === 'unpaid' ? (
                         <span className="badge bg-amber-100 text-amber-700 text-xs inline-flex items-center gap-1">
                           <Clock className="w-3 h-3" /> Pendiente
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     {originalOrder && (
                       <p className="text-xs text-rose-500 mt-0.5">
@@ -550,8 +554,11 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
 
   const formatCurrency = (amount) => `B/${(amount || 0).toFixed(2)}`;
   const config = statusConfig[order.status] || statusConfig.pending;
-  // Pay-on-pickup orders are unpaid until settled; they can't be handed over.
+  // Unpaid orders are either pay-on-pickup (settle before handover — gated) or
+  // B2B credit/"account" (delivered on account, billed later — NOT gated).
   const isUnpaid = order.payment_status === 'unpaid';
+  const isPickupUnpaid = isUnpaid && order.billing_type === 'pickup';
+  const isAccountUnpaid = isUnpaid && order.billing_type === 'account';
   
   const statusOrder = ['pending', 'washing', 'drying', 'folding', 'ready', 'completed'];
   const currentStatusIndex = statusOrder.indexOf(order.status);
@@ -595,9 +602,14 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
               {order.is_express && (
                 <span className="badge bg-warning-100 text-warning-700">Express</span>
               )}
-              {isUnpaid && (
+              {isPickupUnpaid && (
                 <span className="badge bg-amber-100 text-amber-700 inline-flex items-center gap-1">
                   <Clock className="w-3 h-3" /> Pendiente de pago
+                </span>
+              )}
+              {isAccountUnpaid && (
+                <span className="badge bg-indigo-100 text-indigo-700 inline-flex items-center gap-1">
+                  <FileText className="w-3 h-3" /> A crédito
                 </span>
               )}
             </div>
@@ -876,9 +888,9 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
               </button>
             )}
             
-            {/* Unpaid (pay-on-pickup): must be cobrado before it can be handed
-                to the customer. Offer "Cobrar" instead of advancing to entrega. */}
-            {isUnpaid && order.status !== 'refunded' && order.status !== 'refund' && (
+            {/* Pay-on-pickup: must be cobrado before it can be handed to the
+                customer. Offer "Cobrar" instead of advancing to entrega. */}
+            {isPickupUnpaid && order.status !== 'refunded' && order.status !== 'refund' && (
               <button
                 onClick={onSettle}
                 className="btn-primary flex-1 bg-amber-500 hover:bg-amber-600"
@@ -889,7 +901,7 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
             )}
 
             {nextStatus && order.status !== 'refunded' && order.status !== 'refund'
-              && !(nextStatus === 'completed' && isUnpaid) && (
+              && !(nextStatus === 'completed' && isPickupUnpaid) && (
               <button
                 onClick={() => onStatusChange(nextStatus)}
                 className="btn-primary flex-1"
