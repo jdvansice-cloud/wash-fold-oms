@@ -9,10 +9,13 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../hooks/useTenant';
 import { useFeatures } from '../hooks/useFeature';
+import { usePermission } from '../hooks/usePermission';
+import { roleLabels } from '../utils/permissions';
 
 function Sidebar({ isOpen, onClose }) {
   const { state } = useApp();
   const { user, appUser, signOut } = useAuth();
+  const { can } = usePermission();
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -40,14 +43,7 @@ function Sidebar({ isOpen, onClose }) {
   const displayName = appUser?.full_name || user?.email?.split('@')[0] || 'Usuario';
   const displayRole = appUser?.role || 'usuario';
   const initials = appUser?.initials || displayName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  const isAdmin = appUser?.role === 'admin';
 
-  const roleLabels = {
-    admin: 'Administrador',
-    supervisor: 'Supervisor',
-    operator: 'Operador',
-  };
-  
   const toggleSection = (key) => {
     setExpandedSections(prev => ({
       ...prev,
@@ -61,7 +57,7 @@ function Sidebar({ isOpen, onClose }) {
       items: [
         { path: p('/'), label: 'Nueva Orden', icon: Plus },
         { path: p('/orders'), label: 'Ordenes', icon: ClipboardList },
-        {
+        can('reports.view') && {
           key: 'analytics',
           label: 'Analiticas',
           icon: BarChart3,
@@ -73,14 +69,14 @@ function Sidebar({ isOpen, onClose }) {
         { path: p('/machines'), label: 'Maquinas / En Proceso', icon: RefreshCw },
         has('pickups') && { path: p('/pickups'), label: 'Recogidas', icon: Truck },
         { path: p('/customers'), label: 'Clientes', icon: Users },
-        { path: p('/b2b'), label: 'Facturación B2B', icon: Building2 },
+        can('b2b.manage') && { path: p('/b2b'), label: 'Facturación B2B', icon: Building2 },
         has('invoices') && { path: p('/invoices'), label: 'Facturas', icon: FileText },
       ].filter(Boolean),
     },
   ];
 
-  // Only show settings section for admins
-  if (isAdmin) {
+  // Settings is admin-only.
+  if (can('settings.manage')) {
     menuSections.push({
       title: 'Configuración',
       items: [

@@ -7,12 +7,15 @@ import {
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../hooks/useTenant';
+import { usePermission } from '../hooks/usePermission';
+import { roleLabels } from '../utils/permissions';
 import { useOpenTimeEntry, useClockToggle, workedMinutes } from '../hooks/queries/useTimeClock';
 import StoreSwitcher from './StoreSwitcher';
 
 function Header() {
   const { state, actions } = useApp();
   const { user, appUser, signOut } = useAuth();
+  const { can } = usePermission();
   const location = useLocation();
   const navigate = useNavigate();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -62,12 +65,6 @@ function Header() {
   const displayRole = appUser?.role || 'usuario';
   const initials = appUser?.initials || displayName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 
-  const roleLabels = {
-    admin: 'Administrador',
-    supervisor: 'Supervisor',
-    operator: 'Operador',
-  };
-  
   return (
     <>
       <header className="fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-40 shadow-sm">
@@ -176,9 +173,10 @@ function Header() {
                     )}
                   </div>
 
-                  {/* Menu Items */}
+                  {/* Menu Items — daily close is supervisor+ */}
+                  {can('eod.close') && (
                   <div className="py-1">
-                    <Link 
+                    <Link
                       to={p('/eod')}
                       onClick={() => setUserMenuOpen(false)}
                       className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
@@ -189,8 +187,8 @@ function Header() {
                         <p className="text-xs text-slate-500">Reconciliación y reporte</p>
                       </div>
                     </Link>
-                    
-                    <Link 
+
+                    <Link
                       to="/eod?history=1"
                       onClick={() => setUserMenuOpen(false)}
                       className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
@@ -202,7 +200,8 @@ function Header() {
                       </div>
                     </Link>
                   </div>
-                  
+                  )}
+
                   <div className="border-t border-slate-100 py-1">
                     <button 
                       onClick={() => { setUserMenuOpen(false); setShowPasswordModal(true); }}
@@ -212,8 +211,8 @@ function Header() {
                       <span>Cambiar Contraseña</span>
                     </button>
 
-                    {appUser?.role === 'admin' && (
-                      <Link 
+                    {can('settings.manage') && (
+                      <Link
                         to={p('/settings')}
                         className="w-full px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
                         onClick={() => setUserMenuOpen(false)}

@@ -9,6 +9,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useFeature } from '../hooks/useFeature';
+import { usePermission } from '../hooks/usePermission';
 import { supabase } from '../lib/supabase';
 import EFacturaReconciliation from '../components/efactura/EFacturaReconciliation';
 import AttendanceCard from '../components/AttendanceCard';
@@ -16,12 +17,13 @@ import AttendanceCard from '../components/AttendanceCard';
 function EODPage() {
   const { state } = useApp();
   const { appUser } = useAuth();
+  const { can } = usePermission();
   const hasInvoices = useFeature('invoices');
   const [searchParams] = useSearchParams();
-  
-  // Check if user is admin
-  const isAdmin = appUser?.role === 'admin';
-  
+
+  // Editing an already-closed day is admin-only; creating a close is supervisor+.
+  const isAdmin = can('eod.editClosed');
+
   // Selected date for closing
   const [selectedDate, setSelectedDate] = useState(() => {
     const today = new Date();
