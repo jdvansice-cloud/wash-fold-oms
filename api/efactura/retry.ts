@@ -48,7 +48,7 @@ export default async function handler(req: any, res: any) {
 
     for (const row of rows || []) {
       try {
-        // Resolve the company from the store, then its E-Factura config.
+        // Resolve the company from the store, then its per-store E-Factura config.
         const { data: store } = await admin
           .from('stores')
           .select('company_id')
@@ -60,14 +60,14 @@ export default async function handler(req: any, res: any) {
           continue;
         }
 
-        if (!configCache.has(companyId)) {
+        if (!configCache.has(row.store_id)) {
           try {
-            configCache.set(companyId, await loadEfacturaConfig(admin, companyId));
+            configCache.set(row.store_id, await loadEfacturaConfig(admin, { storeId: row.store_id, companyId }));
           } catch {
-            configCache.set(companyId, null);
+            configCache.set(row.store_id, null);
           }
         }
-        const config = configCache.get(companyId);
+        const config = configCache.get(row.store_id);
         if (!config || !config.enabled) {
           results.push({ id: row.id, skipped: 'disabled' });
           continue;

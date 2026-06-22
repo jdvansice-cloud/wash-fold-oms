@@ -17,8 +17,9 @@ interface ConfigForm {
 }
 
 export default function EFacturaSettings() {
-  const { company } = useTenant();
+  const { company, stores, activeStore } = useTenant();
   const companyId = company?.id;
+  const [storeId, setStoreId] = useState<string | undefined>(activeStore?.id || stores[0]?.id);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -32,16 +33,34 @@ export default function EFacturaSettings() {
     enabled: false,
   });
 
+  const blankForm: ConfigForm = {
+    environment: 'test',
+    punto_facturacion: '001',
+    default_cpbs_code: '',
+    default_cpbs_code_short: '',
+    enabled: false,
+  };
+
   useEffect(() => {
-    if (!companyId) return;
+    if (!storeId || !companyId) return;
     let active = true;
     (async () => {
       setLoading(true);
-      const { data } = await supabase
+      setHasKey(false);
+      // Per-store config; fall back to the company-level row if the store_id
+      // column doesn't exist yet (pre per-store migration).
+      let { data, error } = await supabase
         .from('company_efactura_config')
         .select('*')
-        .eq('company_id', companyId)
+        .eq('store_id', storeId)
         .maybeSingle();
+      if (error) {
+        ({ data } = await supabase
+          .from('company_efactura_config')
+          .select('*')
+          .eq('company_id', companyId)
+          .maybeSingle());
+      }
       if (!active) return;
       if (data) {
         setHasKey(!!data.api_key);
@@ -52,16 +71,19 @@ export default function EFacturaSettings() {
           default_cpbs_code_short: data.default_cpbs_code_short?.toString() || '',
           enabled: !!data.enabled,
         });
+      } else {
+        setForm(blankForm);
       }
       setLoading(false);
     })();
     return () => {
       active = false;
     };
-  }, [companyId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, companyId]);
 
   const handleSave = async () => {
-    if (!companyId) return;
+    if (!storeId || !companyId) return;
     if (form.enabled && !hasKey && !apiKey.trim()) {
       alert('Ingresa la API key de efacturapty antes de activar la facturación.');
       return;
@@ -69,6 +91,7 @@ export default function EFacturaSettings() {
     setSaving(true);
     try {
       const payload: Record<string, unknown> = {
+        store_id: storeId,
         company_id: companyId,
         environment: form.environment,
         punto_facturacion: form.punto_facturacion.trim() || '001',
@@ -83,7 +106,7 @@ export default function EFacturaSettings() {
 
       const { error } = await supabase
         .from('company_efactura_config')
-        .upsert(payload, { onConflict: 'company_id' });
+        .upsert(payload, { onConflict: 'store_id' });
       if (error) throw error;
 
       if (apiKey.trim()) {
@@ -125,6 +148,25 @@ export default function EFacturaSettings() {
       </div>
 
       <div className="space-y-5 max-w-xl">
+        {/* Store selector — each store is its own DGI punto de facturación */}
+        {stores.length > 1 && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tienda / Sucursal</label>
+            <select
+              value={storeId || ''}
+              onChange={(e) => setStoreId(e.target.value)}
+              className="input w-full"
+            >
+              {stores.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">
+              Cada sucursal es su propio punto de facturación ante la DGI. Configúralo por tienda.
+            </p>
+          </div>
+        )}
+
         {/* Enable */}
         <label className="flex items-start gap-3 cursor-pointer">
           <input

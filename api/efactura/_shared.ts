@@ -58,26 +58,55 @@ export async function authenticateStaff(
 
 export interface EFacturaConfig {
   company_id: string;
+  store_id?: string | null;
   api_key: string;
   environment: 'test' | 'prod';
+  /** DGI point-of-facturation code for this store (e.g. '001', '002'). */
   punto_facturacion: string;
   default_cpbs_code: number | null;
   default_cpbs_code_short: number | null;
   enabled: boolean;
 }
 
+/**
+ * Loads the E-Factura config for a store. Prefers the per-store row; if the
+ * store_id column doesn't exist yet (pre per-store migration) it falls back to
+ * the company-level row, so emission never breaks mid-rollout. Post-migration,
+ * an unconfigured store errors (no cross-store fallback that would use the wrong
+ * punto de facturación / key).
+ */
 export async function loadEfacturaConfig(
   admin: SupabaseClient,
-  companyId: string,
+  opts: { storeId?: string | null; companyId: string },
 ): Promise<EFacturaConfig> {
-  const { data, error } = await admin
+  if (opts.storeId) {
+    const { data, error } = await admin
+      .from('company_efactura_config')
+      .select('*')
+      .eq('store_id', opts.storeId)
+      .maybeSingle();
+    if (error) {
+      // Pre-migration: no store_id column → fall back to the company-level row.
+      const { data: comp } = await admin
+        .from('company_efactura_config')
+        .select('*')
+        .eq('company_id', opts.companyId)
+        .maybeSingle();
+      if (comp?.api_key) return comp as EFacturaConfig;
+      throw new HttpError(400, 'E-Factura is not configured');
+    }
+    if (data?.api_key) return data as EFacturaConfig;
+    throw new HttpError(400, 'E-Factura is not configured for this store');
+  }
+
+  // Legacy callers without a store: company-level row.
+  const { data } = await admin
     .from('company_efactura_config')
     .select('*')
-    .eq('company_id', companyId)
+    .eq('company_id', opts.companyId)
+    .limit(1)
     .maybeSingle();
-
-  if (error) throw new HttpError(500, 'Could not load E-Factura configuration');
-  if (!data || !data.api_key) throw new HttpError(400, 'E-Factura is not configured for this company');
+  if (!data || !data.api_key) throw new HttpError(400, 'E-Factura is not configured');
   return data as EFacturaConfig;
 }
 

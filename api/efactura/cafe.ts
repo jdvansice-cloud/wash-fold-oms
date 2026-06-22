@@ -19,7 +19,6 @@ export default async function handler(req: any, res: any) {
   try {
     const admin = getAdmin();
     const { companyId } = await authenticateStaff(admin, req);
-    const config = await loadEfacturaConfig(admin, companyId);
 
     const invoiceId = req.query?.invoice_id as string | undefined;
     const cufeParam = req.query?.cufe as string | undefined;
@@ -35,6 +34,8 @@ export default async function handler(req: any, res: any) {
     if (!invoice?.cufe) throw new HttpError(404, 'Invoice not found or not yet authorized');
     await assertStoreInCompany(admin, invoice.store_id, companyId);
     const cufe = invoice.cufe;
+
+    const config = await loadEfacturaConfig(admin, { storeId: invoice.store_id, companyId });
 
     const pacRes = await pacRequest(config, `/Invoices/${encodeURIComponent(cufe)}/cafe-file`, {
       method: 'GET',
