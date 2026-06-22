@@ -204,12 +204,36 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
   const taxWeights = items.map((it, i) => (it.isTaxable === false ? 0 : netCents[i]));
   const itbmsPerLine = distributeCents(taxCentsTotal, taxWeights);
 
+  // --- Reconcile to order.total, absorbing sub-cent rounding drift ---
+  // An order's stored subtotal + tax can differ from its total by a cent or two
+  // (independent rounding of each field). `total` is authoritative — it's what
+  // was charged — so we nudge the largest net line to make the document balance.
+  // A larger gap means a genuinely missing line (e.g. delivery) -> fail loudly.
+  const totalCents = toCents(order.total);
+  const driftTolerance = Math.max(2, items.length);
+  const residual =
+    totalCents - netCents.reduce((s, c) => s + c, 0) - itbmsPerLine.reduce((s, c) => s + c, 0);
+  if (residual !== 0) {
+    if (Math.abs(residual) > driftTolerance) {
+      throw new EInvoiceReconciliationError(
+        `Invoice totals do not reconcile by ${fromCents(residual)} (order.total ${order.total}). ` +
+          `Ensure every billable line (including delivery) is passed in \`items\`.`,
+      );
+    }
+    let idx = 0;
+    for (let i = 1; i < netCents.length; i++) if (netCents[i] > netCents[idx]) idx = i;
+    netCents[idx] += residual;
+  }
+
   const rateCode = itbmsRateCode(config.itbmsRate);
 
   const listaItems: ListaItem[] = items.map((it, i) => {
     const taxable = it.isTaxable !== false;
     const sumaCents = netCents[i] + itbmsPerLine[i];
-    const lineDiscount = discountPerLine[i];
+    // Derive the per-line discount from the actual gross→net gap so that
+    // precioItem === precioUnitario·cantidad − descuento·cantidad stays exact,
+    // including any absorbed rounding drift.
+    const lineDiscountCents = grossCents[i] - netCents[i];
 
     return {
       numeroSecuenciaItem: i + 1,
@@ -230,8 +254,8 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
         : {}),
       grupoPrecios: {
         precioUnitarioTransferencia: round2(it.unitPrice),
-        ...(lineDiscount > 0
-          ? { descuento: round2(fromCents(lineDiscount) / it.quantity) }
+        ...(lineDiscountCents > 0
+          ? { descuento: round2(fromCents(lineDiscountCents) / it.quantity) }
           : {}),
         precioItem: fromCents(netCents[i]),
         sumaPrecioItem: fromCents(sumaCents),
@@ -246,7 +270,6 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
   // --- Totals ---
   const totalNetoCents = netCents.reduce((s, c) => s + c, 0);
   const totalItbmsCents = itbmsPerLine.reduce((s, c) => s + c, 0);
-  const totalCents = toCents(order.total);
 
   const payments = input.payments ?? [];
   const receivedCents = payments.length
@@ -266,7 +289,6 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
     totalNeto: fromCents(totalNetoCents),
     totalITBMS: fromCents(totalItbmsCents),
     totalGravado: fromCents(totalItbmsCents),
-    ...(discountCentsTotal > 0 ? { totalDescuento: fromCents(discountCentsTotal) } : {}),
     valorTotalFactura: fromCents(totalCents),
     sumaValoresRecibidos: fromCents(receivedCents),
     ...(changeCents > 0 ? { vueltoEntregado: fromCents(changeCents) } : {}),
