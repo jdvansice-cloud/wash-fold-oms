@@ -3764,6 +3764,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
     is_taxable: product?.is_taxable !== false,
     has_children: product?.has_children || false, // Is this a parent product?
     extra_days: product?.extra_days || 0,
+    machine_type: product?.machine_type || '', // '' | 'washer' | 'dryer' (Lavamático: ask for a machine at checkout)
   });
   
   // Calculate base price and ITBMS from total price (only when is_taxable is true)
@@ -3831,6 +3832,7 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
       is_taxable: formData.has_children ? false : formData.is_taxable,
       has_children: formData.has_children,
       extra_days: formData.has_children ? 0 : formData.extra_days,
+      machine_type: formData.has_children ? null : (formData.machine_type || null),
     };
     
     // Only include ID when editing existing product
@@ -4212,7 +4214,26 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
               </select>
             </div>
             )}
-            
+
+            {/* Machine (Lavamático) — asks for a washer/dryer at checkout */}
+            {!formData.has_children && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Máquina (autoservicio)
+              </label>
+              <select
+                value={formData.machine_type}
+                onChange={(e) => handleChange('machine_type', e.target.value)}
+                className="input"
+              >
+                <option value="">Ninguna</option>
+                <option value="washer">Lavadora</option>
+                <option value="dryer">Secadora</option>
+              </select>
+              <p className="text-xs text-slate-400 mt-1">Si se asigna, el POS pedirá elegir una máquina y registrará el ciclo al vender.</p>
+            </div>
+            )}
+
             {/* Toggles */}
             <div className="col-span-2 flex items-center gap-6 pt-4 border-t border-slate-100">
               <label className="flex items-center gap-2 cursor-pointer">

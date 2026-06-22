@@ -8,13 +8,15 @@ import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import CustomerSearchModal from './modals/CustomerSearchModal';
 import PaymentModal from './modals/PaymentModal';
-import { 
-  generateReceiptData, 
-  generateReceiptText, 
-  printReceipt, 
+import {
+  generateReceiptData,
+  generateReceiptText,
+  printReceipt,
   saveReceiptToStorage,
   isPrinterConnected
 } from '../utils/receiptPrinter';
+import MachineAssignModal from './modals/MachineAssignModal';
+import { recordMachineUsage } from '../hooks/queries/useMachines';
 
 // Helper to fetch customer loyalty data
 const fetchCustomerLoyalty = async (customerId) => {
@@ -716,6 +718,16 @@ function TicketPanel() {
   const { addOrder: dbAddOrder } = useDataLoader();
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [machineAssignOpen, setMachineAssignOpen] = useState(false);
+  const [machineAssignments, setMachineAssignments] = useState({});
+
+  // Ticket lines whose product consumes a washer/dryer cycle (Lavamático).
+  const machineItems = useMemo(
+    () => state.ticket.items
+      .map((it, idx) => ({ it, idx }))
+      .filter((x) => x.it.product?.machine_type),
+    [state.ticket.items],
+  );
   const [discountExpanded, setDiscountExpanded] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -1584,9 +1596,10 @@ function TicketPanel() {
           </button>
         )}
 
-        {/* Process Button - Always Visible */}
+        {/* Process Button - Always Visible. Lavamático lines must pick a machine
+            first (asked before payment). */}
         <button
-          onClick={() => setPaymentModalOpen(true)}
+          onClick={() => (machineItems.length > 0 ? setMachineAssignOpen(true) : setPaymentModalOpen(true))}
           disabled={!canProcess || printingReceipt}
           className={`w-full py-4 rounded-xl font-semibold text-white transition-all ${
             canProcess && !printingReceipt
@@ -1630,6 +1643,19 @@ function TicketPanel() {
         />
       )}
       
+      {machineAssignOpen && (
+        <MachineAssignModal
+          storeId={state.store?.id}
+          machineItems={machineItems}
+          onClose={() => setMachineAssignOpen(false)}
+          onConfirm={(assignments) => {
+            setMachineAssignments(assignments);
+            setMachineAssignOpen(false);
+            setPaymentModalOpen(true);
+          }}
+        />
+      )}
+
       {paymentModalOpen && (
         <PaymentModal
           total={adjustedTotal}
@@ -1678,7 +1704,21 @@ function TicketPanel() {
               };
               
               const newOrder = await dbAddOrder(orderData);
-              
+
+              // Record machine cycles for the assigned Lavamático lines
+              // (fire-and-forget so it never blocks the sale).
+              if (machineItems.length > 0 && newOrder?.id) {
+                machineItems.forEach(({ it, idx }) => {
+                  const machineId = machineAssignments[idx];
+                  if (machineId) {
+                    recordMachineUsage(machineId, newOrder.id, it.quantity || 1).catch((e) =>
+                      console.warn('Machine usage record failed:', e?.message || e),
+                    );
+                  }
+                });
+                setMachineAssignments({});
+              }
+
               // Initialize loyalty info for receipt (will be populated if customer is registered)
               let loyaltyInfoForReceipt = null;
               
