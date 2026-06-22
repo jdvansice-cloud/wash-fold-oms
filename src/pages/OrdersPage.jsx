@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search, Filter, Eye, ChevronRight, RotateCcw, Package, CreditCard, X, AlertTriangle, Banknote, Smartphone, Building2, FileText, Clock, Gift, Award, Coins, Stamp, Calendar } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { useAuth } from '../context/AuthContext';
+import { usePermission } from '../hooks/usePermission';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 import { InvoiceStatus } from '../components/efactura/InvoiceStatus';
@@ -66,7 +66,7 @@ const getOrderDisplayNumber = (order) => {
 
 function OrdersPage() {
   const { state, actions } = useApp();
-  const { isAdmin } = useAuth();
+  const { can } = usePermission();
   const { updateOrderStatus: dbUpdateOrderStatus, settleOrder, getOrderDetails, createRefund, reload, searchOrders, loadMoreOrders } = useDataLoader();
   const [settlingOrder, setSettlingOrder] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -509,7 +509,7 @@ function OrdersPage() {
           order={selectedOrder}
           orderDetails={orderDetails}
           loadingDetails={loadingDetails}
-          isAdmin={isAdmin}
+          canRefundRole={can('orders.refund')}
           allOrders={state.orders}
           onClose={() => {
             setSelectedOrder(null);
@@ -566,7 +566,7 @@ function OrdersPage() {
 }
 
 // Order Details Modal
-function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOrders, onClose, onStatusChange, onSettle, onRefund }) {
+function OrderDetailsModal({ order, orderDetails, loadingDetails, canRefundRole, allOrders, onClose, onStatusChange, onSettle, onRefund }) {
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [processingRefund, setProcessingRefund] = useState(false);
@@ -590,7 +590,7 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
     : null;
   
   // Check if order can be refunded
-  const canRefund = isAdmin && 
+  const canRefund = canRefundRole &&
     !['refunded', 'refund', 'cancelled'].includes(order.status) &&
     order.total > 0;
   

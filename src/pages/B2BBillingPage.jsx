@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight, CreditCard, Download, Search } from 'lucide-react';
+import { Building2, FileText, Check, Loader2, Printer, X, ChevronRight, CreditCard, Download, Search, ShieldAlert } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { usePermission } from '../hooks/usePermission';
 import PaymentModal from '../components/modals/PaymentModal';
 import { emitB2BInvoice } from '../lib/efactura/client';
 import { downloadCafe, printCafe } from '../hooks/queries/useElectronicInvoice';
@@ -23,6 +24,7 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleDateString('es-PA', { day:
 function B2BBillingPage() {
   const { state } = useApp();
   const { appUser } = useAuth();
+  const { can } = usePermission();
   const storeId = state.store?.id;
 
   const [customers, setCustomers] = useState([]);
@@ -124,6 +126,21 @@ function B2BBillingPage() {
       setGenerating(false);
     }
   };
+
+  // B2B billing (generate/collect consolidated invoices) is supervisor+.
+  if (!can('b2b.manage')) {
+    return (
+      <div className="p-6">
+        <div className="max-w-md mx-auto mt-16 text-center">
+          <ShieldAlert className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <h1 className="text-lg font-semibold text-slate-800">Acceso restringido</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            La facturación B2B está disponible para supervisores y administradores.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">

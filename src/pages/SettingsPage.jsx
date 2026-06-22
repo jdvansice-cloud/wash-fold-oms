@@ -5,13 +5,14 @@ import {
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
   GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
-  Award, Stamp, Coins, Info, Printer, Truck, FileText
+  Award, Stamp, Coins, Info, Printer, Truck, FileText, ShieldAlert
 } from 'lucide-react';
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import EFacturaSettings from '../components/settings/EFacturaSettings';
 import { useApp } from '../context/AppContext';
 import { useFeature } from '../hooks/useFeature';
 import { useTenant } from '../hooks/useTenant';
+import { usePermission } from '../hooks/usePermission';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
 import { 
@@ -26,7 +27,25 @@ function SettingsPage() {
   const { state } = useApp();
   const { activeStore } = useTenant();
   const hasInvoices = useFeature('invoices');
+  const { can } = usePermission();
   const [activeSection, setActiveSection] = useState('company');
+
+  // Settings (config + user management) is admin-only. Guard the whole page so a
+  // non-admin who navigates here directly gets a clear message, not a UI that
+  // silently fails against RLS on save.
+  if (!can('settings.manage')) {
+    return (
+      <div className="p-6 animate-fade-in">
+        <div className="max-w-md mx-auto mt-16 text-center">
+          <ShieldAlert className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <h1 className="text-lg font-semibold text-slate-800">Acceso restringido</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            La configuración solo está disponible para administradores.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const menuItems = [
     { id: 'company', label: 'Empresa', icon: Building, description: 'Datos de la empresa' },
