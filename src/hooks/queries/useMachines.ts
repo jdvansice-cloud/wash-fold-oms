@@ -94,6 +94,42 @@ export async function fetchMaintenanceLog(machineId: string): Promise<Maintenanc
   return (data as MaintenanceLog[]) || [];
 }
 
+/** Machine ids a product is restricted to (empty = any machine of its type). */
+export async function fetchProductMachines(productId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('product_machines')
+    .select('machine_id')
+    .eq('product_id', productId);
+  if (error) throw error;
+  return (data || []).map((r: any) => r.machine_id);
+}
+
+/** product_id -> Set(machine_id) for a set of products (POS assignment). */
+export async function fetchProductMachineMap(productIds: string[]): Promise<Record<string, string[]>> {
+  if (!productIds.length) return {};
+  const { data, error } = await supabase
+    .from('product_machines')
+    .select('product_id, machine_id')
+    .in('product_id', productIds);
+  if (error) throw error;
+  const map: Record<string, string[]> = {};
+  for (const r of (data as any[]) || []) {
+    (map[r.product_id] ||= []).push(r.machine_id);
+  }
+  return map;
+}
+
+/** Replace a product's allowed machines. */
+export async function setProductMachines(productId: string, machineIds: string[]): Promise<void> {
+  const { error: delErr } = await supabase.from('product_machines').delete().eq('product_id', productId);
+  if (delErr) throw delErr;
+  if (machineIds.length) {
+    const rows = machineIds.map((machine_id) => ({ product_id: productId, machine_id }));
+    const { error } = await supabase.from('product_machines').insert(rows);
+    if (error) throw error;
+  }
+}
+
 /** Record machine cycles for a sale (atomic insert + counter bump). */
 export async function recordMachineUsage(machineId: string, orderId: string | null, cycles: number, userId?: string | null): Promise<void> {
   const { error } = await supabase.rpc('record_machine_usage', {

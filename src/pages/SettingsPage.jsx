@@ -10,6 +10,7 @@ import {
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import EFacturaSettings from '../components/settings/EFacturaSettings';
 import MachinesSettings from '../components/settings/MachinesSettings';
+import { fetchActiveMachines, fetchProductMachines, setProductMachines } from '../hooks/queries/useMachines';
 import { useApp } from '../context/AppContext';
 import { useFeature } from '../hooks/useFeature';
 import { useTenant } from '../hooks/useTenant';
@@ -3261,13 +3262,18 @@ function ProductsSettings() {
   const handleSaveProduct = async (productData) => {
     setSaving(true);
     try {
+      // machine_ids isn't a products column — persist it to product_machines.
+      const { machine_ids, ...rest } = productData;
+      let savedId = editingProduct?.id;
       if (editingProduct) {
-        // Update existing product
-        await dbUpdateProduct(editingProduct.id, productData);
+        await dbUpdateProduct(editingProduct.id, rest);
       } else {
-        // Add new product with display_order at the end
         const maxOrder = Math.max(...products.map(p => p.display_order || 0), 0);
-        await dbAddProduct({ ...productData, display_order: maxOrder + 1 });
+        const created = await dbAddProduct({ ...rest, display_order: maxOrder + 1 });
+        savedId = created?.id;
+      }
+      if (machine_ids && savedId) {
+        try { await setProductMachines(savedId, machine_ids); } catch (e) { console.error('product_machines save failed', e); }
       }
       setShowAddModal(false);
       setEditingProduct(null);
@@ -3738,8 +3744,30 @@ function ProductsSettings() {
 function ProductFormModal({ product, sections, products, onClose, onSave, saving }) {
   const { state } = useApp();
   const ITBMS_RATE = state.settings?.itbms_rate || 7; // Default 7%
-  
+
   const isEditing = product !== null;
+
+  // Machines this product may use (default: all of its type checked).
+  const [allMachines, setAllMachines] = useState([]);
+  const [linkedMachineIds, setLinkedMachineIds] = useState(null); // null until loaded
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!state.store?.id) return;
+      try {
+        const ms = await fetchActiveMachines(state.store.id);
+        const links = product?.id ? await fetchProductMachines(product.id) : [];
+        if (!alive) return;
+        setAllMachines(ms);
+        // No explicit links (new product or "any machine") → default all checked.
+        setLinkedMachineIds(links.length ? new Set(links) : new Set(ms.map((m) => m.id)));
+      } catch (e) {
+        console.error(e);
+        if (alive) setLinkedMachineIds(new Set());
+      }
+    })();
+    return () => { alive = false; };
+  }, [product?.id, state.store?.id]);
   
   // Calculate initial total prices from base prices if editing
   const calculateTotalFromBase = (basePrice, isTaxable) => {
@@ -3833,6 +3861,10 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
       has_children: formData.has_children,
       extra_days: formData.has_children ? 0 : formData.extra_days,
       machine_type: formData.has_children ? null : (formData.machine_type || null),
+      // Not a products column — handleSaveProduct persists it to product_machines.
+      machine_ids: (!formData.has_children && formData.machine_type && linkedMachineIds)
+        ? [...linkedMachineIds]
+        : null,
     };
     
     // Only include ID when editing existing product
@@ -4231,6 +4263,38 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
                 <option value="dryer">Secadora</option>
               </select>
               <p className="text-xs text-slate-400 mt-1">Si se asigna, el POS pedirá elegir una máquina y registrará el ciclo al vender.</p>
+
+              {/* Allowed machines — all checked by default; uncheck to restrict
+                  this service to specific machines. */}
+              {formData.machine_type && linkedMachineIds && (
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-medium text-slate-600 mb-2">Máquinas permitidas</p>
+                  {allMachines.length === 0 ? (
+                    <p className="text-xs text-slate-400">No hay máquinas. Créalas en Máquinas.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {allMachines.map((m) => (
+                        <label key={m.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={linkedMachineIds.has(m.id)}
+                            onChange={(e) => {
+                              setLinkedMachineIds((prev) => {
+                                const next = new Set(prev);
+                                e.target.checked ? next.add(m.id) : next.delete(m.id);
+                                return next;
+                              });
+                            }}
+                            className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <span className="text-slate-700">{m.name}</span>
+                          <span className="text-xs text-slate-400">({m.machine_type === 'washer' ? 'Lavadora' : 'Secadora'})</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             )}
 
