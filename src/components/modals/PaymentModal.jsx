@@ -36,6 +36,7 @@ function PaymentModal({
   loyaltySettings = null,
   freeServicesApplied = null,
   allowPickup = true,
+  allowGiftCard = true,
   customer = null,
   onClose,
   onComplete,
@@ -329,10 +330,10 @@ function PaymentModal({
         payment_type: m.payment_type || 'other',
         key: m.id || m.name,
       }));
-    list.push({ key: 'gift_card', name: 'Tarjeta Regalo', special: 'gift_card' });
+    if (allowGiftCard) list.push({ key: 'gift_card', name: 'Tarjeta Regalo', special: 'gift_card' });
     if (canUseLoyalty) list.push({ key: 'loyalty', name: 'Puntos de Lealtad', special: 'loyalty' });
     return list;
-  }, [methods, canUseLoyalty, allowPickup, canUseCredit]);
+  }, [methods, canUseLoyalty, allowPickup, canUseCredit, allowGiftCard]);
 
   const isSelected = (m) => selected && (selected.key === m.key);
 
