@@ -24,14 +24,14 @@ import {
   itbmsRateCode,
   mapPaymentForma,
   type DocType,
-} from './constants';
-import { distributeCents, fromCents, round2, toCents } from './money';
+} from './constants.js';
+import { distributeCents, fromCents, round2, toCents } from './money.js';
 import type {
   InformacionReceptor,
   InvoiceRequest,
   ListaItem,
   Totales,
-} from './types';
+} from './types.js';
 
 export class EInvoiceReconciliationError extends Error {
   constructor(message: string) {
