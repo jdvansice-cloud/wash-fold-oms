@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isConfigured, getDefaultUser } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
+import { emitInvoice } from '../lib/efactura/client';
 
 // Build PostgREST auth headers. The Authorization bearer MUST be the
 // logged-in user's access token (not the anon key) so RLS can scope rows
@@ -465,7 +466,17 @@ export function useDataLoader() {
 
       // Add to local state
       actions.addOrder(order);
-      
+
+      // Auto-emit the electronic invoice (factura electrónica) for paid sales.
+      // Fire-and-forget so it never blocks checkout; the /api/efactura/retry
+      // cron re-emits if the PAC is unavailable, and it no-ops when E-Factura
+      // is not enabled for the company.
+      if ((order.total ?? 0) > 0) {
+        emitInvoice(order.id).catch((err) =>
+          console.warn('E-Factura auto-emit deferred:', err?.message || err),
+        );
+      }
+
       // Send order_created notification if customer has email
       if (orderData.customer_id && !orderData.is_walk_in) {
         const { data: customer } = await supabase
@@ -905,7 +916,31 @@ export function useDataLoader() {
         // Don't throw - refund order was created successfully
       }
 
-      // 7. Update local state
+      // 7. Emit a nota de crédito (factura electrónica tipo 06) for the refund,
+      // referencing the original order's authorized factura. Fire-and-forget so
+      // it never blocks the refund; the retry cron picks up failures.
+      try {
+        const { data: originalInvoice } = await supabase
+          .from('electronic_invoices')
+          .select('cufe')
+          .eq('order_id', originalOrder.id)
+          .eq('doc_type', '01')
+          .eq('status', 'authorized')
+          .maybeSingle();
+
+        if (originalInvoice?.cufe) {
+          emitInvoice(refundOrder.id, {
+            docType: '06',
+            referencedCufe: originalInvoice.cufe,
+          }).catch((err) =>
+            console.warn('E-Factura nota de crédito deferred:', err?.message || err),
+          );
+        }
+      } catch (ncErr) {
+        console.warn('Could not trigger nota de crédito:', ncErr);
+      }
+
+      // 8. Update local state
       actions.addOrder(refundOrder);
       actions.updateOrderStatus(originalOrder.id, 'refunded');
 

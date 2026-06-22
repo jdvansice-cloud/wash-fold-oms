@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
+import { InvoiceStatus } from '../components/efactura/InvoiceStatus';
 
 // Helper to get date X days ago in YYYY-MM-DD format
 const getDateDaysAgo = (days) => {
@@ -739,7 +740,19 @@ function OrderDetailsModal({ order, orderDetails, loadingDetails, isAdmin, allOr
                   </div>
                 </div>
               </div>
-              
+
+              {/* Electronic invoice — factura for sales, nota de crédito for refunds */}
+              {order.total > 0 && order.status !== 'refund' && (
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <InvoiceStatus orderId={order.id} staff />
+                </div>
+              )}
+              {order.status === 'refund' && (
+                <div className="bg-slate-50 rounded-xl p-4">
+                  <InvoiceStatus orderId={order.id} staff canEmit={false} />
+                </div>
+              )}
+
               {/* Notes */}
               {order.notes && (
                 <div className="bg-amber-50 rounded-xl p-4">

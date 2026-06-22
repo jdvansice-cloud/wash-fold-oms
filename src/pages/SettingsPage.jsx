@@ -5,9 +5,10 @@ import {
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
   GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
-  Award, Stamp, Coins, Info, Printer, Truck
+  Award, Stamp, Coins, Info, Printer, Truck, FileText
 } from 'lucide-react';
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
+import EFacturaSettings from '../components/settings/EFacturaSettings';
 import { useApp } from '../context/AppContext';
 import { useFeature } from '../hooks/useFeature';
 import { useTenant } from '../hooks/useTenant';
@@ -24,8 +25,9 @@ import {
 function SettingsPage() {
   const { state } = useApp();
   const { activeStore } = useTenant();
+  const hasInvoices = useFeature('invoices');
   const [activeSection, setActiveSection] = useState('company');
-  
+
   const menuItems = [
     { id: 'company', label: 'Empresa', icon: Building, description: 'Datos de la empresa' },
     { id: 'store', label: 'Tienda', icon: Store, description: 'Configuración de tienda' },
@@ -39,6 +41,9 @@ function SettingsPage() {
     { id: 'giftcards', label: 'Tarjetas Regalo', icon: Gift, description: 'Gift cards' },
     { id: 'loyalty', label: 'Lealtad', icon: Award, description: 'Programas de fidelización' },
     { id: 'pickup', label: 'Recogidas', icon: Truck, description: 'Horario de recogida a domicilio' },
+    ...(hasInvoices
+      ? [{ id: 'efactura', label: 'Facturación Electrónica', icon: FileText, description: 'DGI / efacturapty' }]
+      : []),
   ];
 
   return (
@@ -95,6 +100,7 @@ function SettingsPage() {
           {activeSection === 'giftcards' && <GiftCardsSettings />}
           {activeSection === 'loyalty' && <LoyaltySettings />}
           {activeSection === 'pickup' && <PickupScheduleSettings storeId={activeStore?.id || state.currentStore?.id} />}
+          {activeSection === 'efactura' && <EFacturaSettings />}
         </div>
       </div>
     </div>

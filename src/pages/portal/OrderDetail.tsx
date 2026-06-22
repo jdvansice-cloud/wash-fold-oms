@@ -4,6 +4,7 @@ import { ArrowLeft, Zap } from 'lucide-react';
 import { useMyOrderDetails } from '../../hooks/queries/useMyOrders';
 import { useTenant } from '../../hooks/useTenant';
 import { OrderTimeline } from '../../components/portal/OrderTimeline';
+import { InvoiceStatus } from '../../components/efactura/InvoiceStatus';
 import { Spinner } from '../../components/ui/Spinner';
 import { formatCurrency, formatDate, formatWeight, formatOrderNumber } from '../../utils/formatters';
 
@@ -111,6 +112,13 @@ export default function OrderDetail() {
           <span className="text-slate-900">{formatCurrency(order.total)}</span>
         </div>
       </div>
+
+      {/* Electronic invoice */}
+      {order.id && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <InvoiceStatus orderId={order.id} />
+        </div>
+      )}
 
       {/* Payments */}
       {order.payments && order.payments.length > 0 && (
