@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isValidCedula,
+  sanitizeSearchTerm,
   isValidRUC,
   isValidPanamaPhone,
   isValidEmail,
@@ -140,5 +141,21 @@ describe('generateId', () => {
     const id1 = generateId();
     const id2 = generateId();
     expect(id1).not.toBe(id2);
+  });
+});
+
+describe('sanitizeSearchTerm', () => {
+  it('strips PostgREST/URL filter metacharacters (injection)', () => {
+    expect(sanitizeSearchTerm('a,b)(c*:&%=#"\\')).toBe('abc');
+    expect(sanitizeSearchTerm('order_number.eq.1),customer_name')).toBe('ordernumbereq1customername');
+  });
+  it('keeps letters (incl. accents), digits, spaces and hyphens', () => {
+    expect(sanitizeSearchTerm('  José Pérez-3  ')).toBe('José Pérez-3');
+    expect(sanitizeSearchTerm('1234')).toBe('1234');
+  });
+  it('handles empty/nullish', () => {
+    expect(sanitizeSearchTerm('')).toBe('');
+    expect(sanitizeSearchTerm(null)).toBe('');
+    expect(sanitizeSearchTerm(undefined)).toBe('');
   });
 });

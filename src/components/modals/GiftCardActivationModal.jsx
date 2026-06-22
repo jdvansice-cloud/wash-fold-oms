@@ -27,7 +27,7 @@ export default function GiftCardActivationModal({ product, storeId, onConfirm, o
 
       // Check if card already exists
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
       const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
 
       const lookupRes = await fetch(

@@ -344,7 +344,7 @@ function GiftCardLookupModal({ onClose }) {
 
     try {
       const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_ANON_KEY;
+      const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
       const response = await fetch(
         `${url}/rest/v1/gift_cards?code=eq.${encodeURIComponent(code.trim().toUpperCase())}&select=id,code,initial_value,current_balance,is_active,expires_at,created_at`,
         { headers: { apikey: key, Authorization: `Bearer ${key}` } }

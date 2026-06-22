@@ -17,9 +17,11 @@ export const PAC_BASE = 'https://api.efacturapty.com/api/v1';
 
 export function getAdmin(): SupabaseClient {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Prefer the new secret key (sb_secret_…); fall back to the legacy service-role
+  // key during migration. Server-side only — bypasses RLS.
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    throw new HttpError(500, 'Server misconfigured: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
+    throw new HttpError(500, 'Server misconfigured: SUPABASE_URL and SUPABASE_SECRET_KEY are required.');
   }
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }

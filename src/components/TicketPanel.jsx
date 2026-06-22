@@ -19,7 +19,7 @@ import {
 // Helper to fetch customer loyalty data
 const fetchCustomerLoyalty = async (customerId) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !customerId) return null;
   
@@ -43,7 +43,7 @@ const fetchCustomerLoyalty = async (customerId) => {
 // Helper to fetch loyalty settings
 const fetchLoyaltySettings = async (storeId) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !storeId) return null;
   
@@ -67,7 +67,7 @@ const fetchLoyaltySettings = async (storeId) => {
 // Helper to add loyalty points after order (excluding Lavamático, loyalty payments, and free services)
 const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, totalExclusions = 0) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   // Exclude ineligible amounts from points calculation
   const eligibleSubtotal = subtotal - totalExclusions;
@@ -214,7 +214,7 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
 // Excludes free services (they don't earn new punches)
 const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, freeServicesUsed = { freeWashes: 0, freeDrys: 0 }) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !customerId || !storeId || !items || items.length === 0) return null;
   
@@ -516,7 +516,7 @@ const calculateLavamaticSubtotal = (items, sections) => {
 // Helper to redeem loyalty points as payment
 const redeemLoyaltyPoints = async (customerId, storeId, amount, orderId) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !customerId || !storeId || amount <= 0) return null;
   
@@ -600,7 +600,7 @@ const redeemLoyaltyPoints = async (customerId, storeId, amount, orderId) => {
 // Helper to redeem free services
 const redeemFreeServices = async (customerId, storeId, freeWashes, freeDrys, orderId) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   
   if (!url || !key || !customerId || (freeWashes <= 0 && freeDrys <= 0)) return null;
   
@@ -1731,7 +1731,7 @@ function TicketPanel() {
                     console.log('Receipt saved, updating order with path:', receiptPath);
                     // Update order with receipt path
                     const url = import.meta.env.SUPABASE_URL;
-                    const key = import.meta.env.SUPABASE_ANON_KEY;
+                    const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
                     if (url && key) {
                       try {
                         await fetch(`${url}/rest/v1/orders?id=eq.${newOrder.id}`, {

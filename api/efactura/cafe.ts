@@ -22,19 +22,19 @@ export default async function handler(req: any, res: any) {
     const config = await loadEfacturaConfig(admin, companyId);
 
     const invoiceId = req.query?.invoice_id as string | undefined;
-    let cufe = req.query?.cufe as string | undefined;
+    const cufeParam = req.query?.cufe as string | undefined;
+    if (!invoiceId && !cufeParam) throw new HttpError(400, 'Provide invoice_id or cufe');
 
-    if (invoiceId) {
-      const { data: invoice } = await admin
-        .from('electronic_invoices')
-        .select('store_id, cufe')
-        .eq('id', invoiceId)
-        .maybeSingle();
-      if (!invoice?.cufe) throw new HttpError(404, 'Invoice not found or not yet authorized');
-      await assertStoreInCompany(admin, invoice.store_id, companyId);
-      cufe = invoice.cufe;
-    }
-    if (!cufe) throw new HttpError(400, 'Provide invoice_id or cufe');
+    // Always resolve the document through our DB and verify the caller's company
+    // owns it — never trust a raw CUFE from the query (prevents cross-tenant IDOR).
+    const lookup = admin.from('electronic_invoices').select('store_id, cufe');
+    const { data: invoice } = await (invoiceId
+      ? lookup.eq('id', invoiceId)
+      : lookup.eq('cufe', cufeParam)
+    ).maybeSingle();
+    if (!invoice?.cufe) throw new HttpError(404, 'Invoice not found or not yet authorized');
+    await assertStoreInCompany(admin, invoice.store_id, companyId);
+    const cufe = invoice.cufe;
 
     const pacRes = await pacRequest(config, `/Invoices/${encodeURIComponent(cufe)}/cafe-file`, {
       method: 'GET',

@@ -47,3 +47,19 @@ export function isValidEmail(email: string | null | undefined): boolean {
 export function generateId(prefix = 'id'): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
+
+/**
+ * Sanitize a free-text search term before it is interpolated into a PostgREST
+ * filter (e.g. `.or(...)` or a REST URL). Strips characters that have meaning
+ * in the PostgREST filter grammar — `,()*:.&%=#"\` — which could otherwise break
+ * out of the intended predicate (filter injection). Keeps letters (incl.
+ * Spanish accents), digits, spaces and hyphens. Also caps the length.
+ */
+export function sanitizeSearchTerm(term: string | null | undefined): string {
+  if (!term) return '';
+  return term
+    .normalize('NFC')
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+    .slice(0, 80);
+}

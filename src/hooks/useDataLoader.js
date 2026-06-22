@@ -2,13 +2,14 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isConfigured, getDefaultUser } from '../lib/supabase';
 import { useApp } from '../context/AppContext';
 import { emitInvoice } from '../lib/efactura/client';
+import { sanitizeSearchTerm } from '../lib/validation';
 
 // Build PostgREST auth headers. The Authorization bearer MUST be the
 // logged-in user's access token (not the anon key) so RLS can scope rows
 // to the user's company. Falls back to the anon key only when there is no
 // session (pre-login).
 const authHeaders = async () => {
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   const { data: { session } } = await supabase.auth.getSession();
   return {
     apikey: key,
@@ -19,7 +20,7 @@ const authHeaders = async () => {
 // Raw fetch helper for Supabase REST API
 const supabaseFetch = async (table, options = {}) => {
   const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_ANON_KEY;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
 
   if (!url || !key) {
     return { data: null, error: { message: 'Missing Supabase config' } };
@@ -104,7 +105,7 @@ export function useDataLoader() {
       setError({
         type: 'config',
         message: 'Supabase no está configurado',
-        details: 'Configura las variables de entorno SUPABASE_URL y SUPABASE_ANON_KEY en Vercel'
+        details: 'Configura las variables de entorno SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY en Vercel'
       });
       setIsLoading(false);
       return;
@@ -1090,22 +1091,25 @@ export function useDataLoader() {
     try {
       const url = import.meta.env.SUPABASE_URL;
       
-      // Search by order number, legacy order number, or customer name
-      const searchQuery = query.toLowerCase();
-      
+      // Sanitize before interpolating into the PostgREST filter/URL (injection),
+      // then URL-encode the value.
+      const searchQuery = sanitizeSearchTerm(query).toLowerCase();
+      if (!searchQuery) return [];
+      const enc = encodeURIComponent(searchQuery);
+
       // Build the query - search legacy_order_number, order_number, or customer_name
       let fetchUrl = `${url}/rest/v1/orders?store_id=eq.${storeId}&order=created_at.desc&limit=${limit}`;
-      
+
       // Use OR filter for multiple fields
       if (searchQuery.startsWith('cc')) {
         // Search legacy order numbers
-        fetchUrl += `&legacy_order_number=ilike.*${searchQuery}*`;
+        fetchUrl += `&legacy_order_number=ilike.*${enc}*`;
       } else if (/^\d+$/.test(searchQuery)) {
         // Search by order number
-        fetchUrl += `&or=(order_number.eq.${searchQuery},legacy_order_number.ilike.*${searchQuery}*)`;
+        fetchUrl += `&or=(order_number.eq.${enc},legacy_order_number.ilike.*${enc}*)`;
       } else {
         // Search by customer name
-        fetchUrl += `&customer_name=ilike.*${searchQuery}*`;
+        fetchUrl += `&customer_name=ilike.*${enc}*`;
       }
       
       const response = await fetch(fetchUrl, {
