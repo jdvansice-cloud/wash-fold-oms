@@ -109,6 +109,36 @@ describe('calculateTicket', () => {
     expect(result.subtotal).toBe(80);
   });
 
+  it('applies a per-line fixed discount and taxes the net', () => {
+    const item = makeItem({ lineTotal: 50, product: { id: 'p1', product_type: 'service', is_taxable: true, price: 50, pricing_type: 'quantity' } });
+    item.discount = { mode: 'amount', value: 10 };
+    const result = calculateTicket(makeInput({ items: [item], itbmsRate: 7 }));
+    expect(result.lineDiscountTotal).toBe(10);
+    expect(result.subtotal).toBe(40);
+    expect(result.taxAmount).toBeCloseTo(2.8, 5); // 7% of 40
+    expect(result.total).toBeCloseTo(42.8, 5);
+  });
+
+  it('applies a per-line percentage discount', () => {
+    const item = makeItem({ lineTotal: 50 });
+    item.discount = { mode: 'pct', value: 20 };
+    const result = calculateTicket(makeInput({ items: [item] }));
+    expect(result.lineDiscountTotal).toBe(10); // 20% of 50
+    expect(result.subtotal).toBe(40);
+  });
+
+  it('stacks a per-line discount with an order-level discount', () => {
+    const item = makeItem({ lineTotal: 100 });
+    item.discount = { mode: 'amount', value: 20 };
+    const result = calculateTicket(
+      makeInput({ items: [item], manualDiscount: { type: 'fixed', value: 10 } }),
+    );
+    // line -20 -> net 80; order -10 -> 70
+    expect(result.lineDiscountTotal).toBe(20);
+    expect(result.productDiscountAmount).toBe(30);
+    expect(result.subtotal).toBe(70);
+  });
+
   it('calculates ITBMS only on taxable items', () => {
     const taxable = makeItem({ lineTotal: 100, product: { id: 'p1', product_type: 'service', is_taxable: true, price: 100, pricing_type: 'quantity' } });
     const nonTaxable = makeItem({ lineTotal: 50, product: { id: 'p2', product_type: 'service', is_taxable: false, price: 50, pricing_type: 'quantity' } });

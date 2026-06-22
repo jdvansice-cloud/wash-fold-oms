@@ -446,68 +446,81 @@ export function AppProvider({ children }) {
     const productItems = items.filter(item => item.product.product_type !== 'delivery');
     const deliveryItems = items.filter(item => item.product.product_type === 'delivery');
     
-    // Products subtotal (without ITBMS)
+    // Products subtotal (gross, without ITBMS)
     const productsTotal = productItems.reduce((sum, item) => sum + item.lineTotal, 0);
-    
+
+    // Per-line manual discount (each item may carry { mode: 'amount'|'pct', value }).
+    const lineDiscountFor = (item) => {
+      const d = item.discount;
+      if (!d || !d.value) return 0;
+      const gross = item.lineTotal || 0;
+      const amt = d.mode === 'pct' ? gross * (d.value / 100) : d.value;
+      return Math.min(Math.max(0, amt), gross);
+    };
+    const lineDiscounts = productItems.map(lineDiscountFor);
+    const lineDiscountTotal = lineDiscounts.reduce((s, d) => s + d, 0);
+    const netAfterLineTotal = Math.max(0, productsTotal - lineDiscountTotal);
+
     // Delivery from items or deliveryProduct
     let deliveryTotal = deliveryItems.reduce((sum, item) => sum + item.lineTotal, 0);
     if (deliveryProduct && deliveryItems.length === 0) {
       deliveryTotal = deliveryProduct.price;
     }
-    
-    // Calculate product discounts (manual + promotion)
-    let productDiscountAmount = 0;
+
+    // Order-level discount (manual + promotion), applied on top of line discounts.
+    let manualDiscountAmount = 0;
     let productDiscountLabel = '';
-    
     if (manualDiscount) {
       if (manualDiscount.type === 'percentage') {
-        productDiscountAmount = productsTotal * (manualDiscount.value / 100);
+        manualDiscountAmount = productsTotal * (manualDiscount.value / 100);
         productDiscountLabel = `Descuento ${manualDiscount.value}%`;
       } else {
-        productDiscountAmount = Math.min(manualDiscount.value, productsTotal);
+        manualDiscountAmount = manualDiscount.value;
         productDiscountLabel = 'Descuento';
       }
     }
-    
-    // Promotion discount (applied to products, not delivery)
     let promotionDiscountAmount = 0;
     if (promotion) {
-      if (promotion.discount_type === 'percentage') {
-        promotionDiscountAmount = productsTotal * (promotion.discount_value / 100);
-      } else {
-        promotionDiscountAmount = Math.min(promotion.discount_value, productsTotal);
-      }
+      promotionDiscountAmount = promotion.discount_type === 'percentage'
+        ? productsTotal * (promotion.discount_value / 100)
+        : promotion.discount_value;
     }
-    
-    // Total product discount
-    const totalProductDiscount = productDiscountAmount + promotionDiscountAmount;
-    
+    const combinedOrder = manualDiscountAmount + promotionDiscountAmount;
+    const orderDiscount = Math.min(combinedOrder, netAfterLineTotal);
+    const manualReported = combinedOrder > 0 ? orderDiscount * (manualDiscountAmount / combinedOrder) : 0;
+    const promoReported = combinedOrder > 0 ? orderDiscount * (promotionDiscountAmount / combinedOrder) : 0;
+
+    // Total product discount (per-line + order-level)
+    const totalProductDiscount = lineDiscountTotal + orderDiscount;
+
     // Free delivery discount (only affects delivery)
     const deliveryDiscountAmount = freeDelivery ? deliveryTotal : 0;
-    
+
     // Subtotals after discounts
     const productsAfterDiscount = productsTotal - totalProductDiscount;
     const deliveryAfterDiscount = deliveryTotal - deliveryDiscountAmount;
-    
+
     // Subtotal (products + delivery after discounts, before tax)
     const subtotal = productsAfterDiscount + deliveryAfterDiscount;
-    
-    // Calculate tax only on taxable items
-    const taxableProductsAmount = productItems
-      .filter(item => item.product.is_taxable !== false)
-      .reduce((sum, item) => sum + item.lineTotal, 0);
-    
-    // Apply discount proportionally to taxable amount
-    const taxableDiscountRatio = productsTotal > 0 ? totalProductDiscount / productsTotal : 0;
-    const taxableProductsAfterDiscount = taxableProductsAmount * (1 - taxableDiscountRatio);
-    
+
+    // Tax only on taxable items, after their line discount + a proportional
+    // share of the order-level discount.
+    const orderRatio = netAfterLineTotal > 0 ? orderDiscount / netAfterLineTotal : 0;
+    let taxableProductsAfterDiscount = 0;
+    productItems.forEach((item, i) => {
+      if (item.product.is_taxable !== false) {
+        const netLine = item.lineTotal - lineDiscounts[i];
+        taxableProductsAfterDiscount += netLine * (1 - orderRatio);
+      }
+    });
+
     // Delivery is typically taxable
     const taxableDelivery = deliveryAfterDiscount;
-    
+
     // Total taxable amount
     const taxableAmount = taxableProductsAfterDiscount + taxableDelivery;
     const taxAmount = taxableAmount * (itbms_rate / 100);
-    
+
     // Total
     const total = subtotal + taxAmount;
     
@@ -523,8 +536,9 @@ export function AppProvider({ children }) {
       productsTotal,
       deliveryTotal,
       productDiscountAmount: totalProductDiscount,
-      promotionDiscountAmount,
-      manualDiscountAmount: productDiscountAmount,
+      promotionDiscountAmount: promoReported,
+      manualDiscountAmount: manualReported,
+      lineDiscountTotal,
       deliveryDiscountAmount,
       subtotal,
       taxAmount,

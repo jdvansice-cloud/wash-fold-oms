@@ -15,6 +15,11 @@ export interface TicketProduct {
   pricing_type: string;
 }
 
+export interface LineDiscount {
+  mode: 'amount' | 'pct';
+  value: number;
+}
+
 export interface TicketItem {
   product: TicketProduct;
   quantity: number;
@@ -23,6 +28,8 @@ export interface TicketItem {
   pieces?: number;
   unitPrice: number;
   lineTotal: number;
+  /** Per-line manual discount, as a B/. amount or a % of the line gross. */
+  discount?: LineDiscount | null;
 }
 
 export interface ManualDiscount {
@@ -57,6 +64,7 @@ export interface TicketCalculationResult {
   productDiscountAmount: number;
   promotionDiscountAmount: number;
   manualDiscountAmount: number;
+  lineDiscountTotal: number;
   deliveryDiscountAmount: number;
   subtotal: number;
   taxAmount: number;
@@ -82,8 +90,18 @@ export function calculateTicket(input: TicketCalculationInput): TicketCalculatio
   const productItems = items.filter((item) => item.product.product_type !== 'delivery');
   const deliveryItems = items.filter((item) => item.product.product_type === 'delivery');
 
-  // Step 2: Products subtotal
+  // Step 2: Products subtotal (gross) + per-line discounts
   const productsTotal = productItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  const lineDiscountFor = (item: TicketItem): number => {
+    const d = item.discount;
+    if (!d || !d.value) return 0;
+    const gross = item.lineTotal || 0;
+    const amt = d.mode === 'pct' ? gross * (d.value / 100) : d.value;
+    return Math.min(Math.max(0, amt), gross);
+  };
+  const lineDiscounts = productItems.map(lineDiscountFor);
+  const lineDiscountTotal = lineDiscounts.reduce((s, d) => s + d, 0);
+  const netAfterLineTotal = Math.max(0, productsTotal - lineDiscountTotal);
 
   // Step 3: Delivery total (from items or standalone delivery product)
   let deliveryTotal = deliveryItems.reduce((sum, item) => sum + item.lineTotal, 0);
@@ -91,28 +109,31 @@ export function calculateTicket(input: TicketCalculationInput): TicketCalculatio
     deliveryTotal = deliveryProduct.price;
   }
 
-  // Step 4: Manual discount (applies to products only)
+  // Step 4: Order-level manual discount (products only)
   let manualDiscountAmount = 0;
   if (manualDiscount) {
-    if (manualDiscount.type === 'percentage') {
-      manualDiscountAmount = productsTotal * (manualDiscount.value / 100);
-    } else {
-      manualDiscountAmount = Math.min(manualDiscount.value, productsTotal);
-    }
+    manualDiscountAmount =
+      manualDiscount.type === 'percentage'
+        ? productsTotal * (manualDiscount.value / 100)
+        : manualDiscount.value;
   }
 
-  // Step 5: Promotion discount (applies to products only)
+  // Step 5: Promotion discount (products only)
   let promotionDiscountAmount = 0;
   if (promotion) {
-    if (promotion.discount_type === 'percentage') {
-      promotionDiscountAmount = productsTotal * (promotion.discount_value / 100);
-    } else {
-      promotionDiscountAmount = Math.min(promotion.discount_value, productsTotal);
-    }
+    promotionDiscountAmount =
+      promotion.discount_type === 'percentage'
+        ? productsTotal * (promotion.discount_value / 100)
+        : promotion.discount_value;
   }
 
-  // Step 6: Aggregate discounts
-  const totalProductDiscount = manualDiscountAmount + promotionDiscountAmount;
+  // Step 6: Aggregate discounts (order-level capped at the post-line net).
+  // Reported manual/promo amounts are scaled to the applied (capped) total.
+  const combinedOrder = manualDiscountAmount + promotionDiscountAmount;
+  const orderDiscount = Math.min(combinedOrder, netAfterLineTotal);
+  const manualReported = combinedOrder > 0 ? orderDiscount * (manualDiscountAmount / combinedOrder) : 0;
+  const promoReported = combinedOrder > 0 ? orderDiscount * (promotionDiscountAmount / combinedOrder) : 0;
+  const totalProductDiscount = lineDiscountTotal + orderDiscount;
   const deliveryDiscountAmount = freeDelivery ? deliveryTotal : 0;
 
   // Step 7: Subtotals after discounts
@@ -120,13 +141,15 @@ export function calculateTicket(input: TicketCalculationInput): TicketCalculatio
   const deliveryAfterDiscount = deliveryTotal - deliveryDiscountAmount;
   const subtotal = productsAfterDiscount + deliveryAfterDiscount;
 
-  // Step 8: ITBMS tax (proportionally on taxable items only)
-  const taxableProductsAmount = productItems
-    .filter((item) => item.product.is_taxable !== false)
-    .reduce((sum, item) => sum + item.lineTotal, 0);
-
-  const taxableDiscountRatio = productsTotal > 0 ? totalProductDiscount / productsTotal : 0;
-  const taxableProductsAfterDiscount = taxableProductsAmount * (1 - taxableDiscountRatio);
+  // Step 8: ITBMS on taxable lines, after line discount + a proportional share
+  // of the order-level discount.
+  const orderRatio = netAfterLineTotal > 0 ? orderDiscount / netAfterLineTotal : 0;
+  let taxableProductsAfterDiscount = 0;
+  productItems.forEach((item, i) => {
+    if (item.product.is_taxable !== false) {
+      taxableProductsAfterDiscount += (item.lineTotal - lineDiscounts[i]) * (1 - orderRatio);
+    }
+  });
   const taxableDelivery = deliveryAfterDiscount;
   const taxableAmount = taxableProductsAfterDiscount + taxableDelivery;
   const taxAmount = taxableAmount * (itbmsRate / 100);
@@ -149,8 +172,9 @@ export function calculateTicket(input: TicketCalculationInput): TicketCalculatio
     productsTotal,
     deliveryTotal,
     productDiscountAmount: totalProductDiscount,
-    promotionDiscountAmount,
-    manualDiscountAmount,
+    promotionDiscountAmount: promoReported,
+    manualDiscountAmount: manualReported,
+    lineDiscountTotal,
     deliveryDiscountAmount,
     subtotal,
     taxAmount,
