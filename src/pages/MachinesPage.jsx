@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   Clock, ChevronDown, GripVertical, User, Package,
-  Timer, MapPin, AlertCircle, ChevronRight, PackageCheck
+  Timer, MapPin, AlertCircle, ChevronRight, PackageCheck, Bell
 } from 'lucide-react';
 import { Tag } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -28,7 +28,7 @@ const workflowColumns = [
 
 function MachinesPage() {
   const { state, actions } = useApp();
-  const { updateOrderStatus: dbUpdateOrderStatus, settleOrder } = useDataLoader();
+  const { updateOrderStatus: dbUpdateOrderStatus, settleOrder, sendPickupReminder } = useDataLoader();
   const [sortBy, setSortBy] = useState('promised_date');
   const [draggedOrder, setDraggedOrder] = useState(null);
   const [deliveringOrder, setDeliveringOrder] = useState(null);
@@ -97,6 +97,15 @@ function MachinesPage() {
       alert('No se pudo entregar la orden: ' + err.message);
     }
   };
+
+  const remindOrder = async (order) => {
+    try {
+      const { sent } = await sendPickupReminder(order);
+      if (!sent) alert('La orden no tiene email de cliente; se marcó como recordada.');
+    } catch (err) {
+      alert('No se pudo enviar el recordatorio: ' + err.message);
+    }
+  };
   
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col animate-fade-in">
@@ -135,6 +144,7 @@ function MachinesPage() {
               onDragEnd={handleDragEnd}
               onMoveOrder={moveOrder}
               onDeliver={deliverOrder}
+              onRemind={remindOrder}
               isDragTarget={draggedOrder && draggedOrder.status !== column.status}
             />
           ))}
@@ -166,7 +176,7 @@ function MachinesPage() {
   );
 }
 
-function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragEnd, onMoveOrder, onDeliver, isDragTarget }) {
+function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragEnd, onMoveOrder, onDeliver, onRemind, isDragTarget }) {
   const config = statusConfig[column.status];
   
   return (
@@ -207,6 +217,7 @@ function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragE
             onDragEnd={onDragEnd}
             onMove={onMoveOrder}
             onDeliver={onDeliver}
+            onRemind={onRemind}
           />
         ))}
         
@@ -221,9 +232,10 @@ function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragE
   );
 }
 
-function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver }) {
+function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver, onRemind }) {
   const [expanded, setExpanded] = useState(false);
   const [showLabel, setShowLabel] = useState(false);
+  const [reminding, setReminding] = useState(false);
   
   const hoursRemaining = useMemo(() => {
     const promised = new Date(order.promised_date);
@@ -234,6 +246,16 @@ function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver })
   
   const isOverdue = hoursRemaining < 0;
   const isUrgent = hoursRemaining > 0 && hoursRemaining < 4;
+
+  // Time an order has been waiting for pickup (since it became ready).
+  const waitingHours = useMemo(() => {
+    if (order.status !== 'ready' || !order.ready_at) return null;
+    return Math.max(0, (Date.now() - new Date(order.ready_at).getTime()) / 3600000);
+  }, [order.status, order.ready_at]);
+  const waitingLabel = waitingHours == null ? null
+    : waitingHours < 1 ? '<1 h'
+    : waitingHours < 48 ? `${Math.round(waitingHours)} h`
+    : `${Math.round(waitingHours / 24)} d`;
   
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
@@ -312,17 +334,35 @@ function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver })
           </div>
         )}
 
-        {/* Pickup / hand-over → Completado. Pay-on-pickup collects first. */}
+        {/* Awaiting pickup: how long it's waited + a reminder nudge. */}
         {order.status === 'ready' && (
-          <button
-            onClick={() => onDeliver(order)}
-            className="mt-3 w-full btn-primary text-xs py-2 bg-emerald-500 hover:bg-emerald-600"
-          >
-            <PackageCheck className="w-3.5 h-3.5" />
-            {order.payment_status === 'unpaid' && order.billing_type === 'pickup'
-              ? 'Cobrar y entregar'
-              : 'Entregar (recogido)'}
-          </button>
+          <>
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <span className={`inline-flex items-center gap-1 ${isOverdue ? 'text-error-600 font-medium' : 'text-slate-500'}`}>
+                <Clock className="w-3 h-3" />
+                Esperando {waitingLabel}{isOverdue ? ' · vencida' : ''}
+              </span>
+              {order.pickup_reminder_at && (
+                <span className="text-emerald-600">✓ recordado</span>
+              )}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                onClick={async () => { setReminding(true); try { await onRemind(order); } finally { setReminding(false); } }}
+                disabled={reminding}
+                className="btn-secondary text-xs py-2 disabled:opacity-50"
+              >
+                <Bell className="w-3.5 h-3.5" /> Recordar
+              </button>
+              <button
+                onClick={() => onDeliver(order)}
+                className="btn-primary text-xs py-2 bg-emerald-500 hover:bg-emerald-600"
+              >
+                <PackageCheck className="w-3.5 h-3.5" />
+                {order.payment_status === 'unpaid' && order.billing_type === 'pickup' ? 'Cobrar' : 'Entregar'}
+              </button>
+            </div>
+          </>
         )}
       </div>
       
