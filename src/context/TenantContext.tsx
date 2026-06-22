@@ -16,6 +16,7 @@ interface Store {
   name: string;
   company_id: string;
   is_active: boolean;
+  address?: string;
   [key: string]: unknown;
 }
 
