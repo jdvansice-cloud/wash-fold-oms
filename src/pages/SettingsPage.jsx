@@ -5,10 +5,11 @@ import {
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
   GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
-  Award, Stamp, Coins, Info, Printer, Truck, FileText, ShieldAlert
+  Award, Stamp, Coins, Info, Printer, Truck, FileText, ShieldAlert, Wrench
 } from 'lucide-react';
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import EFacturaSettings from '../components/settings/EFacturaSettings';
+import MachinesSettings from '../components/settings/MachinesSettings';
 import { useApp } from '../context/AppContext';
 import { useFeature } from '../hooks/useFeature';
 import { useTenant } from '../hooks/useTenant';
@@ -56,6 +57,7 @@ function SettingsPage() {
     { id: 'printer', label: 'Impresora', icon: Printer, description: 'Impresora de recibos' },
     { id: 'notifications', label: 'Notificaciones', icon: Bell, description: 'Plantillas de email' },
     { id: 'products', label: 'Productos', icon: Package, description: 'Gestión de productos' },
+    { id: 'machines', label: 'Máquinas', icon: Wrench, description: 'Lavadoras, secadoras y mantenimiento' },
     { id: 'promotions', label: 'Promociones', icon: Tag, description: 'Descuentos y ofertas' },
     { id: 'giftcards', label: 'Tarjetas Regalo', icon: Gift, description: 'Gift cards' },
     { id: 'loyalty', label: 'Lealtad', icon: Award, description: 'Programas de fidelización' },
@@ -115,6 +117,7 @@ function SettingsPage() {
           {activeSection === 'printer' && <PrinterSettings />}
           {activeSection === 'notifications' && <NotificationsSettings />}
           {activeSection === 'products' && <ProductsSettings />}
+          {activeSection === 'machines' && <MachinesSettings />}
           {activeSection === 'promotions' && <PromotionsSettings />}
           {activeSection === 'giftcards' && <GiftCardsSettings />}
           {activeSection === 'loyalty' && <LoyaltySettings />}
