@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  Clock, ChevronDown, GripVertical, User, Package, 
-  Timer, MapPin, AlertCircle, ChevronRight 
+import {
+  Clock, ChevronDown, GripVertical, User, Package,
+  Timer, MapPin, AlertCircle, ChevronRight, PackageCheck
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
+import PaymentModal from '../components/modals/PaymentModal';
 
 // Helper to display order number (legacy CC orders or new orders)
 const getOrderDisplayNumber = (order) => {
@@ -20,14 +21,15 @@ const workflowColumns = [
   { id: 'washing', title: 'Lavadoras', status: 'washing' },
   { id: 'drying', title: 'Secadoras', status: 'drying' },
   { id: 'folding', title: 'Doblado', status: 'folding' },
-  { id: 'ready', title: 'Completada', status: 'ready' },
+  { id: 'ready', title: 'Listo', status: 'ready' },
 ];
 
 function MachinesPage() {
   const { state, actions } = useApp();
-  const { updateOrderStatus: dbUpdateOrderStatus } = useDataLoader();
+  const { updateOrderStatus: dbUpdateOrderStatus, settleOrder } = useDataLoader();
   const [sortBy, setSortBy] = useState('promised_date');
   const [draggedOrder, setDraggedOrder] = useState(null);
+  const [deliveringOrder, setDeliveringOrder] = useState(null);
   
   // Group orders by status
   const ordersByStatus = useMemo(() => {
@@ -78,6 +80,21 @@ function MachinesPage() {
       console.error('Error updating order status:', err);
     }
   };
+
+  // Pickup / hand-over: mark the order collected (status → completed). A
+  // pay-on-pickup order must be paid first, so collect payment then complete;
+  // B2B (on account) and already-paid orders complete directly.
+  const deliverOrder = async (order) => {
+    if (order.payment_status === 'unpaid' && order.billing_type === 'pickup') {
+      setDeliveringOrder(order);
+      return;
+    }
+    try {
+      await dbUpdateOrderStatus(order.id, 'completed');
+    } catch (err) {
+      alert('No se pudo entregar la orden: ' + err.message);
+    }
+  };
   
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col animate-fade-in">
@@ -115,16 +132,39 @@ function MachinesPage() {
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
               onMoveOrder={moveOrder}
+              onDeliver={deliverOrder}
               isDragTarget={draggedOrder && draggedOrder.status !== column.status}
             />
           ))}
         </div>
       </div>
+
+      {/* Collect-on-pickup before handing over (pay-on-pickup orders only). */}
+      {deliveringOrder && (
+        <PaymentModal
+          total={deliveringOrder.total}
+          subtotal={deliveringOrder.subtotal}
+          taxAmount={deliveringOrder.tax_amount}
+          paymentMethods={(state.paymentMethods || []).filter((m) => m.is_active)}
+          storeId={state.store?.id}
+          allowPickup={false}
+          onClose={() => setDeliveringOrder(null)}
+          onComplete={async (paymentInfo) => {
+            try {
+              await settleOrder(deliveringOrder.id, paymentInfo);
+              await dbUpdateOrderStatus(deliveringOrder.id, 'completed');
+              setDeliveringOrder(null);
+            } catch (err) {
+              alert('Error al cobrar y entregar: ' + err.message);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragEnd, onMoveOrder, isDragTarget }) {
+function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragEnd, onMoveOrder, onDeliver, isDragTarget }) {
   const config = statusConfig[column.status];
   
   return (
@@ -164,6 +204,7 @@ function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragE
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onMove={onMoveOrder}
+            onDeliver={onDeliver}
           />
         ))}
         
@@ -178,7 +219,7 @@ function KanbanColumn({ column, orders, onDragOver, onDrop, onDragStart, onDragE
   );
 }
 
-function OrderCard({ order, column, onDragStart, onDragEnd, onMove }) {
+function OrderCard({ order, column, onDragStart, onDragEnd, onMove, onDeliver }) {
   const [expanded, setExpanded] = useState(false);
   
   const hoursRemaining = useMemo(() => {
@@ -266,6 +307,19 @@ function OrderCard({ order, column, onDragStart, onDragEnd, onMove }) {
             <MapPin className="w-3 h-3" />
             {order.workflow_location}
           </div>
+        )}
+
+        {/* Pickup / hand-over → Completado. Pay-on-pickup collects first. */}
+        {order.status === 'ready' && (
+          <button
+            onClick={() => onDeliver(order)}
+            className="mt-3 w-full btn-primary text-xs py-2 bg-emerald-500 hover:bg-emerald-600"
+          >
+            <PackageCheck className="w-3.5 h-3.5" />
+            {order.payment_status === 'unpaid' && order.billing_type === 'pickup'
+              ? 'Cobrar y entregar'
+              : 'Entregar (recogido)'}
+          </button>
         )}
       </div>
       
