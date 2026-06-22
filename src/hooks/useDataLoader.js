@@ -385,38 +385,36 @@ export function useDataLoader() {
     }
   };
 
-  // CRUD Operations
-  const addOrder = async (orderData) => {
-    try {
-      // Insert order
-      const { data: order, error: orderError } = await supabase
-        .from('orders')
-        .insert({
-          store_id: storeId,
-          customer_id: orderData.customer_id,
-          customer_name: orderData.customer_name,
-          is_walk_in: orderData.is_walk_in,
-          status: 'pending',
-          is_express: orderData.is_express,
-          subtotal: orderData.subtotal,
-          discount_amount: orderData.discount_amount,
-          delivery_charge: orderData.delivery_charge,
-          tax_amount: orderData.tax_amount,
-          total: orderData.total,
-          total_weight: orderData.total_weight,
-          total_bags: orderData.total_bags,
-          total_pieces: orderData.total_pieces,
-          notes: orderData.notes,
-          promised_date: orderData.promised_date,
-        })
-        .select()
-        .single();
+  // Fallback used only when the /api/orders/create route is unavailable (local
+  // dev without Vercel). Production always goes through the validating endpoint.
+  const directInsertOrder = async (orderData) => {
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        store_id: storeId,
+        customer_id: orderData.customer_id,
+        customer_name: orderData.customer_name,
+        is_walk_in: orderData.is_walk_in,
+        status: 'pending',
+        is_express: orderData.is_express,
+        subtotal: orderData.subtotal,
+        discount_amount: orderData.discount_amount,
+        delivery_charge: orderData.delivery_charge,
+        tax_amount: orderData.tax_amount,
+        total: orderData.total,
+        total_weight: orderData.total_weight,
+        total_bags: orderData.total_bags,
+        total_pieces: orderData.total_pieces,
+        notes: orderData.notes,
+        promised_date: orderData.promised_date,
+      })
+      .select()
+      .single();
+    if (orderError) throw orderError;
 
-      if (orderError) throw orderError;
-
-      // Insert order items
-      if (orderData.items && orderData.items.length > 0) {
-        const itemsToInsert = orderData.items.map(item => ({
+    if (orderData.items?.length > 0) {
+      const { error } = await supabase.from('order_items').insert(
+        orderData.items.map(item => ({
           order_id: order.id,
           product_id: item.product?.id,
           product_name: item.product?.name,
@@ -427,42 +425,52 @@ export function useDataLoader() {
           unit_price: item.unitPrice,
           line_total: item.lineTotal,
           weight_entries: item.weightEntries || [],
-        }));
-
-        const { error: itemsError } = await supabase
-          .from('order_items')
-          .insert(itemsToInsert);
-
-        if (itemsError) throw itemsError;
-      }
-
-      // Insert payment(s)
-      if (orderData.payments && orderData.payments.length > 0) {
-        const paymentsToInsert = orderData.payments.map(payment => ({
+        })),
+      );
+      if (error) throw error;
+    }
+    if (orderData.payments?.length > 0) {
+      const { error } = await supabase.from('payments').insert(
+        orderData.payments.map(payment => ({
           order_id: order.id,
           payment_method: payment.method,
           amount: payment.amount,
           reference: payment.reference || null,
           change_amount: payment.changeGiven || 0,
-        }));
+        })),
+      );
+      if (error) throw error;
+    }
+    return order;
+  };
 
-        const { error: paymentError } = await supabase
-          .from('payments')
-          .insert(paymentsToInsert);
-
-        if (paymentError) throw paymentError;
-      } else if (orderData.payment) {
-        // Legacy single payment support
-        const { error: paymentError } = await supabase
-          .from('payments')
-          .insert({
-            order_id: order.id,
-            payment_method: orderData.payment.method,
-            amount: orderData.payment.amount,
-            change_amount: orderData.payment.change || 0,
-          });
-
-        if (paymentError) throw paymentError;
+  // CRUD Operations
+  const addOrder = async (orderData) => {
+    try {
+      // Create the order server-side: the API re-validates every line's unit
+      // price + line total against the catalog and inserts with the service-role
+      // key (order_number is assigned by the DB SERIAL).
+      let order;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch('/api/orders/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token || ''}`,
+          },
+          body: JSON.stringify({ ...orderData, store_id: storeId }),
+        });
+        if (response.status === 404) throw { routeMissing: true };
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.error || `No se pudo crear la orden (HTTP ${response.status})`);
+        }
+        order = result.order;
+      } catch (apiErr) {
+        if (!apiErr?.routeMissing) throw apiErr;
+        console.warn('Order API unavailable; using direct insert (dev fallback).');
+        order = await directInsertOrder(orderData);
       }
 
       // Add to local state
