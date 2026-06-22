@@ -27,6 +27,21 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       open: true
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Split rarely-changing vendor libs into cacheable chunks so the main
+          // bundle is smaller and the browser can fetch them in parallel.
+          manualChunks: {
+            'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+            'vendor-supabase': ['@supabase/supabase-js'],
+            'vendor-query': ['@tanstack/react-query'],
+            'vendor-icons': ['lucide-react'],
+            'vendor-utils': ['date-fns'],
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
