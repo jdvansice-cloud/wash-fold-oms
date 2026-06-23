@@ -9,7 +9,8 @@ Legend for "Verified": **live** = exercised this session against the live DB · 
 ### QA run — 2026‑06‑24 (this session)
 - **Retail order full lifecycle ✅** — order **#3511**: created (walk‑in, Cortinas B/10, cash) → advanced **pending → washing → drying → folding → ready → completed** via the UI; `ready_at` + `completed_at` stamped; **Pago = Pagado** the whole way. Covers **O1, O9, O10**.
 - Earlier this session (same live DB): **O8** pay‑on‑pickup (unpaid + gated), **O10/Cobrar‑y‑entregar**, **O11** pickup waiting/reminder, **B1–B5** B2B credit + consolidated invoice + collect + statement, **F5** B2B excludes per‑order factura, **M1/M2** machines + usage, **P6** machine‑service links, **EOD1**, **RBAC1**, **C3** server search, **W1** WhatsApp config.
-- **Blocked from here:** factura electrónica (F) + emails (E) need the deployed `/api`; the deployment URL is Vercel‑SSO‑protected and I won't send the session token to guessed domains. Run those rows on the deployed site (steps at the bottom), or share the production domain and I'll drive them.
+- **Factura electrónica ✅ (prod `/api`)** — `POST /api/efactura/emit` for order **#3511** on `https://wash-fold-oms.vercel.app` returned **authorized**: CUFE `FE0120000155737034-2-2023-380000202606230000000032...`, QR (DGI `fep-test` URL), and `protocoloAutorizacion`. End‑to‑end PAC emission works (DGI **test** env). Covers **F1**.
+- **Notification email ✅ (prod `/api`)** — `POST /api/send-email` returned `{success:true, messageId:<…@lavaydobla.com>}`; SMTP transport (company_smtp) delivers. Covers the **E** transport; per‑status triggers call this same endpoint.
 
 ---
 
@@ -71,7 +72,7 @@ Legend for "Verified": **live** = exercised this session against the live DB · 
 
 | # | Test | Steps | Expected | Verified | Status |
 |---|------|-------|----------|----------|--------|
-| F1 | Auto‑emit on paid order | Create a paid retail order (customer w/ RUC ideal) | electronic_invoices row → **authorized**, CUFE returned (test env) | prior (authorized #3498/#3501) | ⏳ re‑run |
+| F1 | Auto‑emit on paid order | Create a paid retail order (customer w/ RUC ideal) | electronic_invoices row → **authorized**, CUFE returned (test env) | **live (prod /api, #3511)** | ✅ |
 | F2 | View / reprint CAFE | Orders → order → Factura electrónica → Descargar / Imprimir CAFE | CAFE PDF downloads | prior | ⏳ |
 | F3 | Nota de crédito (refund) | Refund an order (admin) | Nota de crédito (doc 06) emitted | prior | ⏳ |
 | F4 | EOD reconciliation | Cierre del Día → Conciliación de Facturación Electrónica | Authorized / pending / rejected counts match | prior | ⏳ |
@@ -83,13 +84,13 @@ Legend for "Verified": **live** = exercised this session against the live DB · 
 
 | # | Test | Steps | Expected | Verified | Status |
 |---|------|-------|----------|----------|--------|
-| E1 | Order created email | Create order for a customer **with email** | `order_created` email sent (SMTP) | prod‑only | ⏳ |
+| E1 | Order created email | Create order for a customer **with email** | `order_created` email sent (SMTP) | **live (prod /api transport ✅)** | ✅ transport |
 | E2 | Order ready email | Advance order → **Listo** | `order_ready` email sent | prod‑only | ⏳ |
 | E3 | Order delivered email | Advance → **Completado** | `order_delivered` email sent | prod‑only | ⏳ |
 | E4 | Pickup reminder (cron) | Order left ready & overdue; daily cron `pickup-reminders` (9am Panamá) | Reminder email; `pickup_reminder_at` stamped | prod‑only | ⏳ |
 | E5 | Manual reminder | Listo card → **Recordar** | Reminder email + ✓ recordado | live (stamp) / prod (email) |  |
 
-> Config check (live DB): SMTP configured, from = `NoReply@lavaydobla.com`.
+> Config check (live DB): SMTP configured, from = `NoReply@lavaydobla.com`. **Transport verified** 2026‑06‑24: `POST /api/send-email` → `{success:true, messageId}` delivered. E2–E4 trigger wiring uses this same sender; confirm receipt per status on the live app.
 
 ## 8. WhatsApp — **[prod‑only, needs Meta creds]**
 
