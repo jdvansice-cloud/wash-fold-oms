@@ -732,14 +732,20 @@ function AddCustomerModal({ onClose, onSave }) {
     if (!formData.first_name.trim()) newErrors.first_name = 'Nombre requerido';
     if (!formData.last_name.trim()) newErrors.last_name = 'Apellido requerido';
     if (!formData.phone.trim()) newErrors.phone = 'Teléfono requerido';
-    
+    // B2B (RUC) customers must have full fiscal data to be invoiced electronically
+    if (formData.id_type === 'ruc') {
+      if (!formData.company_name.trim()) newErrors.company_name = 'Nombre de empresa requerido';
+      if (!formData.ruc.trim()) newErrors.ruc = 'RUC requerido';
+      if (!formData.dv.trim()) newErrors.dv = 'DV requerido';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-  
+
   const handleSubmit = () => {
     if (!validate()) return;
-    
+
     // Only include fields that exist in the database
     const newCustomer = {
       first_name: formData.first_name,
@@ -896,41 +902,44 @@ function AddCustomerModal({ onClose, onSave }) {
           {formData.id_type === 'ruc' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Empresa</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Empresa *</label>
                 <input
                   type="text"
                   value={formData.company_name}
                   onChange={(e) => handleChange('company_name', e.target.value)}
-                  className="input"
+                  className={`input ${errors.company_name ? 'input-error' : ''}`}
                   placeholder="Empresa S.A."
                 />
+                {errors.company_name && <p className="text-xs text-error-500 mt-1">{errors.company_name}</p>}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">RUC</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">RUC *</label>
                   <input
                     type="text"
                     value={formData.ruc}
                     onChange={(e) => handleChange('ruc', e.target.value)}
-                    className="input"
+                    className={`input ${errors.ruc ? 'input-error' : ''}`}
                     placeholder="155737034-2-2023"
                   />
+                  {errors.ruc && <p className="text-xs text-error-500 mt-1">{errors.ruc}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">DV</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">DV *</label>
                   <input
                     type="text"
                     value={formData.dv}
                     onChange={(e) => handleChange('dv', e.target.value)}
-                    className="input"
+                    className={`input ${errors.dv ? 'input-error' : ''}`}
                     placeholder="38"
                   />
+                  {errors.dv && <p className="text-xs text-error-500 mt-1">{errors.dv}</p>}
                 </div>
               </div>
             </>
           )}
         </div>
-        
+
         <div className="p-4 border-t border-slate-100 flex gap-3">
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
           <button onClick={handleSubmit} className="btn-primary flex-1">Guardar Cliente</button>
@@ -976,14 +985,20 @@ function EditCustomerModal({ customer, onClose, onSave }) {
     if (!formData.first_name.trim()) newErrors.first_name = 'Nombre requerido';
     if (!formData.last_name.trim()) newErrors.last_name = 'Apellido requerido';
     if (!formData.phone.trim()) newErrors.phone = 'Teléfono requerido';
-    
+    // B2B customers must have full fiscal data to be invoiced electronically
+    if (formData.id_type === 'ruc' || formData.can_be_invoiced) {
+      if (!formData.company_name.trim()) newErrors.company_name = 'Nombre de empresa requerido';
+      if (!formData.ruc.trim()) newErrors.ruc = 'RUC requerido';
+      if (!formData.dv.trim()) newErrors.dv = 'DV requerido';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
-  
+
   const handleSubmit = async () => {
     if (!validate()) return;
-    
+
     setSaving(true);
     try {
       const updatedCustomer = {
@@ -1162,38 +1177,41 @@ function EditCustomerModal({ customer, onClose, onSave }) {
             </div>
           )}
           
-          {formData.id_type === 'ruc' && (
+          {(formData.id_type === 'ruc' || formData.can_be_invoiced) && (
             <>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Empresa</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Nombre de Empresa *</label>
                 <input
                   type="text"
                   value={formData.company_name}
                   onChange={(e) => handleChange('company_name', e.target.value)}
-                  className="input"
+                  className={`input ${errors.company_name ? 'input-error' : ''}`}
                   placeholder="Empresa S.A."
                 />
+                {errors.company_name && <p className="text-xs text-error-500 mt-1">{errors.company_name}</p>}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">RUC</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">RUC *</label>
                   <input
                     type="text"
                     value={formData.ruc}
                     onChange={(e) => handleChange('ruc', e.target.value)}
-                    className="input"
+                    className={`input ${errors.ruc ? 'input-error' : ''}`}
                     placeholder="155737034-2-2023"
                   />
+                  {errors.ruc && <p className="text-xs text-error-500 mt-1">{errors.ruc}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">DV</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">DV *</label>
                   <input
                     type="text"
                     value={formData.dv}
                     onChange={(e) => handleChange('dv', e.target.value)}
-                    className="input"
+                    className={`input ${errors.dv ? 'input-error' : ''}`}
                     placeholder="38"
                   />
+                  {errors.dv && <p className="text-xs text-error-500 mt-1">{errors.dv}</p>}
                 </div>
               </div>
             </>
