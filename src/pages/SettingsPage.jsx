@@ -5,11 +5,12 @@ import {
   ChevronRight, Check, Settings as SettingsIcon,
   Plus, Edit2, Trash2, X, Scale, Hash, ChevronDown,
   GripVertical, Eye, EyeOff, Upload, MapPin, Image, Loader2,
-  Award, Stamp, Coins, Info, Printer, Truck, FileText, ShieldAlert, Wrench
+  Award, Stamp, Coins, Info, Printer, Truck, FileText, ShieldAlert, Wrench, MessageCircle
 } from 'lucide-react';
 import PickupScheduleSettings from '../components/settings/PickupScheduleSettings';
 import EFacturaSettings from '../components/settings/EFacturaSettings';
 import MachinesSettings from '../components/settings/MachinesSettings';
+import WhatsAppSettings from '../components/settings/WhatsAppSettings';
 import { fetchActiveMachines, fetchProductMachines, setProductMachines } from '../hooks/queries/useMachines';
 import { useApp } from '../context/AppContext';
 import { useFeature } from '../hooks/useFeature';
@@ -57,6 +58,7 @@ function SettingsPage() {
     { id: 'payments', label: 'Métodos de Pago', icon: CreditCard, description: 'Formas de pago' },
     { id: 'printer', label: 'Impresora', icon: Printer, description: 'Impresora de recibos' },
     { id: 'notifications', label: 'Notificaciones', icon: Bell, description: 'Plantillas de email' },
+    { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, description: 'Notificaciones por WhatsApp' },
     { id: 'products', label: 'Productos', icon: Package, description: 'Gestión de productos' },
     { id: 'machines', label: 'Máquinas', icon: Wrench, description: 'Lavadoras, secadoras y mantenimiento' },
     { id: 'promotions', label: 'Promociones', icon: Tag, description: 'Descuentos y ofertas' },
@@ -119,6 +121,7 @@ function SettingsPage() {
           {activeSection === 'notifications' && <NotificationsSettings />}
           {activeSection === 'products' && <ProductsSettings />}
           {activeSection === 'machines' && <MachinesSettings />}
+          {activeSection === 'whatsapp' && <WhatsAppSettings />}
           {activeSection === 'promotions' && <PromotionsSettings />}
           {activeSection === 'giftcards' && <GiftCardsSettings />}
           {activeSection === 'loyalty' && <LoyaltySettings />}
