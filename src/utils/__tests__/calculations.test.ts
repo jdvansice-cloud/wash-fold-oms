@@ -59,6 +59,15 @@ describe('calculateTicket', () => {
     expect(result.totalBags).toBe(1);
   });
 
+  it('zeroes ITBMS for an exempt (exonerado) customer', () => {
+    const item = makeItem({ lineTotal: 5.0 });
+    const result = calculateTicket(makeInput({ items: [item], customerTaxExempt: true }));
+
+    expect(result.subtotal).toBe(5.0);
+    expect(result.taxAmount).toBe(0);
+    expect(result.total).toBe(5.0);
+  });
+
   it('calculates quantity-based product', () => {
     const item = makeItem({
       product: { id: 'p2', product_type: 'service', is_taxable: true, price: 10, pricing_type: 'quantity' },

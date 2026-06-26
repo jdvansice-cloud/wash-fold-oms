@@ -56,6 +56,8 @@ export interface TicketCalculationInput {
   deliveryProduct: DeliveryProduct | null;
   freeDelivery: boolean;
   itbmsRate: number;
+  /** When the selected customer is ITBMS-exempt (exonerado), tax is zeroed. */
+  customerTaxExempt?: boolean;
 }
 
 export interface TicketCalculationResult {
@@ -83,8 +85,16 @@ export interface TicketCalculationResult {
 // --- Core calculation ---
 
 export function calculateTicket(input: TicketCalculationInput): TicketCalculationResult {
-  const { items, isExpress, manualDiscount, promotion, deliveryProduct, freeDelivery, itbmsRate } =
-    input;
+  const {
+    items,
+    isExpress,
+    manualDiscount,
+    promotion,
+    deliveryProduct,
+    freeDelivery,
+    itbmsRate,
+    customerTaxExempt = false,
+  } = input;
 
   // Step 1: Separate product items from delivery items
   const productItems = items.filter((item) => item.product.product_type !== 'delivery');
@@ -152,7 +162,8 @@ export function calculateTicket(input: TicketCalculationInput): TicketCalculatio
   });
   const taxableDelivery = deliveryAfterDiscount;
   const taxableAmount = taxableProductsAfterDiscount + taxableDelivery;
-  const taxAmount = taxableAmount * (itbmsRate / 100);
+  // An ITBMS-exempt (exonerado) customer zeroes the whole ticket's tax.
+  const taxAmount = customerTaxExempt ? 0 : taxableAmount * (itbmsRate / 100);
 
   // Step 9: Grand total
   const total = subtotal + taxAmount;

@@ -7,6 +7,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
+import CustomerTaxExempt from '../components/CustomerTaxExempt';
 
 // Helper to display order number (legacy CC orders or new orders)
 const getOrderDisplayNumber = (order) => {
@@ -716,10 +717,16 @@ function AddCustomerModal({ onClose, onSave }) {
     company_name: '',
     ruc: '',
     dv: '',
+    tax_exempt: false,
+    tax_exempt_reason: '',
+    tax_exempt_doc_number: '',
+    tax_exempt_authority: '',
+    tax_exempt_issued_at: '',
+    tax_exempt_expires_at: '',
   });
-  
+
   const [errors, setErrors] = useState({});
-  
+
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -764,10 +771,16 @@ function AddCustomerModal({ onClose, onSave }) {
       ruc: formData.ruc || null,
       dv: formData.dv || null,
       can_be_invoiced: formData.id_type === 'ruc',
+      tax_exempt: !!formData.tax_exempt,
+      tax_exempt_reason: formData.tax_exempt ? (formData.tax_exempt_reason || null) : null,
+      tax_exempt_doc_number: formData.tax_exempt ? (formData.tax_exempt_doc_number || null) : null,
+      tax_exempt_authority: formData.tax_exempt ? (formData.tax_exempt_authority || null) : null,
+      tax_exempt_issued_at: formData.tax_exempt ? (formData.tax_exempt_issued_at || null) : null,
+      tax_exempt_expires_at: formData.tax_exempt ? (formData.tax_exempt_expires_at || null) : null,
       account_balance: 0,
       preferences: { scent: 'Sin preferencia', softener: 'Sin preferencia' },
     };
-    
+
     onSave(newCustomer);
   };
   
@@ -938,6 +951,8 @@ function AddCustomerModal({ onClose, onSave }) {
               </div>
             </>
           )}
+
+          <CustomerTaxExempt formData={formData} onChange={handleChange} />
         </div>
 
         <div className="p-4 border-t border-slate-100 flex gap-3">
@@ -967,6 +982,12 @@ function EditCustomerModal({ customer, onClose, onSave }) {
     ruc: customer.ruc || '',
     dv: customer.dv || '',
     can_be_invoiced: customer.can_be_invoiced || false,
+    tax_exempt: customer.tax_exempt || false,
+    tax_exempt_reason: customer.tax_exempt_reason || '',
+    tax_exempt_doc_number: customer.tax_exempt_doc_number || '',
+    tax_exempt_authority: customer.tax_exempt_authority || '',
+    tax_exempt_issued_at: customer.tax_exempt_issued_at || '',
+    tax_exempt_expires_at: customer.tax_exempt_expires_at || '',
     notes: customer.notes || '',
   });
   
@@ -1018,9 +1039,15 @@ function EditCustomerModal({ customer, onClose, onSave }) {
         ruc: formData.ruc || null,
         dv: formData.dv || null,
         can_be_invoiced: formData.id_type === 'ruc' || formData.can_be_invoiced,
+        tax_exempt: !!formData.tax_exempt,
+        tax_exempt_reason: formData.tax_exempt ? (formData.tax_exempt_reason || null) : null,
+        tax_exempt_doc_number: formData.tax_exempt ? (formData.tax_exempt_doc_number || null) : null,
+        tax_exempt_authority: formData.tax_exempt ? (formData.tax_exempt_authority || null) : null,
+        tax_exempt_issued_at: formData.tax_exempt ? (formData.tax_exempt_issued_at || null) : null,
+        tax_exempt_expires_at: formData.tax_exempt ? (formData.tax_exempt_expires_at || null) : null,
         notes: formData.notes || null,
       };
-      
+
       await onSave(updatedCustomer);
     } catch (err) {
       console.error('Error saving customer:', err);
@@ -1216,6 +1243,13 @@ function EditCustomerModal({ customer, onClose, onSave }) {
               </div>
             </>
           )}
+
+          <CustomerTaxExempt
+            formData={formData}
+            onChange={handleChange}
+            customerId={customer.id}
+            storeId={customer.store_id}
+          />
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Notas</label>

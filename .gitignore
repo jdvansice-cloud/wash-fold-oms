@@ -13,3 +13,6 @@ efactura Api key.rtf
 *.key
 secrets/
 Efactura PAC/
+
+# Local CleanCloud data exports — contains customer PII, never commit
+Data Cleancloud/

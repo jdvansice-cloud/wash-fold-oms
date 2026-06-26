@@ -453,8 +453,10 @@ export function AppProvider({ children }) {
   
   // Ticket calculations
   const ticketCalculations = useCallback(() => {
-    const { items, isExpress, manualDiscount, deliveryProduct, promotion, freeDelivery } = state.ticket;
+    const { items, isExpress, manualDiscount, deliveryProduct, promotion, freeDelivery, customer } = state.ticket;
     const { itbms_rate } = state.settings;
+    // An ITBMS-exempt (exonerado) customer zeroes the whole ticket's tax.
+    const customerTaxExempt = customer?.tax_exempt === true;
     
     // Separate regular items from delivery items (in case delivery is in items)
     const productItems = items.filter(item => item.product.product_type !== 'delivery');
@@ -533,7 +535,7 @@ export function AppProvider({ children }) {
 
     // Total taxable amount
     const taxableAmount = taxableProductsAfterDiscount + taxableDelivery;
-    const taxAmount = taxableAmount * (itbms_rate / 100);
+    const taxAmount = customerTaxExempt ? 0 : taxableAmount * (itbms_rate / 100);
 
     // Total
     const total = subtotal + taxAmount;

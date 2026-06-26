@@ -59,7 +59,7 @@ function POSScreen() {
     addProductToTicket(product);
   };
   
-  const addProductToTicket = (product) => {
+  const addProductToTicket = (product, meta = {}) => {
     const price = state.ticket.isExpress ? (product.express_price || product.price) : product.price;
     actions.addItem({
       product,
@@ -67,6 +67,7 @@ function POSScreen() {
       unitPrice: price,
       lineTotal: price,
       pieces: product.pieces_per_unit || 1,
+      ...meta,
     });
   };
   
@@ -192,8 +193,8 @@ function POSScreen() {
         <GiftCardActivationModal
           product={giftCardProduct}
           storeId={activeStore?.id}
-          onConfirm={(cardCode) => {
-            addProductToTicket(giftCardProduct);
+          onConfirm={(giftCard) => {
+            addProductToTicket(giftCardProduct, { giftCard });
             setGiftCardProduct(null);
           }}
           onClose={() => setGiftCardProduct(null)}

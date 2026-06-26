@@ -7,6 +7,7 @@ import {
   useCancelInvoice,
   downloadCafe,
   printCafe,
+  reprintFiscalReceipt,
 } from '../../hooks/queries/useElectronicInvoice';
 import type { EInvoiceStatus } from '../../types';
 
@@ -47,13 +48,33 @@ export function InvoiceStatus({ orderId, staff = false, canEmit = true }: Props)
     }
   };
 
+  // Silent thermal reprint (representación impresa with QR). Falls back to the
+  // PDF print dialog if the thermal printer/transport isn't available.
   const handlePrint = async () => {
     if (!invoice) return;
     setBusy('print');
     try {
+      await reprintFiscalReceipt(orderId, invoice);
+    } catch (e) {
+      console.warn('Thermal reprint failed, falling back to PDF:', e);
+      try {
+        await printCafe({ invoiceId: invoice.id });
+      } catch (e2) {
+        alert('No se pudo imprimir la factura: ' + (e2 as Error).message);
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Explicit PDF print (browser dialog) — kept as a secondary option.
+  const handlePrintPdf = async () => {
+    if (!invoice) return;
+    setBusy('print-pdf');
+    try {
       await printCafe({ invoiceId: invoice.id });
     } catch (e) {
-      alert('No se pudo imprimir la factura: ' + (e as Error).message);
+      alert('No se pudo imprimir el PDF: ' + (e as Error).message);
     } finally {
       setBusy(null);
     }
@@ -129,6 +150,10 @@ export function InvoiceStatus({ orderId, staff = false, canEmit = true }: Props)
             <button onClick={handlePrint} disabled={busy === 'print'} className="btn-secondary text-sm">
               {busy === 'print' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
               Imprimir
+            </button>
+            <button onClick={handlePrintPdf} disabled={busy === 'print-pdf'} className="btn-secondary text-sm">
+              {busy === 'print-pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+              Imprimir PDF
             </button>
             {invoice.qr_content && (
               <a

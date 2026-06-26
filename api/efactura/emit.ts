@@ -83,11 +83,31 @@ export default async function handler(req: any, res: any) {
     // Verify the order belongs to this company before touching the PAC.
     const { data: order } = await admin
       .from('orders')
-      .select('store_id')
+      .select('store_id, billing_type')
       .eq('id', order_id)
       .maybeSingle();
     if (!order) throw new HttpError(404, 'Order not found');
     await assertStoreInCompany(admin, order.store_id, companyId);
+
+    // B2B credit (billing_type=account) is invoiced via the CONSOLIDATED factura
+    // (b2b_invoice_id path), never per order — skip individual emission.
+    if (order.billing_type === 'account') {
+      return res.status(200).json({ success: true, skipped: true, reason: 'b2b_account' });
+    }
+
+    // Gift cards are prepayment, not a sale → never a factura. Skip when every
+    // line on the order is a gift-card product (tax applies later, on redemption).
+    const { data: lineProducts } = await admin
+      .from('order_items')
+      .select('products(product_type)')
+      .eq('order_id', order_id);
+    if (
+      lineProducts &&
+      lineProducts.length > 0 &&
+      lineProducts.every((r: any) => r.products?.product_type === 'gift_card')
+    ) {
+      return res.status(200).json({ success: true, skipped: true, reason: 'gift_card' });
+    }
 
     // Pay-on-pickup is a deferred term (collected at pickup), so it must not be
     // invoiced now — it's billed when actually paid. Detect by payment_type so a

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildInvoiceRequest,
   buildReceptor,
+  isGovernmentRuc,
   EInvoiceReconciliationError,
   formatPanamaDateTime,
   type BuildInvoiceInput,
@@ -100,6 +101,44 @@ describe('buildReceptor', () => {
     const r = buildReceptor({ first_name: 'John', id_type: 'passport', id_number: 'X123' });
     expect(r.tipoReceptorFe).toBe(RECEPTOR_TYPE.EXTRANJERO);
     expect(r.grupoIdentificacionExtranjera?.pasaportNumeroIdentificacionExtranjera).toBe('X123');
+  });
+
+  it('builds a GOBIERNO receptor for a No-Tributario RUC', () => {
+    const r = buildReceptor({
+      company_name: 'MINISTERIO DE ECONOMIA Y FINANZAS',
+      ruc: '8-NT-1-12571',
+      dv: '66',
+    });
+    expect(r.tipoReceptorFe).toBe(RECEPTOR_TYPE.GOBIERNO);
+    expect(r.datosRucReceptor?.rucReceptor).toBe('8-NT-1-12571');
+  });
+});
+
+describe('isGovernmentRuc', () => {
+  it('detects No-Tributario RUCs and leaves ordinary ones alone', () => {
+    expect(isGovernmentRuc('8-NT-1-12571')).toBe(true);
+    expect(isGovernmentRuc('NT-1-1')).toBe(true);
+    expect(isGovernmentRuc('155737034-2-2023')).toBe(false);
+    expect(isGovernmentRuc('8-123-456')).toBe(false);
+    expect(isGovernmentRuc(undefined)).toBe(false);
+  });
+});
+
+describe('buildInvoiceRequest — ITBMS-exempt customer', () => {
+  it('emits all lines at tasa 00 with zero tax when the order tax is 0', () => {
+    const inv = buildInvoiceRequest({
+      order: { tax_amount: 0, total: 20 },
+      items: [
+        { description: 'Lavado', quantity: 1, unitPrice: 12, isTaxable: false },
+        { description: 'Planchado', quantity: 1, unitPrice: 8, isTaxable: false },
+      ],
+      config,
+      now: fixedNow,
+    });
+    expect(inv.listaItems.every((i) => i.grupoITBMS.tasaITBMSAplicable === '00')).toBe(true);
+    expect(inv.listaItems.every((i) => i.grupoITBMS.montoITBMS === 0)).toBe(true);
+    expect(inv.totales.totalITBMS).toBe(0);
+    expect(inv.totales.valorTotalFactura).toBe(20);
   });
 });
 
