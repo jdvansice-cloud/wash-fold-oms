@@ -500,8 +500,15 @@ export function useDataLoader() {
       // is not enabled for the company. Pay-on-pickup sales are deferred (money
       // collected at pickup), so no invoice is emitted now — it's billed when
       // the order is actually paid. The emit endpoint enforces this too.
+      // Gift cards are prepayment, not a sale, and B2B credit (account) bills via
+      // the consolidated factura — neither auto-emits a per-order factura. (The
+      // emit endpoint enforces both server-side; this just avoids the round-trip.)
+      const giftCardOnly =
+        (orderData.items?.length ?? 0) > 0 &&
+        orderData.items.every((i) => i.product?.product_type === 'gift_card');
+      const isAccount = (orderData.billing_type || order.billing_type) === 'account';
       const isUnpaid = (orderData.payment_status || order.payment_status) === 'unpaid';
-      if (!isUnpaid && (order.total ?? 0) > 0) {
+      if (!isUnpaid && !giftCardOnly && !isAccount && (order.total ?? 0) > 0) {
         emitInvoice(order.id).catch((err) =>
           console.warn('E-Factura auto-emit deferred:', err?.message || err),
         );

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { emitInvoice, cancelInvoice, fetchCafePdf } from '@/lib/efactura/client';
+import { generateReceiptData, printFiscalReceipt } from '@/utils/receiptPrinter';
 import type { ElectronicInvoice } from '@/types';
 
 /** Latest electronic document (factura/NC) for an order, if any. */
@@ -88,6 +89,36 @@ export async function printCafe(params: { invoiceId?: string; cufe?: string }) {
     iframe.remove();
     URL.revokeObjectURL(url);
   }, 60_000);
+}
+
+/**
+ * Silently reprints the thermal representación impresa (QR + CUFE) of an
+ * authorized factura / nota de crédito — no browser dialog. Assembles the
+ * receipt data from the order and routes it through the active print transport.
+ */
+export async function reprintFiscalReceipt(orderId: string, invoice: ElectronicInvoice) {
+  const { data: order, error } = await supabase
+    .from('orders')
+    .select('*, order_items(*), payments(*), stores(*, companies(*))')
+    .eq('id', orderId)
+    .single();
+  if (error || !order) throw new Error('No se pudo cargar la orden.');
+
+  const store = (order as any).stores || null;
+  const company = store?.companies || null;
+  const payments = ((order as any).payments || []).map((p: any) => ({
+    method: p.payment_method,
+    amount: p.amount,
+    reference: p.reference || '',
+  }));
+  const receiptData = generateReceiptData(
+    order,
+    company,
+    store,
+    (order as any).order_items || [],
+    payments,
+  );
+  await printFiscalReceipt(receiptData, invoice, false);
 }
 
 export interface InvoiceWithOrder extends ElectronicInvoice {

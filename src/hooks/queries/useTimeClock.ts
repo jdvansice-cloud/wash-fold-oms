@@ -57,7 +57,12 @@ export function useClockToggle(userId?: string, storeId?: string | null) {
 
 /** All time entries for a store on a given local day (for EOD). */
 export interface TimeEntryWithUser extends TimeEntry {
-  users?: { full_name: string | null; weekly_hours?: Record<string, number> } | null;
+  // weekly_hours: per-weekday shift `{ start, end }` (HH:MM); legacy rows may
+  // store a bare number of hours. Use dayScheduledHours() to read either shape.
+  users?: {
+    full_name: string | null;
+    weekly_hours?: Record<string, { start: string; end: string } | number>;
+  } | null;
 }
 
 export async function fetchStoreDayEntries(

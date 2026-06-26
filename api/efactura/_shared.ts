@@ -275,6 +275,13 @@ export async function buildPayloadForOrder(
     if (c) customer = c as EInvoiceReceptorCustomer;
   }
 
+  // An ITBMS-exempt (exonerado) customer forces every line to tasa "00". The
+  // order's stored tax_amount is already 0 (the POS zeroes it), so this keeps
+  // the per-line rates consistent with the zero-tax total.
+  if (customer?.tax_exempt) {
+    for (const line of lines) line.isTaxable = false;
+  }
+
   const { data: company } = await admin
     .from('companies')
     .select('itbms_rate')

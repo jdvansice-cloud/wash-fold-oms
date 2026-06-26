@@ -55,6 +55,13 @@ export interface EInvoiceReceptorCustomer {
   address_corregimiento?: string;
   address_district?: string;
   address_province?: string;
+  /** ITBMS-exempt (exonerado). Forces tasa "00" on all lines at emit time. */
+  tax_exempt?: boolean;
+}
+
+/** A No-Tributario RUC (government / state entity), e.g. "8-NT-1-12571". */
+export function isGovernmentRuc(ruc?: string | null): boolean {
+  return /(?:^|-)NT(?:-|$)/i.test((ruc ?? '').trim());
 }
 
 export interface EInvoiceLine {
@@ -145,16 +152,21 @@ export function buildReceptor(customer?: EInvoiceReceptorCustomer | null): Infor
     };
   }
 
-  // RUC contribuyente (named/fiscal invoice).
+  // RUC receptor (named/fiscal invoice). A No-Tributario RUC identifies a
+  // government / state entity → receptor type GOBIERNO (03); otherwise the
+  // standard CONTRIBUYENTE (01).
   const direccion = [customer.address_street, customer.address_building]
     .filter(Boolean)
     .join(', ')
     .trim();
   const hasUbicacion =
     customer.address_corregimiento || customer.address_district || customer.address_province;
+  const tipoReceptorFe = isGovernmentRuc(customer.ruc)
+    ? RECEPTOR_TYPE.GOBIERNO
+    : RECEPTOR_TYPE.CONTRIBUYENTE;
 
   return {
-    tipoReceptorFe: RECEPTOR_TYPE.CONTRIBUYENTE,
+    tipoReceptorFe,
     paisReceptor: DEFAULT_PAIS,
     nombreRazonReceptor: customer.company_name || fullName(customer),
     datosRucReceptor: {

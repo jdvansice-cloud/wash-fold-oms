@@ -18,13 +18,28 @@ import { useTenant } from '../hooks/useTenant';
 import { usePermission } from '../hooks/usePermission';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
-import { 
-  connectPrinter, 
-  disconnectPrinter, 
-  isPrinterConnected, 
+import { useAuth } from '../context/AuthContext';
+import {
+  WEEKDAYS,
+  DEFAULT_SHIFT,
+  dayScheduledHours,
+  weeklyScheduledHours,
+  normalizeWeekly,
+} from '../utils/schedule';
+import {
+  connectPrinter,
+  disconnectPrinter,
+  isPrinterConnected,
   printTestPage,
   openCashDrawer
 } from '../utils/receiptPrinter';
+import {
+  getActiveTransport,
+  setActiveTransport,
+  getSelectedPrinter,
+  setSelectedPrinter,
+  listPrinters,
+} from '../utils/printTransport';
 
 function SettingsPage() {
   const { state } = useApp();
@@ -1211,8 +1226,10 @@ function WorkflowSettings() {
 
 // Users Settings Section
 function UsersSettings() {
+  const { appUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [storeId, setStoreId] = useState(null);
+  const [companyId, setCompanyId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [noStore, setNoStore] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -1229,7 +1246,7 @@ function UsersSettings() {
       // Get active store ID
       const { data: store, error: storeError } = await supabase
         .from('stores')
-        .select('id')
+        .select('id, company_id')
         .eq('is_active', true)
         .limit(1)
         .maybeSingle();
@@ -1239,8 +1256,9 @@ function UsersSettings() {
         setLoading(false);
         return;
       }
-      
+
       setStoreId(store.id);
+      setCompanyId(store.company_id);
 
       const { data, error } = await supabase
         .from('users')
@@ -1270,6 +1288,7 @@ function UsersSettings() {
         .from('users')
         .insert({
           store_id: storeId,
+          company_id: appUser?.company_id ?? companyId,
           full_name: userData.full_name,
           email: userData.email,
           role: userData.role,
@@ -1547,26 +1566,23 @@ function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
     email: user?.email || '',
     role: user?.role || 'operator',
     is_active: user?.is_active !== false,
-    weekly_hours: user?.weekly_hours || {},
+    weekly_hours: normalizeWeekly(user?.weekly_hours),
   });
 
-  const WEEKDAYS = [
-    { key: 'mon', label: 'Lun' },
-    { key: 'tue', label: 'Mar' },
-    { key: 'wed', label: 'Mié' },
-    { key: 'thu', label: 'Jue' },
-    { key: 'fri', label: 'Vie' },
-    { key: 'sat', label: 'Sáb' },
-    { key: 'sun', label: 'Dom' },
-  ];
-  const setDayHours = (key, val) => {
+  const toggleDay = (key) => {
     const next = { ...formData.weekly_hours };
-    const n = parseFloat(val);
-    if (!val || isNaN(n) || n <= 0) delete next[key];
-    else next[key] = Math.min(24, n);
+    if (next[key]) delete next[key];
+    else next[key] = { ...DEFAULT_SHIFT };
     setFormData({ ...formData, weekly_hours: next });
   };
-  const weeklyTotal = WEEKDAYS.reduce((s, d) => s + (Number(formData.weekly_hours[d.key]) || 0), 0);
+  const setDayTime = (key, field, val) => {
+    const cur = formData.weekly_hours[key] || { ...DEFAULT_SHIFT };
+    setFormData({
+      ...formData,
+      weekly_hours: { ...formData.weekly_hours, [key]: { ...cur, [field]: val } },
+    });
+  };
+  const weeklyTotal = weeklyScheduledHours(formData.weekly_hours);
 
   const handleSubmit = () => {
     if (!formData.full_name.trim()) {
@@ -1656,25 +1672,51 @@ function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
                 {weeklyTotal > 0 ? `${weeklyTotal % 1 === 0 ? weeklyTotal : weeklyTotal.toFixed(1)} h / semana` : 'Sin horario'}
               </span>
             </div>
-            <div className="grid grid-cols-7 gap-1.5">
-              {WEEKDAYS.map((d) => (
-                <div key={d.key} className="text-center">
-                  <div className="text-[11px] text-slate-500 mb-1">{d.label}</div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="24"
-                    step="0.5"
-                    inputMode="decimal"
-                    value={formData.weekly_hours[d.key] ?? ''}
-                    onChange={(e) => setDayHours(d.key, e.target.value)}
-                    className="input px-1 py-1.5 text-center text-sm"
-                    placeholder="0"
-                  />
-                </div>
-              ))}
+            <div className="space-y-1.5">
+              {WEEKDAYS.map((d) => {
+                const shift = formData.weekly_hours[d.key];
+                const enabled = !!shift;
+                const hrs = enabled ? dayScheduledHours(shift) : 0;
+                return (
+                  <div key={d.key} className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleDay(d.key)}
+                      className={`w-14 shrink-0 text-xs font-medium px-2 py-1.5 rounded-lg border transition-colors ${
+                        enabled
+                          ? 'bg-primary-50 border-primary-300 text-primary-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'
+                      }`}
+                    >
+                      {d.short}
+                    </button>
+                    {enabled ? (
+                      <div className="flex items-center gap-1.5 flex-1">
+                        <input
+                          type="time"
+                          value={shift.start}
+                          onChange={(e) => setDayTime(d.key, 'start', e.target.value)}
+                          className="input px-2 py-1.5 text-sm"
+                        />
+                        <span className="text-slate-400 text-sm">a</span>
+                        <input
+                          type="time"
+                          value={shift.end}
+                          onChange={(e) => setDayTime(d.key, 'end', e.target.value)}
+                          className="input px-2 py-1.5 text-sm"
+                        />
+                        <span className="text-xs text-slate-400 w-10 text-right shrink-0">
+                          {hrs > 0 ? `${hrs % 1 === 0 ? hrs : hrs.toFixed(1)}h` : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="flex-1 text-xs text-slate-400">Día libre</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <p className="text-xs text-slate-500 mt-1">Horas programadas por día (deja en blanco los días libres).</p>
+            <p className="text-xs text-slate-500 mt-2">Toca un día para activarlo y define la hora de entrada y salida.</p>
           </div>
 
           {isEditing && (
@@ -5309,12 +5351,45 @@ function PrinterSettings() {
   const [connecting, setConnecting] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [message, setMessage] = useState(null);
-  
+  const [transport, setTransport] = useState(getActiveTransport());
+  const [printers, setPrinters] = useState([]);
+  const [selectedPrinter, setSelectedPrinterState] = useState(getSelectedPrinter());
+
   // Check connection status on mount
   useEffect(() => {
     setConnected(isPrinterConnected());
   }, []);
-  
+
+  const handleTransportChange = (t) => {
+    setActiveTransport(t);
+    setTransport(t);
+    setConnected(isPrinterConnected());
+    setMessage(null);
+  };
+
+  // Load the printers known to QZ Tray for the dropdown.
+  const handleLoadPrinters = async () => {
+    setConnecting(true);
+    setMessage(null);
+    try {
+      const found = await listPrinters();
+      setPrinters(found);
+      setConnected(isPrinterConnected());
+      if (!found.length) {
+        setMessage({ type: 'error', text: 'QZ Tray no devolvió impresoras. ¿Está instalada la impresora en Windows?' });
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: 'No se pudo conectar a QZ Tray: ' + err.message });
+    }
+    setConnecting(false);
+  };
+
+  const handleSelectPrinter = (name) => {
+    setSelectedPrinter(name);
+    setSelectedPrinterState(name);
+    setConnected(isPrinterConnected());
+  };
+
   const handleConnect = async () => {
     setConnecting(true);
     setMessage(null);
@@ -5366,9 +5441,69 @@ function PrinterSettings() {
         <Printer className="w-5 h-5 text-primary-500" />
         Impresora de Recibos
       </h2>
-      
-      {/* Browser Support Warning */}
-      {!navigator.usb && (
+
+      {/* Transport selector */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-slate-700 mb-2">Método de impresión</label>
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleTransportChange('qz')}
+            className={`flex-1 p-3 rounded-xl border text-left transition-colors ${
+              transport === 'qz' ? 'border-primary-500 bg-primary-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <p className="font-medium text-slate-800 text-sm">QZ Tray (recomendado)</p>
+            <p className="text-xs text-slate-500">Impresión silenciosa por nombre. Cualquier navegador.</p>
+          </button>
+          <button
+            onClick={() => handleTransportChange('webusb')}
+            className={`flex-1 p-3 rounded-xl border text-left transition-colors ${
+              transport === 'webusb' ? 'border-primary-500 bg-primary-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+            }`}
+          >
+            <p className="font-medium text-slate-800 text-sm">WebUSB</p>
+            <p className="text-xs text-slate-500">Directo por USB (solo Chrome/Edge).</p>
+          </button>
+        </div>
+      </div>
+
+      {/* QZ Tray printer picker */}
+      {transport === 'qz' && (
+        <div className="mb-6 p-4 bg-slate-50 rounded-xl space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Impresora (QZ Tray)</label>
+              <select
+                value={selectedPrinter}
+                onChange={(e) => handleSelectPrinter(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+              >
+                <option value="">— Selecciona una impresora —</option>
+                {printers.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+                {selectedPrinter && !printers.includes(selectedPrinter) && (
+                  <option value={selectedPrinter}>{selectedPrinter}</option>
+                )}
+              </select>
+            </div>
+            <button
+              onClick={handleLoadPrinters}
+              disabled={connecting}
+              className="mt-6 px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium disabled:bg-slate-300"
+            >
+              {connecting ? 'Buscando…' : 'Buscar impresoras'}
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Requiere QZ Tray instalado en esta PC. Para impresión sin diálogo de confianza,
+            registra un certificado firmado (ver documentación).
+          </p>
+        </div>
+      )}
+
+      {/* Browser Support Warning (WebUSB only) */}
+      {transport === 'webusb' && !navigator.usb && (
         <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <p className="text-sm text-amber-700 font-medium">
             ⚠️ Tu navegador no soporta WebUSB
@@ -5404,7 +5539,7 @@ function PrinterSettings() {
           ) : (
             <button
               onClick={handleConnect}
-              disabled={connecting || !navigator.usb}
+              disabled={connecting || (transport === 'webusb' && !navigator.usb)}
               className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {connecting ? (

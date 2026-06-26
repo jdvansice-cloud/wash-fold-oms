@@ -12,8 +12,11 @@ import {
   generateReceiptData,
   generateReceiptText,
   printReceipt,
+  printFiscalReceipt,
+  printGiftCardTicket,
   saveReceiptToStorage,
-  isPrinterConnected
+  isPrinterConnected,
+  openCashDrawer,
 } from '../utils/receiptPrinter';
 import MachineAssignModal from './modals/MachineAssignModal';
 import { recordMachineUsage } from '../hooks/queries/useMachines';
@@ -40,6 +43,40 @@ const fetchCustomerLoyalty = async (customerId) => {
     console.error('Error fetching loyalty:', err);
     return null;
   }
+};
+
+/**
+ * Polls electronic_invoices for an order's factura after checkout (the auto-emit
+ * in useDataLoader fires it). Returns the row once it reaches a terminal status,
+ * or null. Bails out early when no row ever appears (E-Factura disabled for the
+ * company) so non-fiscal stores don't wait the full timeout.
+ */
+const waitForOrderInvoice = async (orderId, { attempts = 9, delayMs = 600 } = {}) => {
+  const url = import.meta.env.SUPABASE_URL;
+  const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key || !orderId) return null;
+  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(
+        `${url}/rest/v1/electronic_invoices?order_id=eq.${orderId}&order=created_at.desc&limit=1&select=*`,
+        { headers },
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        const inv = rows && rows[0];
+        if (inv && ['authorized', 'rejected', 'cancelled'].includes(inv.status)) return inv;
+        // No row yet after a couple of tries → emission was never triggered
+        // (E-Factura disabled / non-fiscal sale). Stop waiting.
+        if (!inv && i >= 1) return null;
+      }
+    } catch {
+      /* transient — retry */
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
 };
 
 // Helper to fetch loyalty settings
@@ -1882,12 +1919,54 @@ function TicketPanel() {
                     console.warn('Receipt was not saved - check Supabase Storage bucket and policies');
                   }
                   
-                  // Print receipt (if printer connected in settings)
+                  // === PRINT DISPATCH: pick the right document per flow ===
                   if (isPrinterConnected()) {
-                    // Check if cash payment - open drawer
                     const hasCashPayment = paymentInfo.payments.some(p => p.method === 'cash');
-                    await printReceipt(receiptData, hasCashPayment);
-                    console.log('Receipt printed successfully');
+
+                    // Gift cards are prepayment, not a sale → non-fiscal info ticket.
+                    const giftCardItems = state.ticket.items.filter(
+                      (it) => it.product?.product_type === 'gift_card'
+                    );
+                    const giftCardOnly =
+                      state.ticket.items.length > 0 &&
+                      giftCardItems.length === state.ticket.items.length;
+                    // A real fiscal sale: paid now, not on account, not gift-card-only.
+                    const isFiscalSale =
+                      !giftCardOnly &&
+                      !paymentInfo.payOnPickup &&
+                      !paymentInfo.onAccount &&
+                      (newOrder.total ?? 0) > 0;
+
+                    try {
+                      if (giftCardOnly) {
+                        for (const it of giftCardItems) {
+                          await printGiftCardTicket(
+                            it.giftCard || { code: '', current_balance: 0, amountLoaded: it.lineTotal },
+                            it.product,
+                            state.store,
+                            state.company,
+                          );
+                        }
+                        if (hasCashPayment) await openCashDrawer();
+                      } else if (isFiscalSale) {
+                        // Wait briefly for the auto-emitted factura to be authorized,
+                        // then print its representación impresa (QR + CUFE). If it's
+                        // not ready (or rejected / E-Factura off), print the internal
+                        // receipt now — the CAFE can be reprinted from order details.
+                        const invoice = await waitForOrderInvoice(newOrder.id);
+                        if (invoice && invoice.status === 'authorized') {
+                          await printFiscalReceipt(receiptData, invoice, hasCashPayment);
+                        } else {
+                          await printReceipt(receiptData, hasCashPayment);
+                        }
+                      } else {
+                        // Pay-on-pickup / B2B account / zero-total → internal receipt.
+                        await printReceipt(receiptData, hasCashPayment);
+                      }
+                      console.log('Receipt printed successfully');
+                    } catch (printErr) {
+                      console.error('Print failed (order still completed):', printErr);
+                    }
                   } else {
                     // Printer not connected - just log, don't try to auto-connect
                     console.log('Printer not connected. Connect in Settings > Impresora to enable printing.');

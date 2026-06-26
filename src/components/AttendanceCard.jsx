@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Users } from 'lucide-react';
 import { fetchStoreDayEntries, workedMinutes } from '../hooks/queries/useTimeClock';
+import { dayScheduledHours } from '../utils/schedule';
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
@@ -50,7 +51,7 @@ function AttendanceCard({ storeId, selectedDate }) {
     const k = e.user_id;
     const cur = byUser.get(k) || {
       name: e.users?.full_name || 'Empleado',
-      scheduled: Number(e.users?.weekly_hours?.[weekdayKey]) || 0,
+      scheduled: dayScheduledHours(e.users?.weekly_hours?.[weekdayKey]),
       firstIn: e.clock_in,
       lastOut: e.clock_out,
       worked: 0,

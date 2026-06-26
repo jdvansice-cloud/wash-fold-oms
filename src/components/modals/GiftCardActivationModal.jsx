@@ -22,6 +22,7 @@ export default function GiftCardActivationModal({ product, storeId, onConfirm, o
     setLoading(true);
     setError(null);
 
+    let cardRecord = null;
     try {
       const cardCode = code.trim().toUpperCase();
 
@@ -71,6 +72,7 @@ export default function GiftCardActivationModal({ product, storeId, onConfirm, o
         });
 
         setExistingCard({ ...card, current_balance: newBalance, wasTopUp: true });
+        cardRecord = { code: card.code, current_balance: newBalance, amountLoaded: amount, expires_at: card.expires_at, wasTopUp: true };
       } else {
         // New card — create it
         const createRes = await fetch(`${url}/rest/v1/gift_cards`, {
@@ -107,10 +109,12 @@ export default function GiftCardActivationModal({ product, storeId, onConfirm, o
         });
 
         setExistingCard({ ...newCard, wasTopUp: false });
+        cardRecord = { code: newCard.code, current_balance: amount, amountLoaded: amount, expires_at: newCard.expires_at, wasTopUp: false };
       }
 
-      // Add product to ticket
-      onConfirm(cardCode);
+      // Add product to ticket (with the card record so checkout can print the
+      // non-fiscal gift-card info ticket).
+      onConfirm(cardRecord || { code: cardCode, current_balance: amount, amountLoaded: amount });
     } catch (err) {
       console.error('Gift card activation error:', err);
       setError(err.message || 'Error al procesar la tarjeta');

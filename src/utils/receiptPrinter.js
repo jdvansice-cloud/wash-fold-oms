@@ -1,8 +1,20 @@
 /**
  * Receipt Printer Utility for Epson TM-T20III
- * Uses WebUSB for direct printing without system dialog
- * Generates ESC/POS commands for thermal printing
+ * Generates ESC/POS commands for thermal printing and sends them silently.
+ *
+ * Two transports (see printTransport.js): QZ Tray (default — raw print to the
+ * Windows-installed printer by name, any browser, no dialog) and WebUSB
+ * (fallback — Chrome/Edge only). The builders below are transport-agnostic;
+ * only sendToPrinter() branches on the active transport.
  */
+
+import {
+  getActiveTransport,
+  getSelectedPrinter,
+  connectQz,
+  isQzConnected,
+  printRaw as qzPrintRaw,
+} from './printTransport';
 
 // ESC/POS Commands for Epson TM-T20III
 const ESC = 0x1B;
@@ -45,9 +57,22 @@ let printerInterface = null;
 let printerEndpoint = null;
 
 /**
- * Request and connect to the printer via WebUSB
+ * Connect to the printer using the active transport.
+ * QZ Tray: opens the localhost websocket (printer is addressed by name per job).
+ * WebUSB: requests + claims the USB device (legacy fallback).
  */
 export async function connectPrinter() {
+  if (getActiveTransport() === 'qz') {
+    await connectQz();
+    return true;
+  }
+  return connectWebUsbPrinter();
+}
+
+/**
+ * Request and connect to the printer via WebUSB (fallback transport).
+ */
+export async function connectWebUsbPrinter() {
   try {
     // Check if WebUSB is supported
     if (!navigator.usb) {
@@ -104,9 +129,14 @@ export async function connectPrinter() {
 }
 
 /**
- * Check if printer is connected
+ * Whether printing is currently possible.
+ * QZ Tray: ready when a printer has been selected in Settings (the websocket is
+ * (re)connected on demand per job). WebUSB: ready when the device is open.
  */
 export function isPrinterConnected() {
+  if (getActiveTransport() === 'qz') {
+    return !!getSelectedPrinter() || isQzConnected();
+  }
   return printerDevice !== null && printerDevice.opened;
 }
 
@@ -130,13 +160,16 @@ export async function disconnectPrinter() {
 }
 
 /**
- * Send raw data to printer
+ * Send raw ESC/POS bytes to the printer using the active transport.
  */
 async function sendToPrinter(data) {
+  if (getActiveTransport() === 'qz') {
+    await qzPrintRaw(data);
+    return;
+  }
   if (!printerDevice || !printerDevice.opened || !printerEndpoint) {
     throw new Error('Impresora no conectada');
   }
-  
   const uint8Data = new Uint8Array(data);
   await printerDevice.transferOut(printerEndpoint.endpointNumber, uint8Data);
 }
@@ -514,9 +547,10 @@ function alignLeftRight(left, right, width) {
 /**
  * Generate ESC/POS commands for thermal printing
  */
-export function generateEscPosCommands(receiptData) {
+export function generateEscPosCommands(receiptData, options = {}) {
+  const { cut = true } = options;
   let commands = [];
-  
+
   // Initialize printer
   commands.push(...COMMANDS.INIT);
   
@@ -817,11 +851,13 @@ export function generateEscPosCommands(receiptData) {
   commands.push(...COMMANDS.BOLD_OFF);
   commands.push(...textToBytes('www.americanlaundry.com'));
   commands.push(LF);
-  
-  // Feed and cut
-  commands.push(...COMMANDS.FEED_LINES(4));
-  commands.push(...COMMANDS.PARTIAL_CUT);
-  
+
+  // Feed and cut (skipped when a fiscal block will be appended before the cut).
+  if (cut) {
+    commands.push(...COMMANDS.FEED_LINES(4));
+    commands.push(...COMMANDS.PARTIAL_CUT);
+  }
+
   return commands;
 }
 
@@ -983,14 +1019,231 @@ export async function printTestPage() {
   return await printReceipt(testData, false);
 }
 
+// ============================================================
+// Fiscal documents (factura electrónica / nota de crédito) + QR
+// ============================================================
+
+/**
+ * Native Epson QR code (GS ( k, model 2). `text` is the DGI qr_content URL.
+ * Module size 6, error-correction level M — scans reliably on 80mm paper.
+ */
+export function generateQrCommands(text) {
+  const data = textToBytes(String(text || ''));
+  const storeLen = data.length + 3;
+  const pL = storeLen & 0xff;
+  const pH = (storeLen >> 8) & 0xff;
+  return [
+    // Select model 2
+    GS, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00,
+    // Module size = 6
+    GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, 0x06,
+    // Error correction level M (0x31)
+    GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x31,
+    // Store the data
+    GS, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30, ...data,
+    // Print the symbol
+    GS, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30,
+  ];
+}
+
+/** Normalizes an electronic_invoices row (snake_case) or a camelCase result. */
+function normalizeInvoice(invoice = {}) {
+  return {
+    docType: invoice.doc_type || invoice.docType || '01',
+    cufe: invoice.cufe || '',
+    protocolo: invoice.protocolo_autorizacion || invoice.protocoloAutorizacion || '',
+    fechaAutorizacion: invoice.fecha_autorizacion || invoice.fechaAutorizacion || '',
+    qrContent: invoice.qr_content || invoice.qrContent || '',
+    environment: invoice.environment || 'prod',
+    referencedCufe: invoice.referenced_cufe || invoice.referencedCufe || '',
+  };
+}
+
+/**
+ * Builds the 80mm "representación impresa" of an authorized electronic document:
+ * the normal receipt body followed by the fiscal block (title, CUFE, protocolo,
+ * native QR). doc_type '06' renders as a nota de crédito. No print dialog — these
+ * bytes go straight to the printer via the active transport.
+ */
+export function generateFiscalReceipt(receiptData, invoice) {
+  const inv = normalizeInvoice(invoice);
+  const isCredit = inv.docType === '06';
+
+  // Receipt body without the final cut, so we can append the fiscal block.
+  const commands = generateEscPosCommands(receiptData, { cut: false });
+
+  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(LF);
+  commands.push(...COMMANDS.ALIGN_CENTER);
+
+  if (inv.environment === 'test') {
+    commands.push(...COMMANDS.BOLD_ON);
+    commands.push(...textToBytes('AMBIENTE DE PRUEBAS - SIN VALOR FISCAL'));
+    commands.push(LF);
+    commands.push(...COMMANDS.BOLD_OFF);
+  }
+
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes(isCredit ? 'NOTA DE CREDITO ELECTRONICA' : 'FACTURA ELECTRONICA'));
+  commands.push(LF);
+  commands.push(...COMMANDS.BOLD_OFF);
+  commands.push(...textToBytes('Representacion Impresa del CAFE'));
+  commands.push(LF);
+
+  // Identifiers (left aligned; the CUFE wraps on the printer).
+  commands.push(...COMMANDS.ALIGN_LEFT);
+  if (inv.cufe) {
+    commands.push(...textToBytes('CUFE:'));
+    commands.push(LF);
+    commands.push(...textToBytes(inv.cufe));
+    commands.push(LF);
+  }
+  if (inv.protocolo) {
+    commands.push(...textToBytes(`Protocolo: ${inv.protocolo}`));
+    commands.push(LF);
+  }
+  if (inv.fechaAutorizacion) {
+    commands.push(...textToBytes(`Autorizado: ${inv.fechaAutorizacion}`));
+    commands.push(LF);
+  }
+  if (isCredit && inv.referencedCufe) {
+    commands.push(...textToBytes('Doc. referenciado (CUFE):'));
+    commands.push(LF);
+    commands.push(...textToBytes(inv.referencedCufe));
+    commands.push(LF);
+  }
+
+  // QR (DGI verification URL).
+  if (inv.qrContent) {
+    commands.push(LF);
+    commands.push(...COMMANDS.ALIGN_CENTER);
+    commands.push(...generateQrCommands(inv.qrContent));
+    commands.push(LF);
+    commands.push(...textToBytes('Consulte su factura en:'));
+    commands.push(LF);
+    commands.push(...textToBytes('dgi-fep.mef.gob.pa'));
+    commands.push(LF);
+    commands.push(...COMMANDS.ALIGN_LEFT);
+  }
+
+  commands.push(...COMMANDS.FEED_LINES(4));
+  commands.push(...COMMANDS.PARTIAL_CUT);
+  return commands;
+}
+
+/**
+ * Non-fiscal info ticket for a gift-card sale/top-up. Gift cards are prepayment,
+ * not a sale, so they never go to E-Factura — this ticket just tells the customer
+ * the code, amount and balance, and is clearly marked NOT a tax document.
+ */
+export function generateGiftCardTicket(card, product, store, company) {
+  const commands = [];
+  commands.push(...COMMANDS.INIT);
+  commands.push(...COMMANDS.ALIGN_CENTER);
+
+  if (store?.name) {
+    commands.push(...COMMANDS.SIZE_DOUBLE);
+    commands.push(...COMMANDS.BOLD_ON);
+    commands.push(...textToBytes(String(store.name).toUpperCase()));
+    commands.push(LF);
+    commands.push(...COMMANDS.SIZE_NORMAL);
+    commands.push(...COMMANDS.BOLD_OFF);
+  }
+  commands.push(...textToBytes(company?.name || 'American Laundry'));
+  commands.push(LF);
+  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(LF);
+
+  commands.push(...COMMANDS.SIZE_DOUBLE_HEIGHT);
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes('TARJETA DE REGALO'));
+  commands.push(LF);
+  commands.push(...COMMANDS.SIZE_NORMAL);
+  commands.push(...COMMANDS.BOLD_OFF);
+
+  commands.push(...COMMANDS.ALIGN_LEFT);
+  commands.push(...textToBytes('-'.repeat(42)));
+  commands.push(LF);
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes(`Codigo: ${card?.code || ''}`));
+  commands.push(LF);
+  commands.push(...COMMANDS.BOLD_OFF);
+  commands.push(...textToBytes(alignLeftRight('Monto cargado:', formatCurrency(card?.amountLoaded ?? product?.price ?? 0), 42)));
+  commands.push(LF);
+  commands.push(...textToBytes(alignLeftRight('Saldo actual:', formatCurrency(card?.current_balance ?? 0), 42)));
+  commands.push(LF);
+  if (card?.expires_at) {
+    commands.push(...textToBytes(alignLeftRight('Vence:', formatDate(card.expires_at), 42)));
+    commands.push(LF);
+  }
+  commands.push(...textToBytes(alignLeftRight('Fecha:', formatDate(new Date()), 42)));
+  commands.push(LF);
+
+  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(LF);
+  commands.push(...COMMANDS.ALIGN_CENTER);
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes('*** NO ES COMPROBANTE FISCAL ***'));
+  commands.push(LF);
+  commands.push(...COMMANDS.BOLD_OFF);
+  commands.push(...textToBytes('Documento informativo'));
+  commands.push(LF);
+  commands.push(...textToBytes('No valido como factura'));
+  commands.push(LF);
+  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(LF);
+  commands.push(LF);
+  commands.push(...textToBytes('Gracias por su compra'));
+  commands.push(LF);
+
+  commands.push(...COMMANDS.FEED_LINES(4));
+  commands.push(...COMMANDS.PARTIAL_CUT);
+  return commands;
+}
+
+/**
+ * Prints the fiscal representación impresa (factura or nota de crédito).
+ * `openDrawer` opens the cash drawer (cash sales only).
+ */
+export async function printFiscalReceipt(receiptData, invoice, openDrawer = false) {
+  if (!isPrinterConnected()) {
+    await connectPrinter();
+  }
+  const commands = generateFiscalReceipt(receiptData, invoice);
+  if (openDrawer) commands.push(...COMMANDS.OPEN_DRAWER);
+  await sendToPrinter(commands);
+  return true;
+}
+
+/** Prints a nota de crédito ticket (alias of printFiscalReceipt with doc_type 06). */
+export async function printCreditNote(receiptData, invoice) {
+  return printFiscalReceipt(receiptData, { ...invoice, doc_type: invoice?.doc_type || '06' }, false);
+}
+
+/** Prints the non-fiscal gift-card info ticket. */
+export async function printGiftCardTicket(card, product, store, company) {
+  if (!isPrinterConnected()) {
+    await connectPrinter();
+  }
+  const commands = generateGiftCardTicket(card, product, store, company);
+  await sendToPrinter(commands);
+  return true;
+}
+
 export default {
   connectPrinter,
   disconnectPrinter,
   isPrinterConnected,
   printReceipt,
+  printFiscalReceipt,
+  printCreditNote,
+  printGiftCardTicket,
   printTestPage,
   openCashDrawer,
   generateReceiptData,
   generateReceiptText,
+  generateFiscalReceipt,
+  generateGiftCardTicket,
+  generateQrCommands,
   saveReceiptToStorage,
 };

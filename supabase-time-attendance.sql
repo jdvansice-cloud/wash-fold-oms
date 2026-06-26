@@ -1,8 +1,10 @@
 -- ============================================================
 -- Time & attendance  (Roadmap Phase D)
 -- ============================================================
--- - users.weekly_hours: scheduled hours per weekday (no slots), e.g.
---     {"mon":8,"tue":8,"wed":8,"thu":8,"fri":8,"sat":4,"sun":0}
+-- - users.weekly_hours: per-weekday shift {start,end} as "HH:MM" 24h, e.g.
+--     {"mon":{"start":"08:00","end":"17:00"},"sat":{"start":"08:00","end":"12:00"}}
+--   Days off are absent. Legacy rows may store a bare number of hours per day;
+--   the app reads either shape (see src/utils/schedule.js dayScheduledHours).
 -- - time_entries: real-time clock in/out records (one open entry per staff).
 -- - auth_staff_id(): the caller's users.id (for self-scoped RLS).
 --
