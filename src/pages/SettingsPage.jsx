@@ -1227,6 +1227,9 @@ function WorkflowSettings() {
 // Users Settings Section
 function UsersSettings() {
   const { appUser } = useAuth();
+  const { slug } = useTenant();
+  // Where the invitation magic-link drops the user after they accept.
+  const inviteRedirect = `${window.location.origin}${slug ? `/app/${slug}` : ''}`;
   const [users, setUsers] = useState([]);
   const [storeId, setStoreId] = useState(null);
   const [companyId, setCompanyId] = useState(null);
@@ -1283,8 +1286,9 @@ function UsersSettings() {
 
     setInviting(true);
     try {
-      // First create the user record in our users table
-      const { data: newUser, error: insertError } = await supabase
+      // 1. Create the staff profile row. company_id satisfies the tenant RLS
+      //    policy; auth_id stays null until the user accepts the invitation.
+      const { error: insertError } = await supabase
         .from('users')
         .insert({
           store_id: storeId,
@@ -1295,49 +1299,31 @@ function UsersSettings() {
           initials: userData.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase(),
           weekly_hours: userData.weekly_hours || {},
           is_active: true
-        })
-        .select()
-        .single();
+        });
 
       if (insertError) throw insertError;
 
-      // Then send invitation email via Supabase Auth
-      // Using signUp which will send a confirmation email
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // 2. Send a passwordless invitation (magic link + OTP). Accepting it
+      //    confirms the email and signs the user in; link_staff_account then
+      //    binds their auth id to the row above. All later logins use OTP too.
+      //    signInWithOtp only *sends* the email — unlike signUp it does NOT
+      //    create a session here, so the admin's own session is untouched.
+      const { error: otpError } = await supabase.auth.signInWithOtp({
         email: userData.email,
-        password: crypto.randomUUID(), // Temporary password - user will set their own
         options: {
-          data: {
-            full_name: userData.full_name,
-            role: userData.role,
-          },
-          emailRedirectTo: `${window.location.origin}/set-password`
-        }
+          shouldCreateUser: true,
+          emailRedirectTo: inviteRedirect,
+          data: { full_name: userData.full_name, role: userData.role },
+        },
       });
 
-      if (authError) {
-        // If auth fails, still keep the user in our table but warn
-        console.warn('Auth signup warning:', authError);
-        
-        // Try sending a password reset email instead
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(userData.email, {
-          redirectTo: `${window.location.origin}/set-password`
-        });
-        
-        if (resetError) {
-          alert('Usuario creado pero hubo un problema enviando la invitación. El usuario puede usar "Olvidé mi contraseña" para acceder.');
-        } else {
-          alert('Invitación enviada correctamente a ' + userData.email);
-        }
+      if (otpError) {
+        alert(
+          'Usuario creado, pero no se pudo enviar la invitación: ' + otpError.message +
+          '. El usuario puede ingresar con su correo desde la pantalla de acceso.'
+        );
       } else {
-        // Link auth_id if we got one
-        if (authData?.user?.id) {
-          await supabase
-            .from('users')
-            .update({ auth_id: authData.user.id })
-            .eq('id', newUser.id);
-        }
-        alert('Invitación enviada correctamente a ' + userData.email);
+        alert('Invitación enviada a ' + userData.email + '. Recibirá un enlace para acceder con su correo (sin contraseña).');
       }
 
       await loadUsers();
@@ -1356,10 +1342,12 @@ function UsersSettings() {
 
   const handleResendInvitation = async (user) => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
-        redirectTo: `${window.location.origin}/set-password`
+      // Resend the same passwordless invitation / login link.
+      const { error } = await supabase.auth.signInWithOtp({
+        email: user.email,
+        options: { shouldCreateUser: true, emailRedirectTo: inviteRedirect },
       });
-      
+
       if (error) throw error;
       alert('Invitación reenviada a ' + user.email);
     } catch (err) {
@@ -1611,7 +1599,7 @@ function UserFormModal({ user, onClose, onSave, saving, isInvite }) {
         <div className="p-6 space-y-4">
           {isInvite && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-700">
-              El usuario recibirá un email con un enlace para establecer su contraseña.
+              El usuario recibirá un email con un enlace para acceder. No usa contraseña: ingresa con un código enviado a su correo.
             </div>
           )}
 

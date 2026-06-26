@@ -18,7 +18,11 @@ export default async function handler(req: any, res: any) {
 
   try {
     const admin = getAdmin();
-    const { companyId } = await authenticateStaff(admin, req);
+    const { companyId, role } = await authenticateStaff(admin, req);
+    // Only the owner (admin) may void an authorized factura.
+    if (role !== 'admin') {
+      throw new HttpError(403, 'Solo el administrador puede anular una factura electrónica');
+    }
 
     const { invoice_id, cufe, reason } = req.body || {};
     if (!invoice_id && !cufe) throw new HttpError(400, 'Provide invoice_id or cufe');

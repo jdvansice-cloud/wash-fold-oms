@@ -10,6 +10,7 @@ import {
   reprintFiscalReceipt,
 } from '../../hooks/queries/useElectronicInvoice';
 import type { EInvoiceStatus } from '../../types';
+import { usePermission } from '../../hooks/usePermission';
 
 const STATUS_META: Record<EInvoiceStatus, { label: string; variant: 'default' | 'success' | 'warning' | 'error' | 'info' }> = {
   pending: { label: 'Pendiente', variant: 'warning' },
@@ -32,6 +33,9 @@ export function InvoiceStatus({ orderId, staff = false, canEmit = true }: Props)
   const { data: invoice, isLoading } = useOrderInvoice(orderId);
   const emit = useEmitInvoice(orderId);
   const cancel = useCancelInvoice(orderId);
+  const { can } = usePermission();
+  // Voiding an authorized factura is restricted to the owner (admin).
+  const canVoid = can('efactura.void');
   const [busy, setBusy] = useState<string | null>(null);
 
   if (isLoading) return null;
@@ -165,7 +169,7 @@ export function InvoiceStatus({ orderId, staff = false, canEmit = true }: Props)
                 <ExternalLink className="w-4 h-4" /> Ver en DGI
               </a>
             )}
-            {staff && (
+            {staff && canVoid && (
               <button onClick={handleCancel} disabled={busy === 'cancel'} className="btn-secondary text-sm text-red-600">
                 {busy === 'cancel' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Ban className="w-4 h-4" />}
                 Anular
