@@ -3,6 +3,36 @@ import { useLocation } from 'react-router-dom';
 import { supabaseStaff, supabasePortal } from '../lib/supabase';
 import { resolveAuthUser } from '../lib/auth';
 
+/**
+ * @typedef {import('../lib/auth').AuthUser} AuthUser
+ * @typedef {import('../lib/auth').StaffProfile} StaffProfile
+ * @typedef {import('@supabase/supabase-js').Session} Session
+ * @typedef {import('@supabase/supabase-js').User} User
+ * @typedef {import('@supabase/supabase-js').SupabaseClient} SupabaseClient
+ */
+
+/**
+ * @typedef {Object} AuthContextValue
+ * @property {Session | null} session
+ * @property {User | null} user
+ * @property {StaffProfile | null} appUser
+ * @property {AuthUser | null} authUser
+ * @property {boolean} loading
+ * @property {(email: string, password: string) => Promise<any>} signIn
+ * @property {(email: string) => Promise<any>} signInWithOtp
+ * @property {(email: string, token: string) => Promise<any>} verifyOtp
+ * @property {() => Promise<void>} signOut
+ * @property {(newPassword: string) => Promise<any>} updatePassword
+ * @property {(email: string, userData: { full_name?: string, role?: string }) => Promise<any>} inviteUser
+ * @property {SupabaseClient} supabase
+ * @property {boolean} isAdmin
+ * @property {boolean} isSupervisor
+ * @property {boolean} isStaff
+ * @property {boolean} isCustomer
+ * @property {boolean} isPlatformAdmin
+ */
+
+/** @type {import('react').Context<AuthContextValue | null>} */
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {

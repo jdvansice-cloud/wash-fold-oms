@@ -22,6 +22,7 @@ export type Permission =
   | 'eod.close' // run the daily close (cierre)
   | 'eod.editClosed' // edit an already-closed day
   | 'b2b.manage' // B2B billing: generate / collect consolidated invoices
+  | 'efactura.void' // anular (void) an authorized electronic invoice
   | 'users.manage' // invite / edit / deactivate staff
   | 'settings.manage'; // company config, payment methods, products, stores…
 
@@ -33,6 +34,7 @@ const MIN_ROLE: Record<Permission, Role> = {
   'b2b.manage': 'supervisor',
   'orders.refund': 'admin',
   'eod.editClosed': 'admin',
+  'efactura.void': 'admin',
   'users.manage': 'admin',
   'settings.manage': 'admin',
 };

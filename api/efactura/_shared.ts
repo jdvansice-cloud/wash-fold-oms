@@ -38,7 +38,7 @@ export class HttpError extends Error {
 export async function authenticateStaff(
   admin: SupabaseClient,
   req: { headers: Record<string, string | string[] | undefined> },
-): Promise<{ authId: string; companyId: string }> {
+): Promise<{ authId: string; companyId: string; role: string }> {
   const header = (req.headers.authorization || req.headers.Authorization || '') as string;
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) throw new HttpError(401, 'Missing Authorization bearer token');
@@ -48,12 +48,12 @@ export async function authenticateStaff(
 
   const { data: staff, error: staffError } = await admin
     .from('users')
-    .select('company_id')
+    .select('company_id, role')
     .eq('auth_id', userData.user.id)
     .maybeSingle();
 
   if (staffError || !staff?.company_id) throw new HttpError(403, 'Not authorized');
-  return { authId: userData.user.id, companyId: staff.company_id };
+  return { authId: userData.user.id, companyId: staff.company_id, role: staff.role };
 }
 
 export interface EFacturaConfig {
