@@ -68,6 +68,47 @@ export function setSelectedPrinter(name) {
   }
 }
 
+/** Whether a signing cert / key are stored (for the Settings status badge). */
+export function getQzSigningStatus() {
+  try {
+    return {
+      hasCert: !!localStorage.getItem(LS.cert),
+      hasKey: !!localStorage.getItem(LS.privateKey),
+    };
+  } catch {
+    return { hasCert: false, hasKey: false };
+  }
+}
+
+/**
+ * Stores the QZ signing cert + private key so requests are signed and QZ never
+ * prompts. Empty values are ignored (so the key textarea can be left blank to
+ * keep the existing key). Drops the current connection + re-arms configureQz so
+ * signing takes effect on the next connect without a full page reload.
+ */
+export function setQzSigning(cert, key) {
+  try {
+    if (cert != null && cert.trim()) localStorage.setItem(LS.cert, cert.trim());
+    if (key != null && key.trim()) localStorage.setItem(LS.privateKey, key.trim());
+  } catch {
+    /* ignore */
+  }
+  configured = false;
+  disconnectQz();
+}
+
+/** Removes stored signing material (revert to the trust-prompt behaviour). */
+export function clearQzSigning() {
+  try {
+    localStorage.removeItem(LS.cert);
+    localStorage.removeItem(LS.privateKey);
+  } catch {
+    /* ignore */
+  }
+  configured = false;
+  disconnectQz();
+}
+
 /** One-time QZ API wiring: promise + hashing + (optional) request signing. */
 function configureQz() {
   if (configured) return;

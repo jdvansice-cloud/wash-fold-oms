@@ -39,6 +39,9 @@ import {
   getSelectedPrinter,
   setSelectedPrinter,
   listPrinters,
+  getQzSigningStatus,
+  setQzSigning,
+  clearQzSigning,
 } from '../utils/printTransport';
 
 function SettingsPage() {
@@ -5342,11 +5345,42 @@ function PrinterSettings() {
   const [transport, setTransport] = useState(getActiveTransport());
   const [printers, setPrinters] = useState([]);
   const [selectedPrinter, setSelectedPrinterState] = useState(getSelectedPrinter());
+  const [signing, setSigning] = useState(getQzSigningStatus());
+  const [showSigning, setShowSigning] = useState(false);
+  const [certInput, setCertInput] = useState('');
+  const [keyInput, setKeyInput] = useState('');
 
   // Check connection status on mount
   useEffect(() => {
     setConnected(isPrinterConnected());
   }, []);
+
+  // Save the pasted cert + private key so QZ requests are signed (no prompt).
+  const handleSaveSigning = () => {
+    if (!certInput.trim() && !signing.hasCert) {
+      setMessage({ type: 'error', text: 'Pega el certificado público (digital-certificate.txt).' });
+      return;
+    }
+    if (!keyInput.trim() && !signing.hasKey) {
+      setMessage({ type: 'error', text: 'Pega la llave privada (private-key.pem).' });
+      return;
+    }
+    setQzSigning(certInput, keyInput);
+    setSigning(getQzSigningStatus());
+    setCertInput('');
+    setKeyInput('');
+    setConnected(false);
+    setMessage({ type: 'success', text: 'Firma guardada. Reconecta para imprimir sin diálogo.' });
+  };
+
+  const handleClearSigning = () => {
+    clearQzSigning();
+    setSigning(getQzSigningStatus());
+    setCertInput('');
+    setKeyInput('');
+    setConnected(false);
+    setMessage({ type: 'success', text: 'Firma eliminada. QZ volverá a pedir confirmación.' });
+  };
 
   const handleTransportChange = (t) => {
     setActiveTransport(t);
@@ -5485,8 +5519,83 @@ function PrinterSettings() {
           </div>
           <p className="text-xs text-slate-500">
             Requiere QZ Tray instalado en esta PC. Para impresión sin diálogo de confianza,
-            registra un certificado firmado (ver documentación).
+            registra un certificado firmado (abajo).
           </p>
+
+          {/* Silent printing — request signing */}
+          <div className="pt-3 mt-1 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setShowSigning((v) => !v)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <span className="text-sm font-medium text-slate-700">
+                Impresión silenciosa (certificado)
+              </span>
+              <span className="flex items-center gap-2">
+                {signing.hasCert && signing.hasKey ? (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Activa</span>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Inactiva</span>
+                )}
+                <span className="text-slate-400 text-xs">{showSigning ? '▲' : '▼'}</span>
+              </span>
+            </button>
+
+            {showSigning && (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-slate-500">
+                  Pega el certificado y la llave generados para esta caja. Se guardan solo en
+                  este navegador y firman las solicitudes a QZ Tray para que no muestre el
+                  diálogo de confianza. Además, registra el certificado público en QZ Tray
+                  (<code className="text-[11px]">authcert.override</code>) y reinícialo.
+                </p>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Certificado público (digital-certificate.txt)
+                  </label>
+                  <textarea
+                    value={certInput}
+                    onChange={(e) => setCertInput(e.target.value)}
+                    rows={3}
+                    placeholder={signing.hasCert ? '•••• guardado — pega para reemplazar ••••' : '-----BEGIN CERTIFICATE-----'}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Llave privada (private-key.pem)
+                  </label>
+                  <textarea
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    rows={3}
+                    placeholder={signing.hasKey ? '•••• guardada — pega para reemplazar ••••' : '-----BEGIN PRIVATE KEY-----'}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono bg-white"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    La llave no se vuelve a mostrar. Déjala vacía para conservar la guardada.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSaveSigning}
+                    className="px-4 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium"
+                  >
+                    Guardar firma
+                  </button>
+                  {(signing.hasCert || signing.hasKey) && (
+                    <button
+                      onClick={handleClearSigning}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-sm font-medium"
+                    >
+                      Eliminar
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
