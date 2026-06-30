@@ -1,4 +1,4 @@
-# Printing & Factura Electrónica — Setup (Windows 11 + Epson TM-T20III)
+# Printing & Factura Electrónica — Setup (Windows / macOS + Epson TM-T20III)
 
 Silent, dialog-free thermal printing for every order flow. Receipts and the
 factura electrónica (representación impresa with QR + CUFE) are generated as
@@ -7,31 +7,68 @@ ESC/POS and sent straight to the printer — no browser print dialog.
 ## Transport: QZ Tray (recommended)
 
 QZ Tray is a small local agent that lets the web app send raw ESC/POS to the
-**Windows-installed** Epson driver by printer name. Any browser; the printer
-stays shared with the rest of Windows.
+**OS-installed** Epson driver by printer name. Any browser; the printer stays
+shared with the rest of the OS. QZ runs on Windows and macOS alike.
 
-1. Install the Epson TM-T20III Windows driver (Epson APD) normally and print a
-   Windows test page so the printer works in Windows.
-2. Install **QZ Tray** on the counter PC (https://qz.io/download). It runs in the
-   tray and listens on `localhost`.
+1. Install the Epson TM-T20III driver (Epson APD on Windows; the macOS driver on
+   Mac) and print an OS test page so the printer works outside the browser.
+2. Install **QZ Tray** on the counter machine (https://qz.io/download). It runs in
+   the tray / menu bar and listens on `localhost` (ports 8181/8182).
 3. In the app: **Configuración → Impresora** → method **QZ Tray** → **Buscar
    impresoras** → pick the Epson → it's saved (localStorage `printer_name`).
 4. **Imprimir Prueba** to confirm.
 
+> Quick hardware check, bypassing the app/QZ — confirm the printer + driver work
+> with a raw ESC/POS slip straight through the OS spooler:
+> `printf '\x1B\x40Test\n\n\n\x1D\x56\x42\x00' | lp -d EPSON_TM_T20III -o raw`
+> (macOS/CUPS; the printer name comes from `lpstat -p`).
+
 ### Silent printing (no QZ trust prompt)
 
 Out of the box QZ shows a one-time trust prompt per site (the operator can tick
-"Remember"). For fully unattended printing, sign requests with a certificate:
+"Remember"). For fully unattended printing, sign the requests with a certificate.
+The app uses **RSASSA-PKCS1-v1_5 / SHA-512** with a **PKCS#8** private key — match
+those exactly or QZ will reject the signature.
 
-1. Generate a self-signed cert + RSA key (see qz.io "Signing Messages").
-2. Register the **public** cert with QZ Tray as an override
-   (`%PROGRAMFILES%\QZ Tray\override.crt`) and restart QZ.
-3. Store the cert + PKCS#8 private key in this browser's localStorage as
-   `QZ_CERT` and `QZ_PRIVATE_KEY` (PEM). `printTransport.js` wires SHA-512
-   RSASSA-PKCS1-v1_5 signing automatically when both are present.
+**1. Generate the key pair** (once per POS machine). The key must be PKCS#8
+(`-----BEGIN PRIVATE KEY-----`, not `BEGIN RSA PRIVATE KEY`):
 
-> The private key sits in the browser on a dedicated POS machine you control.
-> Do **not** commit it; do not deploy it to shared/public devices.
+```bash
+mkdir -p ~/qz-pos-cert && cd ~/qz-pos-cert
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out private-key.pem
+openssl req -x509 -new -key private-key.pem -sha256 -days 7300 \
+  -out digital-certificate.txt \
+  -subj "/CN=American Laundry POS/O=American Laundry/OU=POS/C=PA"
+```
+
+**2. Register the public cert with QZ Tray** so it auto-trusts our signature, via
+the `authcert.override` property, then restart QZ.
+
+- **macOS** — the properties file is root-owned inside the app bundle:
+  ```bash
+  echo "authcert.override=$HOME/qz-pos-cert/digital-certificate.txt" | \
+    sudo tee -a "/Applications/QZ Tray.app/Contents/Resources/qz-tray.properties"
+  osascript -e 'quit app "QZ Tray"'; sleep 2; open -a "QZ Tray"
+  ```
+- **Windows** — add the line to `%PROGRAMFILES%\QZ Tray\qz-tray.properties`
+  (`authcert.override=C:\path\to\digital-certificate.txt`) and restart QZ, or drop
+  the cert as `%PROGRAMFILES%\QZ Tray\override.crt`.
+
+> A QZ Tray update can overwrite the properties file — re-apply this line after
+> upgrading.
+
+**3. Load the cert + key into the app.** In **Configuración → Impresora** open the
+**"Impresión silenciosa (certificado)"** panel and paste both (helpers to copy
+without echoing the key into a terminal: `pbcopy < digital-certificate.txt`, then
+`pbcopy < private-key.pem`). **Guardar firma**, then reconnect. The panel stores
+them in this browser's localStorage as `QZ_CERT` / `QZ_PRIVATE_KEY`;
+`printTransport.js` then signs every request and QZ stops prompting. The key is
+write-only in the UI (never re-displayed); leave it blank to keep the saved one.
+
+> The private key sits in **one browser** on a POS machine you control. It is
+> per-browser and per-origin: if you run the POS from a different browser or from
+> the production URL, repeat step 3 there (steps 1–2 are per-machine). Do **not**
+> commit it; do not load it on shared/public devices.
 
 ### WebUSB fallback
 
