@@ -44,12 +44,17 @@ openssl req -x509 -new -key private-key.pem -sha256 -days 7300 \
 **2. Register the public cert with QZ Tray** so it auto-trusts our signature, via
 the `authcert.override` property, then restart QZ.
 
-- **macOS** — the properties file is root-owned inside the app bundle:
+- **macOS** — do **not** edit the file inside the app bundle (`.../QZ Tray.app/
+  Contents/Resources/qz-tray.properties`); macOS protects signed bundles and even
+  `sudo` fails with *Operation not permitted*. Instead put the override in the
+  writable **user prefs file** (no sudo), then restart QZ:
   ```bash
-  echo "authcert.override=$HOME/qz-pos-cert/digital-certificate.txt" | \
-    sudo tee -a "/Applications/QZ Tray.app/Contents/Resources/qz-tray.properties"
+  printf 'authcert.override=%s/qz-pos-cert/digital-certificate.txt\n' "$HOME" \
+    > "$HOME/Library/Application Support/qz/prefs.properties"
   osascript -e 'quit app "QZ Tray"'; sleep 2; open -a "QZ Tray"
   ```
+  Confirm it loaded: `~/Library/Application Support/qz/debug.log` should no longer
+  warn `Could not load file: .../prefs.properties` on the new startup.
 - **Windows** — add the line to `%PROGRAMFILES%\QZ Tray\qz-tray.properties`
   (`authcert.override=C:\path\to\digital-certificate.txt`) and restart QZ, or drop
   the cert as `%PROGRAMFILES%\QZ Tray\override.crt`.
