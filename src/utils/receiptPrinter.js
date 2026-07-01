@@ -236,15 +236,26 @@ export function generateReceiptData(order, company, store, items, payments, loya
     isExpress: order.is_express,
     promisedDate: order.promised_date ? formatDate(order.promised_date) : null,
     
-    // Items
-    items: (items || []).map(item => ({
-      name: item.product_name || item.name || 'Producto',
-      quantity: item.quantity || 1,
-      weight: item.total_weight || 0,
-      unitPrice: item.unit_price || item.price || 0,
-      total: item.line_total || ((item.quantity || 1) * (item.price || 0)),
-      isWeight: (item.total_weight || 0) > 0,
-    })),
+    // Items — tolerant of both shapes: DB order_items (snake_case) and the live
+    // POS cart item (camelCase, name/pricing under a nested `product`).
+    items: (items || []).map(item => {
+      const quantity = item.quantity || 1;
+      const weight = item.total_weight ?? item.totalWeight ?? 0;
+      const unitPrice = item.unit_price ?? item.unitPrice ?? item.price ?? 0;
+      const total = item.line_total ?? item.lineTotal ?? (quantity * unitPrice) ?? 0;
+      const isWeight =
+        item.product?.pricing_type === 'weight' ||
+        item.pricing_type === 'weight' ||
+        weight > 0;
+      return {
+        name: item.product_name || item.name || item.product?.name || 'Producto',
+        quantity,
+        weight,
+        unitPrice,
+        total,
+        isWeight,
+      };
+    }),
     
     // Totals
     subtotal: order.subtotal || 0,
