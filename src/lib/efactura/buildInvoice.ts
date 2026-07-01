@@ -26,7 +26,7 @@ import {
   paymentFormaDescripcion,
   type DocType,
 } from './constants.js';
-import { distributeCents, fromCents, round2, toCents } from './money.js';
+import { distributeCents, fromCents, round2, roundTo, toCents } from './money.js';
 import type {
   InformacionReceptor,
   InvoiceRequest,
@@ -266,13 +266,14 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
           }
         : {}),
       grupoPrecios: {
-        // Unit price (and per-unit discount) are always 2-decimal currency
-        // values, derived from the gross line so that precioUnitario × cantidad
-        // tracks the line total. For weight items cantidad is the weight, so the
-        // unit price is the per-kg rate (e.g. 3.28 / 1.40 -> 2.34).
-        precioUnitarioTransferencia: round2(fromCents(grossCents[i]) / it.quantity),
+        // Unit price (and per-unit discount) are derived from the gross line and
+        // sent at 6 dp — the max the DGI allows for precioUnitario. Rounding to
+        // 2 dp broke weight lines: e.g. 25.70 / 11 kg -> 2.34, and DGI recomputes
+        // 2.34 × 11 = 25.74 ≠ 25.70, rejecting with 2053. At 6 dp, 2.336364 × 11
+        // rounds back to 25.70. precioItem stays the exact 2-decimal line total.
+        precioUnitarioTransferencia: roundTo(fromCents(grossCents[i]) / it.quantity, 6),
         ...(lineDiscountCents > 0
-          ? { descuento: round2(fromCents(lineDiscountCents) / it.quantity) }
+          ? { descuento: roundTo(fromCents(lineDiscountCents) / it.quantity, 6) }
           : {}),
         precioItem: fromCents(netCents[i]),
         sumaPrecioItem: fromCents(sumaCents),

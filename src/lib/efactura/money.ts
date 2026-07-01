@@ -15,6 +15,12 @@ export function round2(amount: number): number {
   return Math.round(amount * 100) / 100;
 }
 
+/** Round to `dp` decimal places (banker-agnostic half-up on the scaled value). */
+export function roundTo(amount: number, dp: number): number {
+  const f = Math.pow(10, dp);
+  return Math.round(amount * f) / f;
+}
+
 /**
  * Splits `totalCents` across buckets in proportion to `weights`, returning
  * integer cents that sum exactly to `totalCents`. Leftover cents from flooring

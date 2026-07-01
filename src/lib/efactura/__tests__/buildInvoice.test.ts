@@ -307,8 +307,10 @@ describe('buildInvoiceRequest — absorbs sub-cent rounding drift', () => {
 });
 
 describe('buildInvoiceRequest — weight-priced line (cantidad = weight)', () => {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+
   it('derives a per-kg unit price so DGI rule 2053 holds (order #3501 item)', () => {
-    // Lava y Dobla: 1.40 kg @ 2.34/kg = 3.28. cantidad is the weight, not bags.
+    // Lava y Dobla: 1.40 kg, ex-tax line 3.28. cantidad is the weight, not bags.
     const inv = buildInvoiceRequest({
       order: { tax_amount: 0.23, total: 3.51 },
       items: [line({ description: 'Lava y Dobla', quantity: 1.4, unitPrice: 2.34, lineTotal: 3.28 })],
@@ -317,15 +319,24 @@ describe('buildInvoiceRequest — weight-priced line (cantidad = weight)', () =>
     });
     const it0 = inv.listaItems[0];
     expect(it0.cantidadProductoServicio).toBe(1.4);
-    // Unit price is the 2-decimal per-kg rate.
-    expect(it0.grupoPrecios.precioUnitarioTransferencia).toBe(2.34);
-    expect(it0.grupoPrecios.precioUnitarioTransferencia * 1.4).toBeCloseTo(3.28, 2);
-    // DGI 2053: precioItem === (precioUnitario − descuento) × cantidad.
+    // DGI 2053: round2((precioUnitario − descuento) × cantidad) === precioItem.
+    const pu = it0.grupoPrecios.precioUnitarioTransferencia;
     const desc = it0.grupoPrecios.descuento ?? 0;
-    expect(it0.grupoPrecios.precioItem).toBeCloseTo(
-      (it0.grupoPrecios.precioUnitarioTransferencia - desc) * it0.cantidadProductoServicio,
-      2,
-    );
+    expect(r2((pu - desc) * it0.cantidadProductoServicio)).toBe(it0.grupoPrecios.precioItem);
+  });
+
+  it('holds 2053 for a large weight where 2-dp unit price would fail (11 kg)', () => {
+    // 11 kg, ex-tax line 25.70 → per-kg 2.336363…; round2 → 2.34 and
+    // 2.34 × 11 = 25.74 ≠ 25.70 (rejected 2053). 6-dp unit price fixes it.
+    const inv = buildInvoiceRequest({
+      order: { tax_amount: 1.8, total: 27.5 },
+      items: [line({ description: 'Lava y Dobla', quantity: 11, unitPrice: 2.34, lineTotal: 25.7 })],
+      config,
+      now: fixedNow,
+    });
+    const it0 = inv.listaItems[0];
+    expect(it0.grupoPrecios.precioItem).toBe(25.7);
+    expect(r2(it0.grupoPrecios.precioUnitarioTransferencia * 11)).toBe(25.7);
   });
 });
 
