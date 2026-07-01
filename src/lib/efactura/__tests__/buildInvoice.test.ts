@@ -387,9 +387,13 @@ describe('buildInvoiceRequest — payments', () => {
 
   it('adds a description for forma de pago 99 (Yappy) — DGI rule 2601', () => {
     const inv = build({ payments: [{ method: 'yappy', amount: 10.7 }] });
-    expect(inv.totales.grupoFormasPago).toEqual([
-      { formaPago: '99', formaPagoDescripcion: 'Yappy', valorCuotaPagada: 10.7 },
-    ]);
+    const forma = inv.totales.grupoFormasPago[0];
+    expect(forma.formaPago).toBe('99');
+    expect(forma.valorCuotaPagada).toBe(10.7);
+    // dFormaPagoDesc XSD: minLength 10, maxLength 100.
+    expect(forma.formaPagoDescripcion).toBe('Pago por Yappy');
+    expect(forma.formaPagoDescripcion.length).toBeGreaterThanOrEqual(10);
+    expect(forma.formaPagoDescripcion.length).toBeLessThanOrEqual(100);
   });
 
   it('does not add a description for listed formas de pago', () => {

@@ -75,17 +75,21 @@ export function mapPaymentForma(method: string | undefined | null): string {
 /**
  * Human description for forma de pago "99" (otro). The DGI REQUIRES a
  * description whenever the payment method is not one of the listed codes
- * (rule 2601) — e.g. Yappy, ACH, gift card, loyalty points. Capped at 30 chars.
+ * (rule 2601) — e.g. Yappy, ACH, gift card, loyalty points. The XSD field
+ * `dFormaPagoDesc` is minLength 10, maxLength 100, so short names like "Yappy"
+ * must be spelled out and the result is padded/clamped to [10, 100].
  */
 export function paymentFormaDescripcion(method: string | undefined | null): string {
   const v = (method ?? '').trim().toLowerCase();
-  if (/yappy/.test(v)) return 'Yappy';
-  if (/nequi/.test(v)) return 'Nequi';
-  if (/ach|transfer/.test(v)) return 'Transferencia';
-  if (/gift|regalo/.test(v)) return 'Tarjeta regalo';
-  if (/loyalty|punto/.test(v)) return 'Puntos de lealtad';
-  const label = (method ?? '').trim();
-  return (label || 'Otro').slice(0, 30);
+  let desc: string;
+  if (/yappy/.test(v)) desc = 'Pago por Yappy';
+  else if (/nequi/.test(v)) desc = 'Pago por Nequi';
+  else if (/ach|transfer/.test(v)) desc = 'Transferencia bancaria';
+  else if (/gift|regalo/.test(v)) desc = 'Tarjeta de regalo';
+  else if (/loyalty|punto/.test(v)) desc = 'Puntos de lealtad';
+  else desc = `Otro medio de pago${(method ?? '').trim() ? `: ${(method ?? '').trim()}` : ''}`;
+  if (desc.length < 10) desc = `${desc} (otro medio)`.trim();
+  return desc.slice(0, 100);
 }
 
 /** Maps an ITBMS percentage rate to its DGI code. */
