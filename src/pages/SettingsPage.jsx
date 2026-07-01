@@ -3869,11 +3869,14 @@ function ProductFormModal({ product, sections, products, onClose, onSave, saving
     // Only process prices if NOT a parent product
     if (!formData.has_children) {
       if (formData.is_taxable) {
-        // When taxable: input is WITH ITBMS, save WITHOUT ITBMS
+        // When taxable: input is WITH ITBMS, save WITHOUT ITBMS. Keep the base
+        // at higher precision (6 dp) so base × (1 + ITBMS) reconstructs the
+        // exact inclusive price the staff entered — rounding it to 2 dp here is
+        // what caused the "1 cent" drift on weight lines and totals.
         const { basePrice } = calculatePriceBreakdown(formData.display_price);
         const { basePrice: expressBasePrice } = calculatePriceBreakdown(formData.display_express_price);
-        priceToSave = parseFloat(basePrice.toFixed(2)) || 0;
-        expressPriceToSave = parseFloat(expressBasePrice.toFixed(2)) || 0;
+        priceToSave = parseFloat(basePrice.toFixed(6)) || 0;
+        expressPriceToSave = parseFloat(expressBasePrice.toFixed(6)) || 0;
       } else {
         // When not taxable: input is the actual price, save as-is
         priceToSave = parseFloat(formData.display_price) || 0;
