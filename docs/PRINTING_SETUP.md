@@ -41,23 +41,34 @@ openssl req -x509 -new -key private-key.pem -sha256 -days 7300 \
   -subj "/CN=American Laundry POS/O=American Laundry/OU=POS/C=PA"
 ```
 
-**2. Register the public cert with QZ Tray** so it auto-trusts our signature, via
-the `authcert.override` property, then restart QZ.
+**2. Register the public cert into QZ's trust store.** QZ will only *permanently*
+allow a request whose certificate it trusts — otherwise the trust dialog shows
+"Untrusted website" and greys out **Allow** when you tick **Remember**. Use QZ's
+own CLI `--allow`, which appends the cert to `allowed.dat` (no bundle edit, no
+sudo). This is cross-platform.
 
-- **macOS** — do **not** edit the file inside the app bundle (`.../QZ Tray.app/
-  Contents/Resources/qz-tray.properties`); macOS protects signed bundles and even
-  `sudo` fails with *Operation not permitted*. Instead put the override in the
-  writable **user prefs file** (no sudo), then restart QZ:
+> The `authcert.override` property does **not** work here on macOS: it only lives
+> in the app-bundle `qz-tray.properties` (SIP-protected, unwritable even with
+> sudo), and QZ rewrites the user `prefs.properties`, dropping the key.
+
+- **macOS:**
   ```bash
-  printf 'authcert.override=%s/qz-pos-cert/digital-certificate.txt\n' "$HOME" \
-    > "$HOME/Library/Application Support/qz/prefs.properties"
+  QZAPP="/Applications/QZ Tray.app"
+  "$QZAPP/Contents/PlugIns/Java.runtime/Contents/Home/bin/java" \
+    -jar "$QZAPP/Contents/Resources/qz-tray.jar" \
+    --allow "$HOME/qz-pos-cert/digital-certificate.txt"
   osascript -e 'quit app "QZ Tray"'; sleep 2; open -a "QZ Tray"
   ```
-  Confirm it loaded: `~/Library/Application Support/qz/debug.log` should no longer
-  warn `Could not load file: .../prefs.properties` on the new startup.
-- **Windows** — add the line to `%PROGRAMFILES%\QZ Tray\qz-tray.properties`
-  (`authcert.override=C:\path\to\digital-certificate.txt`) and restart QZ, or drop
-  the cert as `%PROGRAMFILES%\QZ Tray\override.crt`.
+  Verify: `cat "$HOME/Library/Application Support/qz/allowed.dat"` shows a line with
+  your cert's CN (e.g. `American Laundry POS … false`).
+- **Windows:** `"%PROGRAMFILES%\QZ Tray\qz-tray.jar"` via the bundled Java —
+  `java -jar "qz-tray.jar" --allow C:\path\to\digital-certificate.txt` — then
+  restart QZ. (Editing `%PROGRAMFILES%\QZ Tray\qz-tray.properties`'
+  `authcert.override` also works on Windows since that file is writable.)
+
+> `--allow` only helps if the app is **also signing** (step 3) — QZ matches the
+> request's presented certificate against `allowed.dat`. An unsigned/anonymous
+> request has no cert to match and will still prompt.
 
 > A QZ Tray update can overwrite the properties file — re-apply this line after
 > upgrading.
