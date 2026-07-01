@@ -8,7 +8,7 @@ import { useDataLoader } from '../hooks/useDataLoader';
 import { statusConfig } from '../data/helpers';
 import { InvoiceStatus } from '../components/efactura/InvoiceStatus';
 import PaymentModal from '../components/modals/PaymentModal';
-import { generateReceiptData, printCreditNote, isPrinterConnected } from '../utils/receiptPrinter';
+import { generateReceiptData, printCreditNote, printRefundTicket, isPrinterConnected } from '../utils/receiptPrinter';
 
 // Polls for the refund order's nota de crédito (doc 06) until it reaches a
 // terminal status or a 10s wall-clock cap, so we can print its CAFE.
@@ -558,9 +558,9 @@ function OrdersPage() {
             try {
               const details = orderDetails;
               const refundOrder = await createRefund(details, reason);
-              // Print the nota de crédito (CAFE) once it authorizes, mirroring the
-              // sale receipt. Only when a NC was actually emitted (i.e. the
-              // original order had an authorized factura) and the printer is set up.
+              // Print the nota de crédito (CAFE) when it authorizes; otherwise
+              // (original order never factured → no NC) print a non-fiscal refund
+              // slip so a refund always produces a printout. Printer must be set up.
               if (isPrinterConnected() && refundOrder?.id) {
                 try {
                   const invoice = await waitForCreditNote(refundOrder.id);
@@ -573,9 +573,22 @@ function OrdersPage() {
                       details.payments || [],
                     );
                     await printCreditNote(receiptData, invoice);
+                  } else {
+                    const rd = generateReceiptData(details, state.company, state.store, details.items || [], []);
+                    await printRefundTicket(
+                      {
+                        refundNumber: getOrderDisplayNumber(refundOrder),
+                        originalNumber: rd.orderNumber,
+                        items: rd.items,
+                        total: refundOrder.total,
+                        reason,
+                      },
+                      state.store,
+                      state.company,
+                    );
                   }
                 } catch (printErr) {
-                  console.error('Nota de crédito print failed (refund still created):', printErr);
+                  console.error('Refund print failed (refund still created):', printErr);
                 }
               }
               setSelectedOrder(null);

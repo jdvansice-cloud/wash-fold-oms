@@ -1306,6 +1306,93 @@ export async function printGiftCardTicket(card, product, store, company) {
   return true;
 }
 
+/**
+ * Non-fiscal refund slip, printed when a refund has no electronic nota de
+ * crédito (the original order was never factured). Clearly marked NOT a fiscal
+ * document. `data` = { refundNumber, originalNumber, items, total, reason, date }.
+ */
+export function generateRefundTicket(data, store, company) {
+  const commands = [];
+  commands.push(...COMMANDS.INIT);
+  commands.push(...COMMANDS.ALIGN_CENTER);
+
+  if (store?.name) {
+    commands.push(...COMMANDS.SIZE_DOUBLE);
+    commands.push(...COMMANDS.BOLD_ON);
+    commands.push(...textToBytes(String(store.name).toUpperCase()));
+    commands.push(LF);
+    commands.push(...COMMANDS.SIZE_NORMAL);
+    commands.push(...COMMANDS.BOLD_OFF);
+  }
+  commands.push(...textToBytes(company?.name || 'American Laundry'));
+  commands.push(LF);
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
+  commands.push(LF);
+
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes('COMPROBANTE DE REEMBOLSO'));
+  commands.push(LF);
+  commands.push(...COMMANDS.SIZE_DOUBLE);
+  commands.push(...textToBytes(String(data.refundNumber || '')));
+  commands.push(LF);
+  commands.push(...COMMANDS.SIZE_NORMAL);
+  commands.push(...COMMANDS.BOLD_OFF);
+
+  commands.push(...COMMANDS.ALIGN_LEFT);
+  commands.push(...textToBytes(`Fecha: ${data.date || formatDate(new Date())}`));
+  commands.push(LF);
+  if (data.originalNumber) {
+    commands.push(...textToBytes(`Reembolso de Orden: ${data.originalNumber}`));
+    commands.push(LF);
+  }
+  if (data.reason) {
+    commands.push(...textToBytes(`Motivo: ${data.reason}`));
+    commands.push(LF);
+  }
+
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
+  commands.push(LF);
+  for (const item of data.items || []) {
+    const qtyStr = item.isWeight ? `${(item.weight || 0).toFixed(2)}kg` : `${item.quantity || 1}x`;
+    const name = String(item.name || 'Producto').substring(0, COL_DESC);
+    commands.push(...textToBytes(padRight(qtyStr, COL_QTY) + padRight(name, COL_DESC) + padLeft(formatCurrency(Math.abs(item.total || 0)), COL_TOTAL)));
+    commands.push(LF);
+  }
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
+  commands.push(LF);
+
+  commands.push(...COMMANDS.SIZE_DOUBLE_HEIGHT);
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes(alignLeftRight('REEMBOLSADO:', formatCurrency(Math.abs(data.total || 0)), RECEIPT_WIDTH)));
+  commands.push(LF);
+  commands.push(...COMMANDS.SIZE_NORMAL);
+  commands.push(...COMMANDS.BOLD_OFF);
+
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
+  commands.push(LF);
+  commands.push(...COMMANDS.ALIGN_CENTER);
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes('*** NO ES COMPROBANTE FISCAL ***'));
+  commands.push(LF);
+  commands.push(...COMMANDS.BOLD_OFF);
+  commands.push(...textToBytes('Documento informativo'));
+  commands.push(LF);
+
+  commands.push(...COMMANDS.FEED_LINES(4));
+  commands.push(...COMMANDS.PARTIAL_CUT);
+  return commands;
+}
+
+/** Prints the non-fiscal refund slip. */
+export async function printRefundTicket(data, store, company) {
+  if (!isPrinterConnected()) {
+    await connectPrinter();
+  }
+  const commands = generateRefundTicket(data, store, company);
+  await sendToPrinter(commands);
+  return true;
+}
+
 export default {
   connectPrinter,
   disconnectPrinter,
@@ -1314,6 +1401,7 @@ export default {
   printFiscalReceipt,
   printCreditNote,
   printGiftCardTicket,
+  printRefundTicket,
   printTestPage,
   openCashDrawer,
   generateReceiptData,
