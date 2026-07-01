@@ -51,17 +51,21 @@ const fetchCustomerLoyalty = async (customerId) => {
  * or null. Bails out early when no row ever appears (E-Factura disabled for the
  * company) so non-fiscal stores don't wait the full timeout.
  */
-// Polls the order's electronic_invoices row until it reaches a terminal status.
-// For a known fiscal sale pass `expectInvoice: true` so we keep waiting through
-// PAC/serverless latency (the row may take a few seconds to appear); otherwise
-// a missing row after a couple of tries means E-Factura is off / non-fiscal.
-const waitForOrderInvoice = async (orderId, { attempts = 9, delayMs = 600, expectInvoice = false } = {}) => {
+// Polls the order's electronic_invoices row until it reaches a terminal status
+// or a hard wall-clock `timeoutMs` (default 10s) elapses — then returns null so
+// the caller falls back to the plain receipt instead of hanging checkout. For a
+// known fiscal sale pass `expectInvoice: true` so we keep waiting through
+// PAC/serverless latency (the row may take a few seconds to appear); otherwise a
+// missing row after a couple of tries means E-Factura is off / non-fiscal.
+const waitForOrderInvoice = async (orderId, { delayMs = 600, expectInvoice = false, timeoutMs = 10000 } = {}) => {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || !orderId) return null;
   const headers = { apikey: key, Authorization: `Bearer ${key}` };
 
-  for (let i = 0; i < attempts; i++) {
+  const deadline = Date.now() + timeoutMs;
+  let i = 0;
+  while (Date.now() < deadline) {
     try {
       const res = await fetch(
         `${url}/rest/v1/electronic_invoices?order_id=eq.${orderId}&order=created_at.desc&limit=1&select=*`,
@@ -73,12 +77,14 @@ const waitForOrderInvoice = async (orderId, { attempts = 9, delayMs = 600, expec
         if (inv && ['authorized', 'rejected', 'cancelled'].includes(inv.status)) return inv;
         // No row yet after a couple of tries → emission was never triggered
         // (E-Factura disabled / non-fiscal sale). Only bail early when we are
-        // NOT expecting a fiscal invoice — otherwise wait the full window.
+        // NOT expecting a fiscal invoice — otherwise wait until the deadline.
         if (!inv && !expectInvoice && i >= 1) return null;
       }
     } catch {
       /* transient — retry */
     }
+    i++;
+    if (Date.now() + delayMs >= deadline) break;
     await new Promise((r) => setTimeout(r, delayMs));
   }
   return null;
@@ -1964,8 +1970,8 @@ function TicketPanel() {
                         setPrintStatus('Emitiendo factura...');
                         const invoice = await waitForOrderInvoice(newOrder.id, {
                           expectInvoice: true,
-                          attempts: 20,
                           delayMs: 600,
+                          timeoutMs: 10000, // hard cap — fall back to plain receipt after 10s
                         });
                         setPrintStatus('Imprimiendo...');
                         if (invoice && invoice.status === 'authorized') {
