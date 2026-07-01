@@ -182,12 +182,31 @@ async function sendToPrinter(data) {
 }
 
 /**
- * Convert string to bytes (with Spanish character support)
+ * Fold text to single-byte ASCII so it prints correctly on any printer codepage
+ * and — critically — 1 character == 1 byte == 1 column. Accented letters would
+ * otherwise be 2 UTF-8 bytes, both garbling the glyph and overflowing the fixed
+ * column widths (pushing the line total onto a second line). Each source char
+ * maps to exactly one ASCII char so column alignment / truncation stay exact.
+ */
+function foldAscii(text) {
+  return String(text ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // strip diacritics: á->a, í->i, ñ->n, ü->u
+    .replace(/¡/g, '!') // ¡
+    .replace(/¿/g, '?') // ¿
+    .replace(/[‘’]/g, "'") // curly single quotes
+    .replace(/[“”«»]/g, '"') // curly/angle double quotes
+    .replace(/[–—]/g, '-') // en/em dash
+    .replace(/…/g, '.') // ellipsis
+    .replace(/[^\x20-\x7E]/g, '?'); // any remaining non-ASCII -> single char
+}
+
+/**
+ * Convert string to printable single-byte bytes (ASCII-folded).
  */
 function textToBytes(text) {
-  // Use Code Page 858 for Spanish characters
   const encoder = new TextEncoder();
-  return Array.from(encoder.encode(text));
+  return Array.from(encoder.encode(foldAscii(text)));
 }
 
 /**
