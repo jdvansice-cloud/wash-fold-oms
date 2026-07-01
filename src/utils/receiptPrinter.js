@@ -51,6 +51,13 @@ const COMMANDS = {
   OPEN_DRAWER: [ESC, 0x70, 0x00, 0x19, 0xFA], // Open drawer (pin 2)
 };
 
+// Characters per line: Font A on 80mm paper is 48 columns — the full width the
+// fiscal CAFE block (CUFE) already wraps at. Item columns sum to RECEIPT_WIDTH.
+const RECEIPT_WIDTH = 48;
+const COL_QTY = 6;
+const COL_TOTAL = 14;
+const COL_DESC = RECEIPT_WIDTH - COL_QTY - COL_TOTAL; // 28
+
 // Printer connection state
 let printerDevice = null;
 let printerInterface = null;
@@ -320,7 +327,7 @@ function getPaymentMethodName(method) {
  * Generate plain text receipt (for storage)
  */
 export function generateReceiptText(receiptData) {
-  const LINE_WIDTH = 42; // Characters per line for 80mm paper
+  const LINE_WIDTH = RECEIPT_WIDTH; // Characters per line for 80mm paper
   const DIVIDER = '='.repeat(LINE_WIDTH);
   const THIN_DIVIDER = '-'.repeat(LINE_WIDTH);
   
@@ -382,7 +389,7 @@ export function generateReceiptText(receiptData) {
   text += THIN_DIVIDER + '\n';
   
   // Items header
-  text += padRight('CANT', 6) + padRight('DESCRIPCION', 22) + padLeft('TOTAL', 14) + '\n';
+  text += padRight('CANT', 6) + padRight('DESCRIPCION', COL_DESC) + padLeft('TOTAL', 14) + '\n';
   text += THIN_DIVIDER + '\n';
   
   // Items
@@ -392,7 +399,7 @@ export function generateReceiptText(receiptData) {
       : `${item.quantity || 1}x`;
     const totalStr = formatCurrency(item.total || 0);
     
-    text += padRight(qtyStr, 6) + padRight(item.name || 'Producto', 22) + padLeft(totalStr, 14) + '\n';
+    text += padRight(qtyStr, 6) + padRight(item.name || 'Producto', COL_DESC) + padLeft(totalStr, 14) + '\n';
   }
   
   text += THIN_DIVIDER + '\n';
@@ -599,7 +606,7 @@ export function generateEscPosCommands(receiptData, options = {}) {
   }
   
   // Divider
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Order number — large & centered so it's easy to read when calling the
@@ -633,15 +640,15 @@ export function generateEscPosCommands(receiptData, options = {}) {
   }
   
   // Items divider
-  commands.push(...textToBytes('-'.repeat(42)));
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Items header
   commands.push(...COMMANDS.BOLD_ON);
-  commands.push(...textToBytes(padRight('CANT', 6) + padRight('DESCRIPCION', 22) + padLeft('TOTAL', 14)));
+  commands.push(...textToBytes(padRight('CANT', 6) + padRight('DESCRIPCION', COL_DESC) + padLeft('TOTAL', 14)));
   commands.push(LF);
   commands.push(...COMMANDS.BOLD_OFF);
-  commands.push(...textToBytes('-'.repeat(42)));
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Items
@@ -651,52 +658,52 @@ export function generateEscPosCommands(receiptData, options = {}) {
       : `${item.quantity}x`;
     const totalStr = formatCurrency(item.total);
     
-    commands.push(...textToBytes(padRight(qtyStr, 6) + padRight(item.name.substring(0, 22), 22) + padLeft(totalStr, 14)));
+    commands.push(...textToBytes(padRight(qtyStr, 6) + padRight(item.name.substring(0, COL_DESC), COL_DESC) + padLeft(totalStr, 14)));
     commands.push(LF);
   }
   
   // Totals divider
-  commands.push(...textToBytes('-'.repeat(42)));
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Weight and bags
   if (receiptData.totalWeight > 0) {
-    commands.push(...textToBytes(alignLeftRight('Peso Total:', `${receiptData.totalWeight.toFixed(2)} kg`, 42)));
+    commands.push(...textToBytes(alignLeftRight('Peso Total:', `${receiptData.totalWeight.toFixed(2)} kg`, RECEIPT_WIDTH)));
     commands.push(LF);
   }
   if (receiptData.totalBags > 0) {
-    commands.push(...textToBytes(alignLeftRight('Bolsas:', receiptData.totalBags.toString(), 42)));
+    commands.push(...textToBytes(alignLeftRight('Bolsas:', receiptData.totalBags.toString(), RECEIPT_WIDTH)));
     commands.push(LF);
   }
   
   // Subtotals
-  commands.push(...textToBytes(alignLeftRight('Subtotal:', formatCurrency(receiptData.subtotal), 42)));
+  commands.push(...textToBytes(alignLeftRight('Subtotal:', formatCurrency(receiptData.subtotal), RECEIPT_WIDTH)));
   commands.push(LF);
   
   if (receiptData.discount > 0) {
-    commands.push(...textToBytes(alignLeftRight('Descuento:', `-${formatCurrency(receiptData.discount)}`, 42)));
+    commands.push(...textToBytes(alignLeftRight('Descuento:', `-${formatCurrency(receiptData.discount)}`, RECEIPT_WIDTH)));
     commands.push(LF);
   }
   if (receiptData.delivery > 0) {
-    commands.push(...textToBytes(alignLeftRight('Delivery:', formatCurrency(receiptData.delivery), 42)));
+    commands.push(...textToBytes(alignLeftRight('Delivery:', formatCurrency(receiptData.delivery), RECEIPT_WIDTH)));
     commands.push(LF);
   }
   
-  commands.push(...textToBytes(alignLeftRight('ITBMS:', formatCurrency(receiptData.tax), 42)));
+  commands.push(...textToBytes(alignLeftRight('ITBMS:', formatCurrency(receiptData.tax), RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Total - bold and larger
-  commands.push(...textToBytes('-'.repeat(42)));
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.SIZE_DOUBLE_HEIGHT);
   commands.push(...COMMANDS.BOLD_ON);
-  commands.push(...textToBytes(alignLeftRight('TOTAL:', formatCurrency(receiptData.total), 42)));
+  commands.push(...textToBytes(alignLeftRight('TOTAL:', formatCurrency(receiptData.total), RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.SIZE_NORMAL);
   commands.push(...COMMANDS.BOLD_OFF);
   
   // Payments section
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.ALIGN_CENTER);
   commands.push(...COMMANDS.BOLD_ON);
@@ -708,20 +715,20 @@ export function generateEscPosCommands(receiptData, options = {}) {
   for (const payment of receiptData.payments) {
     let paymentLine = payment.methodName;
     if (payment.reference) paymentLine += ` (${payment.reference})`;
-    commands.push(...textToBytes(alignLeftRight(paymentLine, formatCurrency(payment.amount), 42)));
+    commands.push(...textToBytes(alignLeftRight(paymentLine, formatCurrency(payment.amount), RECEIPT_WIDTH)));
     commands.push(LF);
   }
   
   if (receiptData.change > 0) {
     commands.push(...COMMANDS.BOLD_ON);
-    commands.push(...textToBytes(alignLeftRight('Cambio:', formatCurrency(receiptData.change), 42)));
+    commands.push(...textToBytes(alignLeftRight('Cambio:', formatCurrency(receiptData.change), RECEIPT_WIDTH)));
     commands.push(LF);
     commands.push(...COMMANDS.BOLD_OFF);
   }
   
   // Notes
   if (receiptData.notes) {
-    commands.push(...textToBytes('='.repeat(42)));
+    commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
     commands.push(LF);
     commands.push(...textToBytes('Notas: ' + receiptData.notes.substring(0, 100)));
     commands.push(LF);
@@ -736,14 +743,14 @@ export function generateEscPosCommands(receiptData, options = {}) {
                            loyalty.freeServicesUsed.washes > 0 || loyalty.freeServicesUsed.drys > 0;
     
     if (hasLoyaltyInfo) {
-      commands.push(...textToBytes('='.repeat(42)));
+      commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
       commands.push(LF);
       commands.push(...COMMANDS.ALIGN_CENTER);
       commands.push(...COMMANDS.BOLD_ON);
       commands.push(...textToBytes('*** PROGRAMA DE LEALTAD ***'));
       commands.push(LF);
       commands.push(...COMMANDS.BOLD_OFF);
-      commands.push(...textToBytes('-'.repeat(42)));
+      commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
       commands.push(LF);
       commands.push(...COMMANDS.ALIGN_LEFT);
       
@@ -754,11 +761,11 @@ export function generateEscPosCommands(receiptData, options = {}) {
         commands.push(LF);
         commands.push(...COMMANDS.ALIGN_LEFT);
         if (loyalty.freeServicesUsed.washes > 0) {
-          commands.push(...textToBytes(alignLeftRight('  Lavados gratis:', loyalty.freeServicesUsed.washes.toString(), 42)));
+          commands.push(...textToBytes(alignLeftRight('  Lavados gratis:', loyalty.freeServicesUsed.washes.toString(), RECEIPT_WIDTH)));
           commands.push(LF);
         }
         if (loyalty.freeServicesUsed.drys > 0) {
-          commands.push(...textToBytes(alignLeftRight('  Secados gratis:', loyalty.freeServicesUsed.drys.toString(), 42)));
+          commands.push(...textToBytes(alignLeftRight('  Secados gratis:', loyalty.freeServicesUsed.drys.toString(), RECEIPT_WIDTH)));
           commands.push(LF);
         }
         commands.push(LF);
@@ -771,14 +778,14 @@ export function generateEscPosCommands(receiptData, options = {}) {
         commands.push(LF);
         commands.push(...COMMANDS.ALIGN_LEFT);
         if (loyalty.pointsUsed > 0) {
-          commands.push(...textToBytes(alignLeftRight('  Puntos usados:', `-B/${loyalty.pointsUsed.toFixed(2)}`, 42)));
+          commands.push(...textToBytes(alignLeftRight('  Puntos usados:', `-B/${loyalty.pointsUsed.toFixed(2)}`, RECEIPT_WIDTH)));
           commands.push(LF);
         }
         if (loyalty.pointsEarned > 0) {
-          commands.push(...textToBytes(alignLeftRight('  Puntos ganados:', `+B/${loyalty.pointsEarned.toFixed(2)}`, 42)));
+          commands.push(...textToBytes(alignLeftRight('  Puntos ganados:', `+B/${loyalty.pointsEarned.toFixed(2)}`, RECEIPT_WIDTH)));
           commands.push(LF);
         }
-        commands.push(...textToBytes(alignLeftRight('  Saldo actual:', `B/${loyalty.pointsBalance.toFixed(2)}`, 42)));
+        commands.push(...textToBytes(alignLeftRight('  Saldo actual:', `B/${loyalty.pointsBalance.toFixed(2)}`, RECEIPT_WIDTH)));
         commands.push(LF);
         commands.push(LF);
       }
@@ -795,9 +802,9 @@ export function generateEscPosCommands(receiptData, options = {}) {
         if (loyalty.washPunches > 0 || loyalty.washPunchesTotal > 0) {
           const washProgress = `${loyalty.washPunchesTotal}/${loyalty.punchesRequired}`;
           if (loyalty.washPunches > 0) {
-            commands.push(...textToBytes(alignLeftRight(`  Lavados (+${loyalty.washPunches}):`, washProgress, 42)));
+            commands.push(...textToBytes(alignLeftRight(`  Lavados (+${loyalty.washPunches}):`, washProgress, RECEIPT_WIDTH)));
           } else {
-            commands.push(...textToBytes(alignLeftRight('  Lavados:', washProgress, 42)));
+            commands.push(...textToBytes(alignLeftRight('  Lavados:', washProgress, RECEIPT_WIDTH)));
           }
           commands.push(LF);
         }
@@ -806,9 +813,9 @@ export function generateEscPosCommands(receiptData, options = {}) {
         if (loyalty.dryPunches > 0 || loyalty.dryPunchesTotal > 0) {
           const dryProgress = `${loyalty.dryPunchesTotal}/${loyalty.punchesRequired}`;
           if (loyalty.dryPunches > 0) {
-            commands.push(...textToBytes(alignLeftRight(`  Secados (+${loyalty.dryPunches}):`, dryProgress, 42)));
+            commands.push(...textToBytes(alignLeftRight(`  Secados (+${loyalty.dryPunches}):`, dryProgress, RECEIPT_WIDTH)));
           } else {
-            commands.push(...textToBytes(alignLeftRight('  Secados:', dryProgress, 42)));
+            commands.push(...textToBytes(alignLeftRight('  Secados:', dryProgress, RECEIPT_WIDTH)));
           }
           commands.push(LF);
         }
@@ -845,23 +852,23 @@ export function generateEscPosCommands(receiptData, options = {}) {
           commands.push(LF);
           commands.push(...COMMANDS.ALIGN_LEFT);
           if (loyalty.freeWashesAvailable > 0) {
-            commands.push(...textToBytes(alignLeftRight('  Lavados:', loyalty.freeWashesAvailable.toString(), 42)));
+            commands.push(...textToBytes(alignLeftRight('  Lavados:', loyalty.freeWashesAvailable.toString(), RECEIPT_WIDTH)));
             commands.push(LF);
           }
           if (loyalty.freeDrysAvailable > 0) {
-            commands.push(...textToBytes(alignLeftRight('  Secados:', loyalty.freeDrysAvailable.toString(), 42)));
+            commands.push(...textToBytes(alignLeftRight('  Secados:', loyalty.freeDrysAvailable.toString(), RECEIPT_WIDTH)));
             commands.push(LF);
           }
         }
       }
       
-      commands.push(...textToBytes('-'.repeat(42)));
+      commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
       commands.push(LF);
     }
   }
   
   // Footer
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.ALIGN_CENTER);
   commands.push(LF);
@@ -1092,7 +1099,7 @@ export function generateFiscalReceipt(receiptData, invoice) {
   // Receipt body without the final cut, so we can append the fiscal block.
   const commands = generateEscPosCommands(receiptData, { cut: false });
 
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.ALIGN_CENTER);
 
@@ -1171,7 +1178,7 @@ export function generateGiftCardTicket(card, product, store, company) {
   }
   commands.push(...textToBytes(company?.name || 'American Laundry'));
   commands.push(LF);
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
 
   commands.push(...COMMANDS.SIZE_DOUBLE_HEIGHT);
@@ -1182,24 +1189,24 @@ export function generateGiftCardTicket(card, product, store, company) {
   commands.push(...COMMANDS.BOLD_OFF);
 
   commands.push(...COMMANDS.ALIGN_LEFT);
-  commands.push(...textToBytes('-'.repeat(42)));
+  commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.BOLD_ON);
   commands.push(...textToBytes(`Codigo: ${card?.code || ''}`));
   commands.push(LF);
   commands.push(...COMMANDS.BOLD_OFF);
-  commands.push(...textToBytes(alignLeftRight('Monto cargado:', formatCurrency(card?.amountLoaded ?? product?.price ?? 0), 42)));
+  commands.push(...textToBytes(alignLeftRight('Monto cargado:', formatCurrency(card?.amountLoaded ?? product?.price ?? 0), RECEIPT_WIDTH)));
   commands.push(LF);
-  commands.push(...textToBytes(alignLeftRight('Saldo actual:', formatCurrency(card?.current_balance ?? 0), 42)));
+  commands.push(...textToBytes(alignLeftRight('Saldo actual:', formatCurrency(card?.current_balance ?? 0), RECEIPT_WIDTH)));
   commands.push(LF);
   if (card?.expires_at) {
-    commands.push(...textToBytes(alignLeftRight('Vence:', formatDate(card.expires_at), 42)));
+    commands.push(...textToBytes(alignLeftRight('Vence:', formatDate(card.expires_at), RECEIPT_WIDTH)));
     commands.push(LF);
   }
-  commands.push(...textToBytes(alignLeftRight('Fecha:', formatDate(new Date()), 42)));
+  commands.push(...textToBytes(alignLeftRight('Fecha:', formatDate(new Date()), RECEIPT_WIDTH)));
   commands.push(LF);
 
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...COMMANDS.ALIGN_CENTER);
   commands.push(...COMMANDS.BOLD_ON);
@@ -1210,7 +1217,7 @@ export function generateGiftCardTicket(card, product, store, company) {
   commands.push(LF);
   commands.push(...textToBytes('No valido como factura'));
   commands.push(LF);
-  commands.push(...textToBytes('='.repeat(42)));
+  commands.push(...textToBytes('='.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(LF);
   commands.push(...textToBytes('Gracias por su compra'));
