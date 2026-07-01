@@ -626,8 +626,10 @@ export function generateEscPosCommands(receiptData, options = {}) {
   commands.push(LF);
   
   if (receiptData.promisedDate) {
+    commands.push(...COMMANDS.BOLD_ON);
     commands.push(...textToBytes(`Listo para: ${receiptData.promisedDate}`));
     commands.push(LF);
+    commands.push(...COMMANDS.BOLD_OFF);
   }
   
   // Items divider
