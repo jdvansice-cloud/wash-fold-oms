@@ -51,7 +51,11 @@ const fetchCustomerLoyalty = async (customerId) => {
  * or null. Bails out early when no row ever appears (E-Factura disabled for the
  * company) so non-fiscal stores don't wait the full timeout.
  */
-const waitForOrderInvoice = async (orderId, { attempts = 9, delayMs = 600 } = {}) => {
+// Polls the order's electronic_invoices row until it reaches a terminal status.
+// For a known fiscal sale pass `expectInvoice: true` so we keep waiting through
+// PAC/serverless latency (the row may take a few seconds to appear); otherwise
+// a missing row after a couple of tries means E-Factura is off / non-fiscal.
+const waitForOrderInvoice = async (orderId, { attempts = 9, delayMs = 600, expectInvoice = false } = {}) => {
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || !orderId) return null;
@@ -68,8 +72,9 @@ const waitForOrderInvoice = async (orderId, { attempts = 9, delayMs = 600 } = {}
         const inv = rows && rows[0];
         if (inv && ['authorized', 'rejected', 'cancelled'].includes(inv.status)) return inv;
         // No row yet after a couple of tries → emission was never triggered
-        // (E-Factura disabled / non-fiscal sale). Stop waiting.
-        if (!inv && i >= 1) return null;
+        // (E-Factura disabled / non-fiscal sale). Only bail early when we are
+        // NOT expecting a fiscal invoice — otherwise wait the full window.
+        if (!inv && !expectInvoice && i >= 1) return null;
       }
     } catch {
       /* transient — retry */
@@ -772,6 +777,7 @@ function TicketPanel() {
   
   // Printer state
   const [printingReceipt, setPrintingReceipt] = useState(false);
+  const [printStatus, setPrintStatus] = useState('Imprimiendo...');
   
   // Loyalty state
   const [customerLoyalty, setCustomerLoyalty] = useState(null);
@@ -1648,7 +1654,7 @@ function TicketPanel() {
             {printingReceipt ? (
               <>
                 <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Imprimiendo...</span>
+                <span>{printStatus}</span>
               </>
             ) : (
               <>
@@ -1949,15 +1955,29 @@ function TicketPanel() {
                         }
                         if (hasCashPayment) await openCashDrawer();
                       } else if (isFiscalSale) {
-                        // Wait briefly for the auto-emitted factura to be authorized,
-                        // then print its representación impresa (QR + CUFE). If it's
-                        // not ready (or rejected / E-Factura off), print the internal
-                        // receipt now — the CAFE can be reprinted from order details.
-                        const invoice = await waitForOrderInvoice(newOrder.id);
+                        // Wait for the auto-emitted factura to reach a terminal
+                        // status, then print its representación impresa (CAFE: QR +
+                        // CUFE). We expect an invoice (fiscal sale), so wait the full
+                        // window through PAC/serverless latency instead of bailing
+                        // early. On rejection/timeout, fall back to the internal
+                        // receipt — the CAFE can be reprinted once authorized.
+                        setPrintStatus('Emitiendo factura...');
+                        const invoice = await waitForOrderInvoice(newOrder.id, {
+                          expectInvoice: true,
+                          attempts: 20,
+                          delayMs: 600,
+                        });
+                        setPrintStatus('Imprimiendo...');
                         if (invoice && invoice.status === 'authorized') {
                           await printFiscalReceipt(receiptData, invoice, hasCashPayment);
                         } else {
                           await printReceipt(receiptData, hasCashPayment);
+                          if (invoice?.status === 'rejected') {
+                            console.warn('Factura rechazada:', invoice.error || invoice.rejection_reason);
+                            alert('La factura electrónica fue rechazada. Se imprimió el recibo interno; reintente la factura desde el detalle de la orden.');
+                          } else if (!invoice) {
+                            console.warn('Factura aún pendiente al imprimir; reimprima el CAFE desde el detalle cuando autorice.');
+                          }
                         }
                       } else {
                         // Pay-on-pickup / B2B account / zero-total → internal receipt.
@@ -1975,6 +1995,7 @@ function TicketPanel() {
                   console.error('Receipt error (order still completed):', receiptErr);
                 } finally {
                   setPrintingReceipt(false);
+                  setPrintStatus('Imprimiendo...');
                 }
               }
               
