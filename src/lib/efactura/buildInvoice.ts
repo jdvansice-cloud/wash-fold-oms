@@ -23,6 +23,7 @@ import {
   TIPO_CONTRIBUYENTE,
   itbmsRateCode,
   mapPaymentForma,
+  paymentFormaDescripcion,
   type DocType,
 } from './constants.js';
 import { distributeCents, fromCents, round2, toCents } from './money.js';
@@ -295,10 +296,15 @@ export function buildInvoiceRequest(input: BuildInvoiceInput): InvoiceRequest {
     : [{ method: 'efectivo', amount: order.total, change: 0 }]
   ).map((p) => ({ method: p.method, received: toCents(p.amount) + toCents(p.change ?? 0) }));
 
-  const grupoFormasPago = effectivePayments.map((p) => ({
-    formaPago: mapPaymentForma(p.method),
-    valorCuotaPagada: fromCents(p.received),
-  }));
+  const grupoFormasPago = effectivePayments.map((p) => {
+    const forma = mapPaymentForma(p.method);
+    return {
+      formaPago: forma,
+      // DGI rule 2601: code "99" (otro) must carry a text description.
+      ...(forma === '99' ? { formaPagoDescripcion: paymentFormaDescripcion(p.method) } : {}),
+      valorCuotaPagada: fromCents(p.received),
+    };
+  });
   const receivedCents = effectivePayments.reduce((s, p) => s + p.received, 0);
   const changeCents = Math.max(0, receivedCents - totalCents);
 

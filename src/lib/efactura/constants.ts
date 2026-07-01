@@ -72,6 +72,22 @@ export function mapPaymentForma(method: string | undefined | null): string {
   return '99';
 }
 
+/**
+ * Human description for forma de pago "99" (otro). The DGI REQUIRES a
+ * description whenever the payment method is not one of the listed codes
+ * (rule 2601) — e.g. Yappy, ACH, gift card, loyalty points. Capped at 30 chars.
+ */
+export function paymentFormaDescripcion(method: string | undefined | null): string {
+  const v = (method ?? '').trim().toLowerCase();
+  if (/yappy/.test(v)) return 'Yappy';
+  if (/nequi/.test(v)) return 'Nequi';
+  if (/ach|transfer/.test(v)) return 'Transferencia';
+  if (/gift|regalo/.test(v)) return 'Tarjeta regalo';
+  if (/loyalty|punto/.test(v)) return 'Puntos de lealtad';
+  const label = (method ?? '').trim();
+  return (label || 'Otro').slice(0, 30);
+}
+
 /** Maps an ITBMS percentage rate to its DGI code. */
 export function itbmsRateCode(ratePercent: number): string {
   switch (Math.round(ratePercent)) {

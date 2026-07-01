@@ -373,4 +373,16 @@ describe('buildInvoiceRequest — payments', () => {
     expect(inv.totales.sumaValoresRecibidos).toBe(10.7);
     expect(inv.totales.vueltoEntregado).toBeUndefined();
   });
+
+  it('adds a description for forma de pago 99 (Yappy) — DGI rule 2601', () => {
+    const inv = build({ payments: [{ method: 'yappy', amount: 10.7 }] });
+    expect(inv.totales.grupoFormasPago).toEqual([
+      { formaPago: '99', formaPagoDescripcion: 'Yappy', valorCuotaPagada: 10.7 },
+    ]);
+  });
+
+  it('does not add a description for listed formas de pago', () => {
+    const inv = build({ payments: [{ method: 'Efectivo', amount: 10.7 }] });
+    expect(inv.totales.grupoFormasPago[0]).not.toHaveProperty('formaPagoDescripcion');
+  });
 });
