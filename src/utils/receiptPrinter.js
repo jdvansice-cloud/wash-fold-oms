@@ -227,7 +227,9 @@ function padLeft(str, width) {
 /**
  * Generate receipt data object
  */
-export function generateReceiptData(order, company, store, items, payments, loyaltyInfo = null) {
+export function generateReceiptData(order, company, store, items, payments, loyaltyInfo = null, itbmsRate = 7) {
+  const rate = (Number(itbmsRate) || 0) / 100;
+  const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
   return {
     // Store and Company info
     storeName: store?.name || '',
@@ -248,18 +250,31 @@ export function generateReceiptData(order, company, store, items, payments, loya
     items: (items || []).map(item => {
       const quantity = item.quantity || 1;
       const weight = item.total_weight ?? item.totalWeight ?? 0;
-      const unitPrice = item.unit_price ?? item.unitPrice ?? item.price ?? 0;
-      const total = item.line_total ?? item.lineTotal ?? (quantity * unitPrice) ?? 0;
+      // Stored/cart prices are ex-ITBMS; the receipt shows them ITBMS-INCLUDED to
+      // match what the customer was quoted (e.g. 2.50/kg). Non-taxable lines are
+      // already final. `total`/`unitPrice` here are the GROSS (pre-discount) line
+      // — order-level totals still reflect discounts.
+      const exUnit = item.unit_price ?? item.unitPrice ?? item.price ?? 0;
+      const exLine = item.line_total ?? item.lineTotal ?? (quantity * exUnit) ?? 0;
       const isWeight =
         item.product?.pricing_type === 'weight' ||
         item.pricing_type === 'weight' ||
         weight > 0;
+      const taxable = (item.product?.is_taxable ?? item.is_taxable) !== false;
+      const factor = taxable ? 1 + rate : 1;
+      // Per-line discount is only present on the live POS cart ({mode, value});
+      // DB order_items don't carry it (it's folded into the order discount).
+      const d = item.discount;
+      const exDiscount = d && d.value
+        ? (d.mode === 'pct' ? exLine * (d.value / 100) : Number(d.value) || 0)
+        : 0;
       return {
         name: item.product_name || item.name || item.product?.name || 'Producto',
         quantity,
         weight,
-        unitPrice,
-        total,
+        unitPrice: r2(exUnit * factor),
+        total: r2(exLine * factor),
+        lineDiscount: r2(Math.min(Math.max(0, exDiscount), exLine) * factor),
         isWeight,
       };
     }),
@@ -392,14 +407,22 @@ export function generateReceiptText(receiptData) {
   text += padRight('CANT', 6) + padRight('DESCRIPCION', COL_DESC) + padLeft('TOTAL', 14) + '\n';
   text += THIN_DIVIDER + '\n';
   
-  // Items
+  // Items — line 1: qty | name | total; line 2 (indented): unit price + discount.
   for (const item of data.items) {
-    const qtyStr = item.isWeight 
-      ? `${(item.weight || 0).toFixed(2)}kg` 
+    const qtyStr = item.isWeight
+      ? `${(item.weight || 0).toFixed(2)}kg`
       : `${item.quantity || 1}x`;
     const totalStr = formatCurrency(item.total || 0);
-    
-    text += padRight(qtyStr, 6) + padRight(item.name || 'Producto', COL_DESC) + padLeft(totalStr, 14) + '\n';
+
+    text += padRight(qtyStr, COL_QTY) + padRight(item.name || 'Producto', COL_DESC) + padLeft(totalStr, COL_TOTAL) + '\n';
+    const showDetail = item.isWeight || (item.quantity || 1) > 1 || (item.lineDiscount || 0) > 0;
+    if (showDetail) {
+      let detail = item.isWeight
+        ? `${formatCurrency(item.unitPrice || 0)}/kg`
+        : `${formatCurrency(item.unitPrice || 0)} c/u`;
+      if ((item.lineDiscount || 0) > 0) detail += `  Desc: -${formatCurrency(item.lineDiscount)}`;
+      text += ' '.repeat(COL_QTY) + detail + '\n';
+    }
   }
   
   text += THIN_DIVIDER + '\n';
@@ -412,16 +435,16 @@ export function generateReceiptText(receiptData) {
     text += alignLeftRight('Bolsas:', data.totalBags.toString(), LINE_WIDTH) + '\n';
   }
   
-  text += alignLeftRight('Subtotal:', formatCurrency(data.subtotal), LINE_WIDTH) + '\n';
-  
+  text += alignLeftRight('Subtotal (grav.):', formatCurrency(data.subtotal), LINE_WIDTH) + '\n';
+
   if (data.discount > 0) {
     text += alignLeftRight('Descuento:', `-${formatCurrency(data.discount)}`, LINE_WIDTH) + '\n';
   }
   if (data.delivery > 0) {
     text += alignLeftRight('Delivery:', formatCurrency(data.delivery), LINE_WIDTH) + '\n';
   }
-  
-  text += alignLeftRight('ITBMS:', formatCurrency(data.tax), LINE_WIDTH) + '\n';
+
+  text += alignLeftRight('ITBMS incluido:', formatCurrency(data.tax), LINE_WIDTH) + '\n';
   text += THIN_DIVIDER + '\n';
   text += alignLeftRight('TOTAL:', formatCurrency(data.total), LINE_WIDTH) + '\n';
   
@@ -651,15 +674,27 @@ export function generateEscPosCommands(receiptData, options = {}) {
   commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
   
-  // Items
+  // Items — line 1: qty | name | total; line 2 (indented): unit price + discount.
   for (const item of receiptData.items) {
-    const qtyStr = item.isWeight 
-      ? `${item.weight.toFixed(2)}kg` 
+    const qtyStr = item.isWeight
+      ? `${item.weight.toFixed(2)}kg`
       : `${item.quantity}x`;
     const totalStr = formatCurrency(item.total);
-    
-    commands.push(...textToBytes(padRight(qtyStr, 6) + padRight(item.name.substring(0, COL_DESC), COL_DESC) + padLeft(totalStr, 14)));
+
+    commands.push(...textToBytes(padRight(qtyStr, COL_QTY) + padRight(item.name.substring(0, COL_DESC), COL_DESC) + padLeft(totalStr, COL_TOTAL)));
     commands.push(LF);
+
+    // Unit price (ITBMS-incl) + any per-line discount. Skip for a plain single
+    // unit with no discount, where the line total already is the unit price.
+    const showDetail = item.isWeight || (item.quantity || 1) > 1 || (item.lineDiscount || 0) > 0;
+    if (showDetail) {
+      let detail = item.isWeight
+        ? `${formatCurrency(item.unitPrice)}/kg`
+        : `${formatCurrency(item.unitPrice)} c/u`;
+      if ((item.lineDiscount || 0) > 0) detail += `  Desc: -${formatCurrency(item.lineDiscount)}`;
+      commands.push(...textToBytes(' '.repeat(COL_QTY) + detail));
+      commands.push(LF);
+    }
   }
   
   // Totals divider
@@ -676,10 +711,11 @@ export function generateEscPosCommands(receiptData, options = {}) {
     commands.push(LF);
   }
   
-  // Subtotals
-  commands.push(...textToBytes(alignLeftRight('Subtotal:', formatCurrency(receiptData.subtotal), RECEIPT_WIDTH)));
+  // Subtotals (prices above are ITBMS-included; show the taxable base + the
+  // ITBMS contained in the total).
+  commands.push(...textToBytes(alignLeftRight('Subtotal (grav.):', formatCurrency(receiptData.subtotal), RECEIPT_WIDTH)));
   commands.push(LF);
-  
+
   if (receiptData.discount > 0) {
     commands.push(...textToBytes(alignLeftRight('Descuento:', `-${formatCurrency(receiptData.discount)}`, RECEIPT_WIDTH)));
     commands.push(LF);
@@ -688,8 +724,8 @@ export function generateEscPosCommands(receiptData, options = {}) {
     commands.push(...textToBytes(alignLeftRight('Delivery:', formatCurrency(receiptData.delivery), RECEIPT_WIDTH)));
     commands.push(LF);
   }
-  
-  commands.push(...textToBytes(alignLeftRight('ITBMS:', formatCurrency(receiptData.tax), RECEIPT_WIDTH)));
+
+  commands.push(...textToBytes(alignLeftRight('ITBMS incluido:', formatCurrency(receiptData.tax), RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Total - bold and larger

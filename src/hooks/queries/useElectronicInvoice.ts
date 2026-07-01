@@ -117,6 +117,8 @@ export async function reprintFiscalReceipt(orderId: string, invoice: ElectronicI
     store,
     (order as any).order_items || [],
     payments,
+    null,
+    (company as any)?.itbms_rate ?? 7,
   );
   await printFiscalReceipt(receiptData, invoice, false);
 }

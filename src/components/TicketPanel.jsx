@@ -1892,7 +1892,8 @@ function TicketPanel() {
                     state.store,
                     state.ticket.items,
                     paymentInfo.payments,
-                    loyaltyInfoForReceipt
+                    loyaltyInfoForReceipt,
+                    state.settings?.itbms_rate ?? 7
                   );
                   
                   // Generate text version
