@@ -602,17 +602,24 @@ export function generateEscPosCommands(receiptData, options = {}) {
   commands.push(...textToBytes('='.repeat(42)));
   commands.push(LF);
   
-  // Order info - left aligned
-  commands.push(...COMMANDS.ALIGN_LEFT);
-  
-  // Order number with express badge
+  // Order number — large & centered so it's easy to read when calling the
+  // customer for pickup.
+  commands.push(...COMMANDS.ALIGN_CENTER);
   commands.push(...COMMANDS.BOLD_ON);
-  let orderText = `Orden: ${receiptData.orderNumber}`;
-  if (receiptData.isExpress) orderText += ' [EXPRESS]';
-  commands.push(...textToBytes(orderText));
+  commands.push(...textToBytes('ORDEN'));
   commands.push(LF);
+  commands.push(...COMMANDS.SIZE_DOUBLE);
+  commands.push(...textToBytes(String(receiptData.orderNumber)));
+  commands.push(LF);
+  commands.push(...COMMANDS.SIZE_NORMAL);
+  if (receiptData.isExpress) {
+    commands.push(...textToBytes('*** EXPRESS ***'));
+    commands.push(LF);
+  }
   commands.push(...COMMANDS.BOLD_OFF);
-  
+
+  // Order details - left aligned
+  commands.push(...COMMANDS.ALIGN_LEFT);
   commands.push(...textToBytes(`Fecha: ${receiptData.date}`));
   commands.push(LF);
   commands.push(...textToBytes(`Cliente: ${receiptData.customerName}`));
