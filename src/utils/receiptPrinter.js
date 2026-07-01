@@ -227,9 +227,7 @@ function padLeft(str, width) {
 /**
  * Generate receipt data object
  */
-export function generateReceiptData(order, company, store, items, payments, loyaltyInfo = null, itbmsRate = 7) {
-  const rate = (Number(itbmsRate) || 0) / 100;
-  const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
+export function generateReceiptData(order, company, store, items, payments, loyaltyInfo = null) {
   return {
     // Store and Company info
     storeName: store?.name || '',
@@ -250,31 +248,27 @@ export function generateReceiptData(order, company, store, items, payments, loya
     items: (items || []).map(item => {
       const quantity = item.quantity || 1;
       const weight = item.total_weight ?? item.totalWeight ?? 0;
-      // Stored/cart prices are ex-ITBMS; the receipt shows them ITBMS-INCLUDED to
-      // match what the customer was quoted (e.g. 2.50/kg). Non-taxable lines are
-      // already final. `total`/`unitPrice` here are the GROSS (pre-discount) line
-      // — order-level totals still reflect discounts.
-      const exUnit = item.unit_price ?? item.unitPrice ?? item.price ?? 0;
-      const exLine = item.line_total ?? item.lineTotal ?? (quantity * exUnit) ?? 0;
+      // Fiscal representation: precio unitario and valor are SIN ITBMS (the DGI
+      // factura desglosa el ITBMS aparte). Prices are stored ex-ITBMS already.
+      const unitPrice = item.unit_price ?? item.unitPrice ?? item.price ?? 0;
+      const total = item.line_total ?? item.lineTotal ?? (quantity * unitPrice) ?? 0;
       const isWeight =
         item.product?.pricing_type === 'weight' ||
         item.pricing_type === 'weight' ||
         weight > 0;
-      const taxable = (item.product?.is_taxable ?? item.is_taxable) !== false;
-      const factor = taxable ? 1 + rate : 1;
       // Per-line discount is only present on the live POS cart ({mode, value});
       // DB order_items don't carry it (it's folded into the order discount).
       const d = item.discount;
-      const exDiscount = d && d.value
-        ? (d.mode === 'pct' ? exLine * (d.value / 100) : Number(d.value) || 0)
+      const lineDiscount = d && d.value
+        ? Math.min(Math.max(0, d.mode === 'pct' ? total * (d.value / 100) : Number(d.value) || 0), total)
         : 0;
       return {
         name: item.product_name || item.name || item.product?.name || 'Producto',
         quantity,
         weight,
-        unitPrice: r2(exUnit * factor),
-        total: r2(exLine * factor),
-        lineDiscount: r2(Math.min(Math.max(0, exDiscount), exLine) * factor),
+        unitPrice,
+        total,
+        lineDiscount: Math.round((lineDiscount + Number.EPSILON) * 100) / 100,
         isWeight,
       };
     }),
@@ -435,7 +429,7 @@ export function generateReceiptText(receiptData) {
     text += alignLeftRight('Bolsas:', data.totalBags.toString(), LINE_WIDTH) + '\n';
   }
   
-  text += alignLeftRight('Subtotal (grav.):', formatCurrency(data.subtotal), LINE_WIDTH) + '\n';
+  text += alignLeftRight('Subtotal:', formatCurrency(data.subtotal), LINE_WIDTH) + '\n';
 
   if (data.discount > 0) {
     text += alignLeftRight('Descuento:', `-${formatCurrency(data.discount)}`, LINE_WIDTH) + '\n';
@@ -444,7 +438,7 @@ export function generateReceiptText(receiptData) {
     text += alignLeftRight('Delivery:', formatCurrency(data.delivery), LINE_WIDTH) + '\n';
   }
 
-  text += alignLeftRight('ITBMS incluido:', formatCurrency(data.tax), LINE_WIDTH) + '\n';
+  text += alignLeftRight('ITBMS:', formatCurrency(data.tax), LINE_WIDTH) + '\n';
   text += THIN_DIVIDER + '\n';
   text += alignLeftRight('TOTAL:', formatCurrency(data.total), LINE_WIDTH) + '\n';
   
@@ -711,9 +705,9 @@ export function generateEscPosCommands(receiptData, options = {}) {
     commands.push(LF);
   }
   
-  // Subtotals (prices above are ITBMS-included; show the taxable base + the
-  // ITBMS contained in the total).
-  commands.push(...textToBytes(alignLeftRight('Subtotal (grav.):', formatCurrency(receiptData.subtotal), RECEIPT_WIDTH)));
+  // Subtotals — prices above are SIN ITBMS; the ITBMS is desglosado below and
+  // added to reach the total (DGI fiscal representation).
+  commands.push(...textToBytes(alignLeftRight('Subtotal:', formatCurrency(receiptData.subtotal), RECEIPT_WIDTH)));
   commands.push(LF);
 
   if (receiptData.discount > 0) {
@@ -725,7 +719,7 @@ export function generateEscPosCommands(receiptData, options = {}) {
     commands.push(LF);
   }
 
-  commands.push(...textToBytes(alignLeftRight('ITBMS incluido:', formatCurrency(receiptData.tax), RECEIPT_WIDTH)));
+  commands.push(...textToBytes(alignLeftRight('ITBMS:', formatCurrency(receiptData.tax), RECEIPT_WIDTH)));
   commands.push(LF);
   
   // Total - bold and larger
