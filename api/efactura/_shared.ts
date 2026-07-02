@@ -227,8 +227,16 @@ export async function buildPayloadForOrder(
 
   const isDelivery = (i: OrderItemRow) =>
     (i.product_id && productMeta.get(i.product_id)?.product_type === 'delivery') || false;
+  // Gift cards are stored value, not a sale — they must NOT appear on the factura
+  // (DGI). Exclude their lines and back their amount out of the order totals; the
+  // POS prints a separate non-fiscal gift-card ticket for them.
+  const isGiftCard = (i: OrderItemRow) =>
+    (i.product_id && productMeta.get(i.product_id)?.product_type === 'gift_card') || false;
+  const giftCardTotal = round2(
+    items.filter(isGiftCard).reduce((s, i) => s + abs(i.line_total ?? i.unit_price * i.quantity), 0),
+  );
 
-  const productItems = items.filter((i) => !isDelivery(i));
+  const productItems = items.filter((i) => !isDelivery(i) && !isGiftCard(i));
   const grossProducts = productItems.reduce(
     (s, i) => s + abs(i.line_total ?? i.unit_price * i.quantity),
     0,
@@ -254,8 +262,9 @@ export async function buildPayloadForOrder(
     };
   });
 
-  // Delivery derived from totals (covers item / standalone / waived).
-  const netDelivery = round2(abs(o.subtotal) - (grossProducts - abs(o.discount_amount || 0)));
+  // Delivery derived from totals (covers item / standalone / waived). The gift
+  // card sits in o.subtotal at face value (exempt), so remove it here too.
+  const netDelivery = round2(abs(o.subtotal) - giftCardTotal - (grossProducts - abs(o.discount_amount || 0)));
   if (netDelivery > 0.005) {
     lines.push({
       description: 'Servicio de entrega',
@@ -289,15 +298,25 @@ export async function buildPayloadForOrder(
     .maybeSingle();
   const itbmsRate = company?.itbms_rate ?? 7;
 
-  const payments = (o.payments || []).map((p) => ({
+  // Factura total excludes the gift-card amount (stored value, not a sale). Its
+  // ITBMS is 0 (exempt), so tax_amount is unchanged.
+  const facturaTotal = round2(abs(o.total) - giftCardTotal);
+
+  let payments = (o.payments || []).map((p) => ({
     method: p.payment_method,
     amount: abs(p.amount),
     change: abs(p.change_amount),
   }));
+  // Forma de pago must sum to the factura total. When a gift card shares the
+  // ticket, attribute the sale portion to the largest tender so vuelto stays 0.
+  if (giftCardTotal > 0) {
+    const primary = [...payments].sort((a, b) => b.amount - a.amount)[0];
+    payments = [{ method: primary?.method || 'efectivo', amount: facturaTotal, change: 0 }];
+  }
 
   const payload = buildInvoiceRequest({
     docType,
-    order: { discount_amount: abs(o.discount_amount), tax_amount: abs(o.tax_amount), total: abs(o.total) },
+    order: { discount_amount: abs(o.discount_amount), tax_amount: abs(o.tax_amount), total: facturaTotal },
     items: lines,
     payments,
     customer,

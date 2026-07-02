@@ -1935,59 +1935,88 @@ function TicketPanel() {
                   if (isPrinterConnected()) {
                     const hasCashPayment = paymentInfo.payments.some(p => p.method === 'cash');
 
-                    // Gift cards are prepayment, not a sale → non-fiscal info ticket.
+                    // Gift cards are stored value, not a sale: they print a separate
+                    // non-fiscal ticket and are EXCLUDED from the factura and the
+                    // sale receipt (matching the emitted CAFE).
                     const giftCardItems = state.ticket.items.filter(
                       (it) => it.product?.product_type === 'gift_card'
                     );
-                    const giftCardOnly =
-                      state.ticket.items.length > 0 &&
-                      giftCardItems.length === state.ticket.items.length;
-                    // A real fiscal sale: paid now, not on account, not gift-card-only.
+                    const saleItems = state.ticket.items.filter(
+                      (it) => it.product?.product_type !== 'gift_card'
+                    );
+                    const giftCardTotal = giftCardItems.reduce((s, it) => s + (it.lineTotal || 0), 0);
+                    const saleTotal = (newOrder.total ?? 0) - giftCardTotal;
                     const isFiscalSale =
-                      !giftCardOnly &&
+                      saleItems.length > 0 &&
                       !paymentInfo.payOnPickup &&
                       !paymentInfo.onAccount &&
-                      (newOrder.total ?? 0) > 0;
+                      saleTotal > 0;
 
                     try {
-                      if (giftCardOnly) {
-                        for (const it of giftCardItems) {
-                          await printGiftCardTicket(
-                            it.giftCard || { code: '', current_balance: 0, amountLoaded: it.lineTotal },
-                            it.product,
-                            state.store,
-                            state.company,
-                          );
-                        }
-                        if (hasCashPayment) await openCashDrawer();
-                      } else if (isFiscalSale) {
-                        // Wait for the auto-emitted factura to reach a terminal
-                        // status, then print its representación impresa (CAFE: QR +
-                        // CUFE). We expect an invoice (fiscal sale), so wait the full
-                        // window through PAC/serverless latency instead of bailing
-                        // early. On rejection/timeout, fall back to the internal
-                        // receipt — the CAFE can be reprinted once authorized.
-                        setPrintStatus('Emitiendo factura...');
-                        const invoice = await waitForOrderInvoice(newOrder.id, {
-                          expectInvoice: true,
-                          delayMs: 600,
-                          timeoutMs: 10000, // hard cap — fall back to plain receipt after 10s
-                        });
-                        setPrintStatus('Imprimiendo...');
-                        if (invoice && invoice.status === 'authorized') {
-                          await printFiscalReceipt(receiptData, invoice, hasCashPayment);
-                        } else {
-                          await printReceipt(receiptData, hasCashPayment);
-                          if (invoice?.status === 'rejected') {
-                            console.warn('Factura rechazada:', invoice.error || invoice.rejection_reason);
-                            alert('La factura electrónica fue rechazada. Se imprimió el recibo interno; reintente la factura desde el detalle de la orden.');
-                          } else if (!invoice) {
-                            console.warn('Factura aún pendiente al imprimir; reimprima el CAFE desde el detalle cuando autorice.');
+                      // 1) Separate non-fiscal gift-card ticket(s).
+                      for (const it of giftCardItems) {
+                        await printGiftCardTicket(
+                          it.giftCard || { code: '', current_balance: 0, amountLoaded: it.lineTotal },
+                          it.product,
+                          state.store,
+                          state.company,
+                        );
+                      }
+
+                      // 2) Sale receipt (CAFE for the fiscal items). Back the gift
+                      // card out of the totals + forma de pago so it matches the
+                      // emitted factura.
+                      if (saleItems.length > 0) {
+                        const saleOrder = {
+                          ...newOrder,
+                          subtotal: (newOrder.subtotal ?? 0) - giftCardTotal,
+                          total: saleTotal,
+                        };
+                        const salePayments = giftCardTotal > 0
+                          ? [{
+                              method: [...paymentInfo.payments].sort((a, b) => (b.amount || 0) - (a.amount || 0))[0]?.method || 'cash',
+                              amount: saleTotal,
+                            }]
+                          : paymentInfo.payments;
+                        const saleReceiptData = generateReceiptData(
+                          saleOrder,
+                          state.company,
+                          state.store,
+                          saleItems,
+                          salePayments,
+                          loyaltyInfoForReceipt,
+                        );
+
+                        if (isFiscalSale) {
+                          // Wait for the auto-emitted factura to reach a terminal
+                          // status, then print its representación impresa (CAFE:
+                          // QR + CUFE). On rejection/timeout, fall back to the
+                          // internal receipt — the CAFE can be reprinted later.
+                          setPrintStatus('Emitiendo factura...');
+                          const invoice = await waitForOrderInvoice(newOrder.id, {
+                            expectInvoice: true,
+                            delayMs: 600,
+                            timeoutMs: 10000,
+                          });
+                          setPrintStatus('Imprimiendo...');
+                          if (invoice && invoice.status === 'authorized') {
+                            await printFiscalReceipt(saleReceiptData, invoice, hasCashPayment);
+                          } else {
+                            await printReceipt(saleReceiptData, hasCashPayment);
+                            if (invoice?.status === 'rejected') {
+                              console.warn('Factura rechazada:', invoice.error || invoice.rejection_reason);
+                              alert('La factura electrónica fue rechazada. Se imprimió el recibo interno; reintente la factura desde el detalle de la orden.');
+                            } else if (!invoice) {
+                              console.warn('Factura aún pendiente al imprimir; reimprima el CAFE desde el detalle cuando autorice.');
+                            }
                           }
+                        } else {
+                          // Pay-on-pickup / B2B account → internal receipt.
+                          await printReceipt(saleReceiptData, hasCashPayment);
                         }
-                      } else {
-                        // Pay-on-pickup / B2B account / zero-total → internal receipt.
-                        await printReceipt(receiptData, hasCashPayment);
+                      } else if (hasCashPayment) {
+                        // Gift-card-only sale paid in cash → open the drawer.
+                        await openCashDrawer();
                       }
                       console.log('Receipt printed successfully');
                     } catch (printErr) {
