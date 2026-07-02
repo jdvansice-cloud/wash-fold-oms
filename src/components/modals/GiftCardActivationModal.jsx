@@ -26,16 +26,15 @@ export default function GiftCardActivationModal({ product, storeId, onConfirm, o
     try {
       const cardCode = code.trim().toUpperCase();
 
-      // Check if card already exists
-      const url = import.meta.env.SUPABASE_URL;
-      const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
-      const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' };
-
-      const lookupRes = await fetch(
-        `${url}/rest/v1/gift_cards?code=eq.${encodeURIComponent(cardCode)}&select=*`,
-        { headers }
-      );
-      const existing = await lookupRes.json();
+      // Use the authenticated staff client (supabaseStaff) — its session JWT is
+      // what the gift_cards RLS checks (auth_is_staff() + store_id in
+      // auth_store_ids()). The anon publishable key fails those.
+      const { data: existing, error: lookupErr } = await supabase
+        .from('gift_cards')
+        .select('*')
+        .eq('code', cardCode)
+        .limit(1);
+      if (lookupErr) throw lookupErr;
 
       if (existing && existing.length > 0) {
         // Card exists — top up
@@ -48,65 +47,47 @@ export default function GiftCardActivationModal({ product, storeId, onConfirm, o
 
         const newBalance = parseFloat(card.current_balance) + amount;
 
-        // Update balance
-        await fetch(`${url}/rest/v1/gift_cards?id=eq.${card.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({
-            current_balance: newBalance,
-            updated_at: new Date().toISOString(),
-          }),
-        });
+        const { error: updErr } = await supabase
+          .from('gift_cards')
+          .update({ current_balance: newBalance, updated_at: new Date().toISOString() })
+          .eq('id', card.id);
+        if (updErr) throw updErr;
 
-        // Record transaction
-        await fetch(`${url}/rest/v1/gift_card_transactions`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            gift_card_id: card.id,
-            amount: amount,
-            transaction_type: 'credit',
-            balance_after: newBalance,
-            notes: `Recarga desde POS - ${product.name}`,
-          }),
+        const { error: txErr } = await supabase.from('gift_card_transactions').insert({
+          gift_card_id: card.id,
+          amount,
+          transaction_type: 'credit',
+          balance_after: newBalance,
+          notes: `Recarga desde POS - ${product.name}`,
         });
+        if (txErr) throw txErr;
 
         setExistingCard({ ...card, current_balance: newBalance, wasTopUp: true });
         cardRecord = { code: card.code, current_balance: newBalance, amountLoaded: amount, expires_at: card.expires_at, wasTopUp: true };
       } else {
         // New card — create it
-        const createRes = await fetch(`${url}/rest/v1/gift_cards`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
+        const { data: newCard, error: createErr } = await supabase
+          .from('gift_cards')
+          .insert({
             store_id: storeId,
             code: cardCode,
             initial_value: amount,
             current_balance: amount,
             card_type: 'fixed',
             is_active: true,
-          }),
+          })
+          .select()
+          .single();
+        if (createErr) throw createErr;
+
+        const { error: txErr } = await supabase.from('gift_card_transactions').insert({
+          gift_card_id: newCard.id,
+          amount,
+          transaction_type: 'credit',
+          balance_after: amount,
+          notes: `Activacion nueva tarjeta - ${product.name}`,
         });
-
-        if (!createRes.ok) {
-          const err = await createRes.json();
-          throw new Error(err.message || 'Error creating gift card');
-        }
-
-        const [newCard] = await createRes.json();
-
-        // Record transaction
-        await fetch(`${url}/rest/v1/gift_card_transactions`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            gift_card_id: newCard.id,
-            amount: amount,
-            transaction_type: 'credit',
-            balance_after: amount,
-            notes: `Activacion nueva tarjeta - ${product.name}`,
-          }),
-        });
+        if (txErr) throw txErr;
 
         setExistingCard({ ...newCard, wasTopUp: false });
         cardRecord = { code: newCard.code, current_balance: amount, amountLoaded: amount, expires_at: newCard.expires_at, wasTopUp: false };
