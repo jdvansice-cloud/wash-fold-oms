@@ -1240,10 +1240,17 @@ export function generateGiftCardTicket(card, product, store, company) {
   commands.push(...COMMANDS.ALIGN_LEFT);
   commands.push(...textToBytes('-'.repeat(RECEIPT_WIDTH)));
   commands.push(LF);
-  commands.push(...COMMANDS.BOLD_ON);
-  commands.push(...textToBytes(`Codigo: ${card?.code || ''}`));
+  // Card code — prominent & centered, a notch smaller than the header.
+  commands.push(...COMMANDS.ALIGN_CENTER);
+  commands.push(...textToBytes('Codigo'));
   commands.push(LF);
+  commands.push(...COMMANDS.SIZE_DOUBLE_HEIGHT);
+  commands.push(...COMMANDS.BOLD_ON);
+  commands.push(...textToBytes(String(card?.code || '')));
+  commands.push(LF);
+  commands.push(...COMMANDS.SIZE_NORMAL);
   commands.push(...COMMANDS.BOLD_OFF);
+  commands.push(...COMMANDS.ALIGN_LEFT);
   commands.push(...textToBytes(alignLeftRight('Monto cargado:', formatCurrency(card?.amountLoaded ?? product?.price ?? 0), RECEIPT_WIDTH)));
   commands.push(LF);
   commands.push(...textToBytes(alignLeftRight('Saldo actual:', formatCurrency(card?.current_balance ?? 0), RECEIPT_WIDTH)));
