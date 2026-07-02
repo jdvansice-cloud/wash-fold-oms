@@ -1993,10 +1993,15 @@ function TicketPanel() {
                           // QR + CUFE). On rejection/timeout, fall back to the
                           // internal receipt — the CAFE can be reprinted later.
                           setPrintStatus('Emitiendo factura...');
+                          // Wait until the factura is terminal so the CAFE always
+                          // prints. The poll returns as soon as it's authorized (or
+                          // rejected), so the operator only waits the few seconds
+                          // the PAC actually takes; the 45s cap is just a safety net
+                          // for a stuck/unreachable PAC (then falls back to plain).
                           const invoice = await waitForOrderInvoice(newOrder.id, {
                             expectInvoice: true,
                             delayMs: 600,
-                            timeoutMs: 10000,
+                            timeoutMs: 45000,
                           });
                           setPrintStatus('Imprimiendo...');
                           if (invoice && invoice.status === 'authorized') {
