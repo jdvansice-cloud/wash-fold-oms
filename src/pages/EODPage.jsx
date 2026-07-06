@@ -14,6 +14,15 @@ import { supabase } from '../lib/supabase';
 import EFacturaReconciliation from '../components/efactura/EFacturaReconciliation';
 import AttendanceCard from '../components/AttendanceCard';
 
+// Local calendar date (YYYY-MM-DD). Must NOT use toISOString() — that's UTC, so
+// in Panamá (UTC-5) the EOD page would flip to tomorrow every evening after 7pm.
+const localYMD = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 function EODPage() {
   const { state } = useApp();
   const { appUser } = useAuth();
@@ -25,10 +34,7 @@ function EODPage() {
   const isAdmin = can('eod.editClosed');
 
   // Selected date for closing
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const today = new Date();
-    return today.toISOString().split('T')[0];
-  });
+  const [selectedDate, setSelectedDate] = useState(() => localYMD());
   
   // Cash counting state
   const [cashStart, setCashStart] = useState(100); // Default starting cash
@@ -326,7 +332,7 @@ function EODPage() {
     });
   };
   
-  const isToday = selectedDate === new Date().toISOString().split('T')[0];
+  const isToday = selectedDate === localYMD();
   
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -348,7 +354,7 @@ function EODPage() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              max={new Date().toISOString().split('T')[0]}
+              max={localYMD()}
               className="border-none focus:ring-0 text-slate-700 font-medium"
             />
           </div>

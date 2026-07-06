@@ -254,7 +254,7 @@ function PaymentModal({
   const canComplete =
     (remaining === 0 && tenders.length > 0) || cashFull || amtFull || gcFull || loyaltyFull;
 
-  function complete() {
+  async function complete() {
     let finalTenders = [...tenders];
     if (cashFull) {
       finalTenders.push({ ...buildCashTender(selected.name, remaining, Number(cashTendered) || 0), note: note.trim() || undefined });
@@ -287,27 +287,35 @@ function PaymentModal({
     }
 
     setProcessing(true);
-    // Pay-on-pickup and B2B credit are UNPAID orders: nothing is collected now
-    // and no payment rows are recorded — just the order itself, marked unpaid.
-    if (hasPickup || hasCredit) {
-      onComplete({
-        payments: [],
-        totalPaid: 0,
-        change: 0,
-        payOnPickup: hasPickup,
-        onAccount: hasCredit,
-        timestamp: new Date().toISOString(),
-        freeServicesApplied,
-      });
-      return;
+    // Await the parent so a failure unfreezes the button (was stuck on
+    // "Procesando…") instead of leaving the operator with a dead modal.
+    try {
+      // Pay-on-pickup and B2B credit are UNPAID orders: nothing is collected now
+      // and no payment rows are recorded — just the order itself, marked unpaid.
+      if (hasPickup || hasCredit) {
+        await onComplete({
+          payments: [],
+          totalPaid: 0,
+          change: 0,
+          payOnPickup: hasPickup,
+          onAccount: hasCredit,
+          timestamp: new Date().toISOString(),
+          freeServicesApplied,
+        });
+      } else {
+        await onComplete({
+          payments: finalTenders,
+          totalPaid: sumApplied(finalTenders),
+          change: totalChange(finalTenders),
+          timestamp: new Date().toISOString(),
+          freeServicesApplied,
+        });
+      }
+    } catch (err) {
+      console.error('Error al completar el pago:', err);
+    } finally {
+      setProcessing(false);
     }
-    onComplete({
-      payments: finalTenders,
-      totalPaid: sumApplied(finalTenders),
-      change: totalChange(finalTenders),
-      timestamp: new Date().toISOString(),
-      freeServicesApplied,
-    });
   }
 
   const iconFor = (m) =>
@@ -337,8 +345,12 @@ function PaymentModal({
 
   const isSelected = (m) => selected && (selected.key === m.key);
 
+  // Don't let a backdrop/X tap dismiss the modal while a charge is in flight —
+  // that "cancels" a sale that's actually completing and re-exposes the ticket.
+  const safeClose = () => { if (!processing) onClose(); };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 pb-4 animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 pb-4 animate-fade-in" onClick={safeClose}>
       <div className="absolute inset-0 bg-black/50" />
       <div
         className="relative bg-white rounded-2xl shadow-elevated w-full max-w-lg max-h-[calc(100vh-5rem)] flex flex-col animate-scale-in"
@@ -347,7 +359,7 @@ function PaymentModal({
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-100 p-4">
           <h2 className="text-lg font-semibold text-slate-800">Cobrar</h2>
-          <button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
+          <button onClick={safeClose} disabled={processing} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-40">
             <X className="w-5 h-5" />
           </button>
         </div>

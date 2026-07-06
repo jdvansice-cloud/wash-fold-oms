@@ -685,12 +685,25 @@ export function useDataLoader() {
 
   const addCustomer = async (customerData) => {
     try {
+      // Whitelist real DB columns and force the current store. This is the single
+      // sanitization point: the POS inline form used to pass a fake `id`,
+      // store_id:'store-001', and non-existent columns (phone_country_code,
+      // address_city, loyalty_points) that made PostgREST reject the insert.
+      const c = customerData || {};
+      const ALLOWED = [
+        'first_name', 'last_name', 'phone_country', 'phone', 'email',
+        'address_street', 'address_building', 'address_corregimiento',
+        'address_district', 'address_province', 'id_type', 'id_number',
+        'company_name', 'ruc', 'dv', 'can_be_invoiced', 'account_balance',
+        'preferences', 'notes',
+      ];
+      const row = { store_id: storeId };
+      for (const k of ALLOWED) if (c[k] !== undefined) row[k] = c[k];
+      if (row.can_be_invoiced === undefined) row.can_be_invoiced = c.id_type === 'ruc';
+
       const { data, error } = await supabase
         .from('customers')
-        .insert({
-          store_id: storeId,
-          ...customerData
-        })
+        .insert(row)
         .select()
         .single();
 

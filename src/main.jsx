@@ -6,6 +6,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import App from './App'
 import { AppProvider } from './context/AppContext'
 import { ToastProvider } from './components/Toast'
+import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { queryClient } from './lib/queryClient'
 import './index.css'
 
@@ -32,7 +33,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <AppProvider>
           <ToastProvider>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </ToastProvider>
         </AppProvider>
       </BrowserRouter>

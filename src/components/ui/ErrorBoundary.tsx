@@ -37,12 +37,20 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
           <p className="text-sm text-slate-600 mb-4">
             {this.state.error?.message || 'Error inesperado'}
           </p>
-          <button
-            onClick={() => this.setState({ hasError: false, error: undefined })}
-            className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"
-          >
-            Intentar de nuevo
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => this.setState({ hasError: false, error: undefined })}
+              className="px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 text-sm"
+            >
+              Intentar de nuevo
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 text-sm"
+            >
+              Recargar
+            </button>
+          </div>
         </div>
       );
     }

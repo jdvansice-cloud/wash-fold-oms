@@ -1970,10 +1970,12 @@ function TicketPanel() {
                       console.log('Receipt printed successfully');
                     } catch (printErr) {
                       console.error('Print failed (order still completed):', printErr);
+                      alert(`No se imprimio el recibo (la orden #${newOrder.order_number} SI se registro). Verifique QZ Tray y la impresora; puede reimprimir el CAFE desde el detalle de la orden.`);
                     }
                   } else {
-                    // Printer not connected - just log, don't try to auto-connect
-                    console.log('Printer not connected. Connect in Settings > Impresora to enable printing.');
+                    // Order registered but no printer configured — tell the operator.
+                    console.log('Printer not connected.');
+                    alert(`La orden #${newOrder.order_number} se registro, pero NO hay impresora conectada. Conectela en Configuracion → Impresora y reimprima desde el detalle de la orden.`);
                   }
                 } catch (receiptErr) {
                   console.error('Receipt error (order still completed):', receiptErr);
