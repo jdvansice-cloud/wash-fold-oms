@@ -9,6 +9,7 @@ import { statusConfig } from '../data/helpers';
 import { InvoiceStatus } from '../components/efactura/InvoiceStatus';
 import PaymentModal from '../components/modals/PaymentModal';
 import { generateReceiptData, printCreditNote, printRefundTicket, isPrinterConnected } from '../utils/receiptPrinter';
+import { restHeaders } from '../lib/restAuth';
 
 // Polls for the refund order's nota de crédito (doc 06) until it reaches a
 // terminal status or a 10s wall-clock cap, so we can print its CAFE.
@@ -16,7 +17,7 @@ const waitForCreditNote = async (orderId, { delayMs = 600, timeoutMs = 10000 } =
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || !orderId) return null;
-  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const headers = await restHeaders();
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {

@@ -7,6 +7,7 @@ import {
 import { useApp } from '../context/AppContext';
 import { useDataLoader } from '../hooks/useDataLoader';
 import { supabase } from '../lib/supabase';
+import { restHeaders } from '../lib/restAuth';
 import CustomerTaxExempt from '../components/CustomerTaxExempt';
 
 // Helper to display order number (legacy CC orders or new orders)
@@ -27,7 +28,7 @@ const fetchCustomerLoyalty = async (customerId) => {
   try {
     const response = await fetch(
       `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (response.ok) {
@@ -51,7 +52,7 @@ const fetchLoyaltySettings = async (storeId) => {
   try {
     const response = await fetch(
       `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (response.ok) {
@@ -348,7 +349,7 @@ function CustomerDetailsModal({ customer, onClose, onEdit, orders: initialOrders
         // Fetch all orders for this customer
         const response = await fetch(
           `${url}/rest/v1/orders?customer_id=eq.${customer.id}&order=created_at.desc&limit=1000`,
-          { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+          { headers: await restHeaders() }
         );
         
         if (response.ok) {

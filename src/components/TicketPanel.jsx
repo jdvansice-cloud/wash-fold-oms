@@ -20,6 +20,7 @@ import {
 } from '../utils/receiptPrinter';
 import MachineAssignModal from './modals/MachineAssignModal';
 import { recordMachineUsage } from '../hooks/queries/useMachines';
+import { restHeaders } from '../lib/restAuth';
 
 // Helper to fetch customer loyalty data
 const fetchCustomerLoyalty = async (customerId) => {
@@ -31,7 +32,7 @@ const fetchCustomerLoyalty = async (customerId) => {
   try {
     const response = await fetch(
       `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (response.ok) {
@@ -61,7 +62,7 @@ const waitForOrderInvoice = async (orderId, { delayMs = 600, expectInvoice = fal
   const url = import.meta.env.SUPABASE_URL;
   const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key || !orderId) return null;
-  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const headers = await restHeaders();
 
   const deadline = Date.now() + timeoutMs;
   let i = 0;
@@ -100,7 +101,7 @@ const fetchLoyaltySettings = async (storeId) => {
   try {
     const response = await fetch(
       `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (response.ok) {
@@ -136,7 +137,7 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
     // 1. Get loyalty settings
     const settingsRes = await fetch(
       `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (!settingsRes.ok) return null;
@@ -159,7 +160,7 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
     // 2. Get or create customer loyalty record
     let loyaltyRes = await fetch(
       `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     let loyalty = null;
@@ -172,12 +173,7 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
     if (!loyalty) {
       const createRes = await fetch(`${url}/rest/v1/customer_loyalty`, {
         method: 'POST',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=representation' }),
         body: JSON.stringify({
           customer_id: customerId,
           store_id: storeId,
@@ -207,11 +203,7 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
       `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
       {
         method: 'PATCH',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           points_balance: balanceAfter,
           total_points_earned: totalEarned,
@@ -229,11 +221,7 @@ const addLoyaltyPointsForOrder = async (customerId, storeId, subtotal, orderId, 
     // 4. Log the transaction
     await fetch(`${url}/rest/v1/loyalty_transactions`, {
       method: 'POST',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers: await restHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         customer_id: customerId,
         store_id: storeId,
@@ -272,7 +260,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
     // 1. Get loyalty settings
     const settingsRes = await fetch(
       `${url}/rest/v1/loyalty_settings?store_id=eq.${storeId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (!settingsRes.ok) return null;
@@ -344,7 +332,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
     // 4. Get or create customer loyalty record
     let loyaltyRes = await fetch(
       `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     let loyalty = null;
@@ -357,12 +345,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
     if (!loyalty) {
       const createRes = await fetch(`${url}/rest/v1/customer_loyalty`, {
         method: 'POST',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json', 'Prefer': 'return=representation' }),
         body: JSON.stringify({
           customer_id: customerId,
           store_id: storeId,
@@ -428,11 +411,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
       `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
       {
         method: 'PATCH',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(updateData)
       }
     );
@@ -446,11 +425,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
     if (washPunches > 0) {
       await fetch(`${url}/rest/v1/loyalty_transactions`, {
         method: 'POST',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           customer_id: customerId,
           store_id: storeId,
@@ -466,11 +441,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
       if (freeWashesEarned > 0) {
         await fetch(`${url}/rest/v1/loyalty_transactions`, {
           method: 'POST',
-          headers: {
-            'apikey': key,
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-          },
+          headers: await restHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             customer_id: customerId,
             store_id: storeId,
@@ -486,11 +457,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
     if (dryPunches > 0) {
       await fetch(`${url}/rest/v1/loyalty_transactions`, {
         method: 'POST',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           customer_id: customerId,
           store_id: storeId,
@@ -506,11 +473,7 @@ const addLoyaltyPunches = async (customerId, storeId, items, sections, orderId, 
       if (freeDrysEarned > 0) {
         await fetch(`${url}/rest/v1/loyalty_transactions`, {
           method: 'POST',
-          headers: {
-            'apikey': key,
-            'Authorization': `Bearer ${key}`,
-            'Content-Type': 'application/json',
-          },
+          headers: await restHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
             customer_id: customerId,
             store_id: storeId,
@@ -574,7 +537,7 @@ const redeemLoyaltyPoints = async (customerId, storeId, amount, orderId) => {
     // Get customer loyalty record
     const loyaltyRes = await fetch(
       `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (!loyaltyRes.ok) return null;
@@ -595,11 +558,7 @@ const redeemLoyaltyPoints = async (customerId, storeId, amount, orderId) => {
       `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
       {
         method: 'PATCH',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           points_balance: balanceAfter,
           total_points_redeemed: totalRedeemed,
@@ -616,11 +575,7 @@ const redeemLoyaltyPoints = async (customerId, storeId, amount, orderId) => {
     // Log the transaction
     await fetch(`${url}/rest/v1/loyalty_transactions`, {
       method: 'POST',
-      headers: {
-        'apikey': key,
-        'Authorization': `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers: await restHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         customer_id: customerId,
         store_id: storeId,
@@ -658,7 +613,7 @@ const redeemFreeServices = async (customerId, storeId, freeWashes, freeDrys, ord
     // Get customer loyalty record
     const loyaltyRes = await fetch(
       `${url}/rest/v1/customer_loyalty?customer_id=eq.${customerId}&select=*`,
-      { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+      { headers: await restHeaders() }
     );
     
     if (!loyaltyRes.ok) return null;
@@ -699,11 +654,7 @@ const redeemFreeServices = async (customerId, storeId, freeWashes, freeDrys, ord
       `${url}/rest/v1/customer_loyalty?id=eq.${loyalty.id}`,
       {
         method: 'PATCH',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(updateData)
       }
     );
@@ -717,11 +668,7 @@ const redeemFreeServices = async (customerId, storeId, freeWashes, freeDrys, ord
     if (freeWashes > 0) {
       await fetch(`${url}/rest/v1/loyalty_transactions`, {
         method: 'POST',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           customer_id: customerId,
           store_id: storeId,
@@ -736,11 +683,7 @@ const redeemFreeServices = async (customerId, storeId, freeWashes, freeDrys, ord
     if (freeDrys > 0) {
       await fetch(`${url}/rest/v1/loyalty_transactions`, {
         method: 'POST',
-        headers: {
-          'apikey': key,
-          'Authorization': `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
+        headers: await restHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           customer_id: customerId,
           store_id: storeId,
@@ -1728,8 +1671,13 @@ function TicketPanel() {
                   : 'Walk-in',
                 is_walk_in: !state.ticket.customer,
                 is_express: state.ticket.isExpress,
-                subtotal: calculations.subtotal,
-                discount_amount: calculations.discountAmount + (freeServicesApplied.totalDiscount || 0), // Include free services discount with tax
+                // Free loyalty services: reduce the EX-ITBMS subtotal and add the
+                // EX-ITBMS (base) discount only — the tax portion is taken out of
+                // tax_amount. Keeping subtotal/discount in ex-tax terms lets the
+                // factura reconcile (subtotal + tax === total; buildInvoice would
+                // otherwise throw + emit a phantom delivery line).
+                subtotal: calculations.subtotal - (freeServicesApplied.discountAmount || 0),
+                discount_amount: calculations.discountAmount + (freeServicesApplied.discountAmount || 0),
                 delivery_charge: calculations.deliveryCharge,
                 tax_amount: calculations.taxAmount - (freeServicesApplied.taxDiscount || 0), // Reduce tax by the free services tax discount
                 total: adjustedTotal, // Use adjusted total
@@ -1915,11 +1863,7 @@ function TicketPanel() {
                       try {
                         await fetch(`${url}/rest/v1/orders?id=eq.${newOrder.id}`, {
                           method: 'PATCH',
-                          headers: {
-                            'apikey': key,
-                            'Authorization': `Bearer ${key}`,
-                            'Content-Type': 'application/json',
-                          },
+                          headers: await restHeaders({ 'Content-Type': 'application/json' }),
                           body: JSON.stringify({ receipt_path: receiptPath }),
                         });
                         console.log('Order updated with receipt path');

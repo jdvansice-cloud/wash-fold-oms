@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTenant } from '../hooks/useTenant';
 import { usePermission } from '../hooks/usePermission';
 import { roleLabels } from '../utils/permissions';
+import { restHeaders } from '../lib/restAuth';
 import { useOpenTimeEntry, useClockToggle, workedMinutes } from '../hooks/queries/useTimeClock';
 import StoreSwitcher from './StoreSwitcher';
 
@@ -381,7 +382,7 @@ function GiftCardLookupModal({ onClose }) {
       const key = import.meta.env.SUPABASE_PUBLISHABLE_KEY;
       const response = await fetch(
         `${url}/rest/v1/gift_cards?code=eq.${encodeURIComponent(code.trim().toUpperCase())}&select=id,code,initial_value,current_balance,is_active,expires_at,created_at`,
-        { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+        { headers: await restHeaders() }
       );
       const data = await response.json();
 

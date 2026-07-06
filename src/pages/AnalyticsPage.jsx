@@ -6,6 +6,7 @@ import {
   ChevronDown, X, ArrowLeftRight, RotateCcw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { restHeaders } from '../lib/restAuth';
 import AnalyticsCockpit from '../components/analytics/AnalyticsCockpit';
 
 function AnalyticsPage() {
@@ -116,7 +117,7 @@ function AnalyticsPage() {
         
         const response = await fetch(
           `${url}/rest/v1/orders?store_id=eq.${state.store.id}&created_at=gte.${startISO}&created_at=lte.${endISO}&order=created_at.desc&limit=10000`,
-          { headers: { 'apikey': key, 'Authorization': `Bearer ${key}` } }
+          { headers: await restHeaders() }
         );
         
         if (response.ok) {
