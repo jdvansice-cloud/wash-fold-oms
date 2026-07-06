@@ -3115,10 +3115,13 @@ function ProductsSettings() {
   
   const ITBMS_RATE = state.settings?.itbms_rate || 7;
   
-  // Helper to calculate price with ITBMS
-  const getPriceWithTax = (basePrice) => {
+  // Sale price shown in the list: taxable products store the ex-ITBMS base so we
+  // gross it up; NON-taxable products store the final price already — showing
+  // them with tax added was displaying a price nobody pays.
+  const getSalePrice = (product, basePrice) => {
     if (!basePrice) return null;
-    return basePrice * (1 + ITBMS_RATE / 100);
+    const taxable = product?.is_taxable !== false;
+    return taxable ? basePrice * (1 + ITBMS_RATE / 100) : basePrice;
   };
   
   // Sections from state
@@ -3520,10 +3523,10 @@ function ProductsSettings() {
                               {isChildSaving && <p className="text-xs text-amber-600">Guardando...</p>}
                             </div>
                             <span className="text-sm font-medium text-slate-800 w-24 text-right">
-                              {child.price ? `B/${getPriceWithTax(child.price).toFixed(2)}` : '-'}
+                              {child.price ? `B/${getSalePrice(child, child.price).toFixed(2)}` : '-'}
                             </span>
                             <span className="text-sm text-slate-500 w-24 text-right">
-                              {child.express_price ? `B/${getPriceWithTax(child.express_price).toFixed(2)}` : '-'}
+                              {child.express_price ? `B/${getSalePrice(child, child.express_price).toFixed(2)}` : '-'}
                             </span>
                             {child.pricing_type === 'weight' ? (
                               <span className="badge bg-blue-100 text-blue-700 text-xs w-20 justify-center">
@@ -3583,10 +3586,10 @@ function ProductsSettings() {
                       {sections.find(s => s.id === group.product.section_id)?.name || '-'}
                     </span>
                     <span className="text-sm font-medium text-slate-800 w-24 text-right">
-                      {group.product.price ? `B/${getPriceWithTax(group.product.price).toFixed(2)}` : '-'}
+                      {group.product.price ? `B/${getSalePrice(group.product, group.product.price).toFixed(2)}` : '-'}
                     </span>
                     <span className="text-sm text-slate-500 w-24 text-right">
-                      {group.product.express_price ? `B/${getPriceWithTax(group.product.express_price).toFixed(2)}` : '-'}
+                      {group.product.express_price ? `B/${getSalePrice(group.product, group.product.express_price).toFixed(2)}` : '-'}
                     </span>
                     {group.product.pricing_type === 'weight' ? (
                       <span className="badge bg-blue-100 text-blue-700 text-xs w-20 justify-center">

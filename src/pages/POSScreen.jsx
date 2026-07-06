@@ -207,8 +207,11 @@ function POSScreen() {
 // Product Tile Component
 function ProductTile({ product, onClick, isExpress, delay, itbmsRate = 7 }) {
   const basePrice = isExpress ? (product.express_price || product.price) : product.price;
-  // Calculate price with ITBMS included for display
-  const priceWithTax = basePrice * (1 + itbmsRate / 100);
+  // Sale price for display: taxable products store the ex-ITBMS base (gross it
+  // up); non-taxable ones (e.g. gift cards) store the final price already.
+  const priceWithTax = product.is_taxable !== false
+    ? basePrice * (1 + itbmsRate / 100)
+    : basePrice;
   const isWeightBased = product.pricing_type === 'weight';
   const hasChildren = product.has_children;
   

@@ -11,8 +11,11 @@ function WeightEntryModal({ product, isExpress, onClose, onSubmit, itbmsRate = 7
   });
   
   const basePrice = isExpress ? (product.express_price || product.price) : product.price;
-  // Calculate price with ITBMS for display
-  const priceWithTax = basePrice * (1 + itbmsRate / 100);
+  // Sale price for display: taxable services store the ex-ITBMS base (gross it
+  // up); a non-taxable one stores the final price already.
+  const priceWithTax = product?.is_taxable !== false
+    ? basePrice * (1 + itbmsRate / 100)
+    : basePrice;
   
   const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0);
   const totalPrice = totalWeight * priceWithTax;

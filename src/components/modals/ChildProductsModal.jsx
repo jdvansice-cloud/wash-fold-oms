@@ -4,8 +4,10 @@ import { X } from 'lucide-react';
 function ChildProductsModal({ parentProduct, childProducts, onClose, onSelect, itbmsRate = 7 }) {
   const formatCurrency = (amount) => `B/${amount.toFixed(2)}`;
   
-  // Calculate price with ITBMS
-  const getPriceWithTax = (basePrice) => basePrice * (1 + itbmsRate / 100);
+  // Sale price: taxable products store the ex-ITBMS base (gross it up);
+  // non-taxable ones store the final price already.
+  const getSalePrice = (child) =>
+    child.is_taxable !== false ? child.price * (1 + itbmsRate / 100) : child.price;
   
   return (
     <div className="modal-backdrop flex items-center justify-center p-4 animate-fade-in">
@@ -39,7 +41,7 @@ function ChildProductsModal({ parentProduct, childProducts, onClose, onSelect, i
                 {child.name}
               </span>
               <span className="font-semibold text-primary-600">
-                {formatCurrency(getPriceWithTax(child.price))}
+                {formatCurrency(getSalePrice(child))}
               </span>
             </button>
           ))}
