@@ -147,19 +147,24 @@ function EODPage() {
         const breakdown = {};
         const add = (method, amount) => {
           const m = method || 'Otro';
-          breakdown[m] = (breakdown[m] || 0) + Math.abs(amount || 0);
+          // Sign-preserved: refund payments are stored NEGATIVE and must SUBTRACT
+          // (cash refunds were previously added as positive, overstating the drawer).
+          breakdown[m] = (breakdown[m] || 0) + (Number(amount) || 0);
         };
 
-        // Payments on orders created this day (immediate sales + pickup settles).
-        const orderIds = dailyStats.orders.map((o) => o.id);
-        if (orderIds.length) {
-          const { data: payments, error } = await supabase
-            .from('payments')
-            .select('payment_method, amount')
-            .in('order_id', orderIds);
-          if (error) throw error;
-          (payments || []).forEach((p) => add(p.payment_method, p.amount));
-        }
+        // Every non-B2B payment whose money MOVED this day — immediate sales,
+        // pay-on-pickup settles, and refunds — attributed by the PAYMENT date, not
+        // the order's creation date. A pickup created Monday and settled Wednesday
+        // now lands in Wednesday's drawer (where the cash actually came in).
+        const { data: payments, error } = await supabase
+          .from('payments')
+          .select('payment_method, amount, orders!inner(store_id)')
+          .is('b2b_invoice_id', null)
+          .gte('created_at', dateStart.toISOString())
+          .lte('created_at', dateEnd.toISOString())
+          .eq('orders.store_id', state.store.id);
+        if (error) throw error;
+        (payments || []).forEach((p) => add(p.payment_method, p.amount));
 
         // B2B consolidated-invoice payments COLLECTED this day (attributed to the
         // collection date, not the orders' creation dates).
@@ -180,7 +185,7 @@ function EODPage() {
     };
     
     loadPaymentBreakdown();
-  }, [dailyStats.orders, state.store?.id, selectedDate]);
+  }, [state.store?.id, selectedDate]);
   
   // Money actually collected = the recorded payments. Pay-on-pickup orders are
   // unpaid (no payment rows), so they never appear here; their total is shown
