@@ -160,6 +160,8 @@ interface OrderItemRow {
   unit_price: number;
   line_total: number;
   total_weight: number | null;
+  /** Per-line tax flag for generic (product_id NULL) items; null = taxable. */
+  is_taxable?: boolean | null;
 }
 interface PaymentRow {
   payment_method: string;
@@ -255,7 +257,9 @@ export async function buildPayloadForOrder(
       quantity: cantidad,
       unitPrice: abs(i.unit_price),
       lineTotal: abs(i.line_total ?? i.unit_price * i.quantity),
-      isTaxable: meta ? meta.is_taxable : true,
+      // Catalog products carry the flag on the product; generic lines
+      // (product_id NULL) persist it on the row. NULL/absent = taxable.
+      isTaxable: meta ? meta.is_taxable : i.is_taxable !== false,
       isDiscountable: true,
       codigoItemCodificacionPanamena: meta?.cpbs_code ?? config.default_cpbs_code ?? undefined,
       codigoItemCodificacionPanamenaAbreviada: meta?.cpbs_code_short ?? config.default_cpbs_code_short ?? undefined,

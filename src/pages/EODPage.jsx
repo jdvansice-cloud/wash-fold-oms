@@ -186,6 +186,32 @@ function EODPage() {
     
     loadPaymentBreakdown();
   }, [state.store?.id, selectedDate]);
+
+  // Generic (ad-hoc) sale lines of the day — product_id IS NULL. Listed for
+  // supervision: cashiers know the admin reviews every free-typed item here.
+  const [genericItems, setGenericItems] = useState([]);
+  useEffect(() => {
+    const loadGenericItems = async () => {
+      if (!state.store?.id) return;
+      const dateStart = new Date(`${selectedDate}T00:00:00`);
+      const dateEnd = new Date(`${selectedDate}T23:59:59.999`);
+      try {
+        const { data, error } = await supabase
+          .from('order_items')
+          .select('id, product_name, quantity, line_total, is_taxable, orders!inner(order_number, status, store_id, created_at)')
+          .is('product_id', null)
+          .gte('orders.created_at', dateStart.toISOString())
+          .lte('orders.created_at', dateEnd.toISOString())
+          .eq('orders.store_id', state.store.id);
+        if (error) throw error;
+        setGenericItems(data || []);
+      } catch (err) {
+        console.error('Error loading generic items:', err);
+        setGenericItems([]);
+      }
+    };
+    loadGenericItems();
+  }, [state.store?.id, selectedDate]);
   
   // Money actually collected = the recorded payments. Pay-on-pickup orders are
   // unpaid (no payment rows), so they never appear here; their total is shown
@@ -539,6 +565,48 @@ function EODPage() {
                       <span className="font-semibold text-indigo-700">{formatCurrency(accountPending)}</span>
                     </div>
                   )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Generic (ad-hoc) sales — supervision list. Always visible: showing
+              "0" days too makes clear this is reviewed daily. */}
+          <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-amber-100 bg-amber-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                <h2 className="font-semibold text-slate-800">Ventas Genéricas (supervisión)</h2>
+              </div>
+              <span className="text-sm font-semibold text-amber-700">
+                {genericItems.length} · {formatCurrency(genericItems.reduce((s, it) => s + (Number(it.line_total) || 0), 0))}
+              </span>
+            </div>
+            <div className="p-5">
+              {genericItems.length === 0 ? (
+                <p className="text-slate-400 text-sm text-center py-2">
+                  Sin ventas genéricas este día
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 mb-2">
+                    Artículos escritos a mano por el cajero (sin producto de catálogo). Revise que correspondan a ventas reales.
+                  </p>
+                  {genericItems.map((it) => (
+                    <div key={it.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <span className="font-medium text-slate-700">{it.product_name || '(sin descripción)'}</span>
+                        <span className="ml-2 text-xs text-slate-400">
+                          Orden #{it.orders?.order_number}
+                          {it.is_taxable === false && ' · exento'}
+                          {it.orders?.status === 'refund' && ' · reembolso'}
+                        </span>
+                      </div>
+                      <span className={`font-semibold ${Number(it.line_total) < 0 ? 'text-red-600' : 'text-slate-800'}`}>
+                        {formatCurrency(Number(it.line_total) || 0)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

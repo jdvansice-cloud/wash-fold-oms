@@ -188,11 +188,14 @@ function appReducer(state, action) {
     }
       
     case actionTypes.ADD_ITEM: {
+      // Merge only catalog products (truthy id): generic ad-hoc lines all carry
+      // id null and would otherwise wrongly merge into one line.
       const existingIndex = state.ticket.items.findIndex(
-        item => item.product.id === action.payload.product.id && 
+        item => item.product.id &&
+                item.product.id === action.payload.product.id &&
                 item.product.pricing_type === 'quantity'
       );
-      
+
       if (existingIndex >= 0 && action.payload.product.pricing_type === 'quantity') {
         // Increment quantity for quantity-based products
         const newItems = [...state.ticket.items];

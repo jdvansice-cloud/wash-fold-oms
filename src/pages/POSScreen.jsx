@@ -5,6 +5,7 @@ import WeightEntryModal from '../components/modals/WeightEntryModal';
 import ChildProductsModal from '../components/modals/ChildProductsModal';
 import CustomerSearchModal from '../components/modals/CustomerSearchModal';
 import GiftCardActivationModal from '../components/modals/GiftCardActivationModal';
+import GenericItemModal from '../components/modals/GenericItemModal';
 
 function POSScreen() {
   const { state, actions } = useApp();
@@ -13,6 +14,7 @@ function POSScreen() {
   const [childModalProduct, setChildModalProduct] = useState(null);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [giftCardProduct, setGiftCardProduct] = useState(null);
+  const [showGenericModal, setShowGenericModal] = useState(false);
   
   // Set default active section when sections load
   useEffect(() => {
@@ -110,6 +112,34 @@ function POSScreen() {
     }
     setChildModalProduct(null);
   };
+
+  // Ad-hoc line for a product not in the catalog. The cashier enters the FINAL
+  // sale price; internally we store the ex-ITBMS base (like catalog products)
+  // so the ticket math and factura reconcile. product.id stays null — that is
+  // the audit marker the EOD "Ventas genéricas" section reports on.
+  const handleGenericItem = ({ description, salePrice, isTaxable }) => {
+    const rate = (state.settings?.itbms_rate ?? 7) / 100;
+    const base = isTaxable
+      ? Math.round((salePrice / (1 + rate)) * 1e6) / 1e6
+      : salePrice;
+    actions.addItem({
+      product: {
+        id: null,
+        name: description,
+        product_type: 'generic',
+        pricing_type: 'quantity',
+        is_taxable: isTaxable,
+        price: base,
+        express_price: null,
+        icon: '📝',
+      },
+      quantity: 1,
+      unitPrice: base,
+      lineTotal: base,
+      pieces: 1,
+    });
+    setShowGenericModal(false);
+  };
   
   return (
     <div className="p-6 animate-fade-in">
@@ -146,8 +176,19 @@ function POSScreen() {
             itbmsRate={state.settings?.itbms_rate || 7}
           />
         ))}
+
+        {/* Ad-hoc sale for a product not in the catalog (always available;
+            usage is reported in the EOD for supervision). */}
+        <button
+          onClick={() => setShowGenericModal(true)}
+          className="relative flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-slate-300 bg-white p-4 text-slate-500 transition-all hover:border-primary-400 hover:text-primary-600 hover:shadow-md active:scale-[0.98]"
+        >
+          <span className="text-3xl">📝</span>
+          <span className="text-sm font-medium text-center leading-tight">Venta genérica</span>
+          <span className="text-[10px] text-slate-400">Producto no listado</span>
+        </button>
       </div>
-      
+
       {/* Empty State - No products in section */}
       {state.activeSection && sectionProducts.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -186,6 +227,14 @@ function POSScreen() {
           onSelect={handleCustomerSelect}
           onWalkIn={handleWalkInSelect}
           showWalkInPrompt={true}
+        />
+      )}
+
+      {showGenericModal && (
+        <GenericItemModal
+          itbmsRate={state.settings?.itbms_rate || 7}
+          onConfirm={handleGenericItem}
+          onClose={() => setShowGenericModal(false)}
         />
       )}
 

@@ -156,6 +156,9 @@ export default async function handler(req: any, res: any) {
           unit_price: it.unitPrice,
           line_total: it.lineTotal,
           weight_entries: it.weightEntries || [],
+          // Persisted per line for generic (product_id NULL) items — the factura
+          // has no product row to read the tax flag from.
+          is_taxable: it.product?.is_taxable !== false,
         }));
         const { error } = await admin.from('order_items').insert(rows);
         if (error) throw error;

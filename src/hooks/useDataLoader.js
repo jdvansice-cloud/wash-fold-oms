@@ -429,7 +429,7 @@ export function useDataLoader() {
       const { error } = await supabase.from('order_items').insert(
         orderData.items.map(item => ({
           order_id: order.id,
-          product_id: item.product?.id,
+          product_id: item.product?.id || null,
           product_name: item.product?.name,
           quantity: item.quantity,
           total_weight: item.totalWeight || 0,
@@ -438,6 +438,7 @@ export function useDataLoader() {
           unit_price: item.unitPrice,
           line_total: item.lineTotal,
           weight_entries: item.weightEntries || [],
+          is_taxable: item.product?.is_taxable !== false,
         })),
       );
       if (error) throw error;
